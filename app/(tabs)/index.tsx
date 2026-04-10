@@ -6,72 +6,70 @@ import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Link } from 'expo-router';
+import { Button } from 'heroui-native';
 
 export default function HomeScreen() {
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
+      headerBackgroundColor={{ light: '#0F172A', dark: '#020617' }}
       headerImage={
         <Image
           source={require('@/assets/images/partial-react-logo.png')}
           style={styles.reactLogo}
+          contentFit="contain"
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
+      }
+    >
+      {/* HERO SECTION */}
+      <ThemedView style={styles.heroContainer}>
         <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
+        <ThemedText style={styles.title}>
+          Welcome to PasalGuff
+        </ThemedText>
+
+        <ThemedText style={styles.subtitle}>
+          Discover, connect, and explore local businesses effortlessly.
+        </ThemedText>
+
+        <Button
+          className="bg-blue-500"
+          onPress={() => {
+            alert('Get Started!');
+          }}
+        >
+          Get Started
+        </Button>
+      </ThemedView>
+
+      {/* FEATURES */}
+      <ThemedView style={styles.section}>
+        <ThemedText style={styles.sectionTitle}>Why PasalGuff?</ThemedText>
+
+        <ThemedText style={styles.featureText}>
+          • Browse trending local shops 🛍️
+        </ThemedText>
+        <ThemedText style={styles.featureText}>
+          • Connect with sellers instantly 💬
+        </ThemedText>
+        <ThemedText style={styles.featureText}>
+          • Discover hidden gems near you 📍
         </ThemedText>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
+
+      {/* NAVIGATION */}
+      <ThemedView style={styles.section}>
+        <Link href="/modal">
+          <ThemedText style={styles.linkText}>
+            Explore More →
+          </ThemedText>
+        </Link>
+      </ThemedView>
+
+      {/* FOOTER */}
+      <ThemedView style={styles.footer}>
+        <ThemedText style={styles.footerText}>
+          Built with ❤️ using Expo
         </ThemedText>
       </ThemedView>
     </ParallaxScrollView>
@@ -79,20 +77,54 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  heroContainer: {
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 30,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  title: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    opacity: 0.7,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  section: {
+    marginTop: 20,
+    gap: 10,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  featureText: {
+    fontSize: 15,
+    opacity: 0.8,
+  },
+  linkText: {
+    fontSize: 16,
+    color: '#3B82F6',
+    fontWeight: '600',
+  },
+  footer: {
+    marginTop: 30,
+    alignItems: 'center',
+    paddingBottom: 20,
+  },
+  footerText: {
+    fontSize: 13,
+    opacity: 0.5,
   },
   reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+    height: 160,
+    width: 260,
+    alignSelf: 'center',
+    marginTop: 20,
   },
 });

@@ -1,0 +1,120 @@
+@import "tailwindcss";
+@import "uniwind";
+@import "heroui-native/styles";
+
+@source "./node_modules/heroui-native/lib";
+
+@layer theme {
+    @variant light {
+        --background: #f0fdf4;
+        --foreground: #052e16;
+
+        --surface: #ffffff;
+        --surface-foreground: #052e16;
+        --surface-secondary: #f8fffa;
+        --surface-secondary-foreground: #052e16;
+        --surface-tertiary: #dcfce7;
+        --surface-tertiary-foreground: #166534;
+
+        --overlay: #ffffff;
+        --overlay-foreground: #052e16;
+        --backdrop: oklch(0% 0 0 / 20%);
+
+        --muted: #6b7280;
+
+        --default: #dcfce7;
+        --default-foreground: #166534;
+
+        --accent: #166534;
+        --accent-foreground: #ffffff;
+
+        --field-background: #ffffff;
+        --field-foreground: #052e16;
+        --field-placeholder: #9ca3af;
+        --field-border: #bbf7d0;
+
+        --success: #15803d;
+        --success-foreground: #ffffff;
+
+        --warning: #f59e0b;
+        --warning-foreground: #ffffff;
+
+        --danger: #dc2626;
+        --danger-foreground: #ffffff;
+
+        --segment: #dcfce7;
+        --segment-foreground: #166534;
+
+        --border: #bbf7d0;
+        --separator: #d1fae5;
+        --focus: #15803d;
+        --link: #15803d;
+
+        --surface-shadow:
+            0 8px 24px 0 rgba(22, 101, 52, 0.06),
+            0 2px 6px 0 rgba(22, 101, 52, 0.04);
+
+        --overlay-shadow:
+            0 8px 24px 0 rgba(22, 101, 52, 0.08),
+            0 2px 6px 0 rgba(22, 101, 52, 0.05);
+
+        --field-shadow:
+            0 1px 2px 0 rgba(22, 101, 52, 0.04);
+    }
+
+    @variant dark {
+        --background: #052e16;
+        --foreground: #f0fdf4;
+
+        --surface: #0b3f20;
+        --surface-foreground: #f0fdf4;
+        --surface-secondary: #14532d;
+        --surface-secondary-foreground: #f0fdf4;
+        --surface-tertiary: #166534;
+        --surface-tertiary-foreground: #f0fdf4;
+
+        --overlay: #14532d;
+        --overlay-foreground: #f0fdf4;
+        --backdrop: oklch(0% 0 0 / 35%);
+
+        --muted: #a7f3d0;
+
+        --default: #166534;
+        --default-foreground: #f0fdf4;
+
+        --accent: #22c55e;
+        --accent-foreground: #052e16;
+
+        --field-background: #14532d;
+        --field-foreground: #f0fdf4;
+        --field-placeholder: #a7f3d0;
+        --field-border: #166534;
+
+        --success: #22c55e;
+        --success-foreground: #052e16;
+
+        --warning: #f59e0b;
+        --warning-foreground: #052e16;
+
+        --danger: #ef4444;
+        --danger-foreground: #ffffff;
+
+        --segment: #166534;
+        --segment-foreground: #f0fdf4;
+
+        --border: #166534;
+        --separator: #166534;
+        --focus: #22c55e;
+        --link: #4ade80;
+
+        --surface-shadow: 0 0 0 0 transparent;
+        --overlay-shadow: 0 0 1px 0 rgba(255, 255, 255, 0.15) inset;
+        --field-shadow: 0 0 0 0 transparent;
+    }
+}
+
+@theme {
+    --font-normal: "Poppins_400Regular";
+    --font-medium: "Poppins_500Medium";
+    --font-semibold: "Poppins_600SemiBold";
+}
