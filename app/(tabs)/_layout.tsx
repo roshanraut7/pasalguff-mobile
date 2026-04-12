@@ -1,35 +1,138 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
-
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import AppHeader from "@/components/common/app-header";
+import { COLORS } from "@/constants/colors";
+import { Ionicons } from "@expo/vector-icons";
+import { Tabs, router } from "expo-router";
+import React, { useState } from "react";
+import { View } from "react-native";
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const [searchValue, setSearchValue] = useState("");
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      {/* <Tabs.Screen
+        headerShown: true,
+        header: () => (
+          <AppHeader
+            searchValue={searchValue}
+            onSearchChange={setSearchValue}
+            userName="Nikhil Kumar"
+            avatarUrl={null}
+            onAvatarPress={() => router.push("/(tabs)/profile")}
+            onNotificationPress={() => {}}
+          />
+        ),
+        tabBarShowLabel: false,
+        tabBarHideOnKeyboard: true,
+        tabBarStyle: {
+          position: "absolute",
+          left: 20,
+          right: 20,
+          bottom: 18,
+          height: 72,
+          backgroundColor: COLORS.card,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: COLORS.border,
+          paddingHorizontal: 12,
+          paddingTop: 10,
+          paddingBottom: 10,
+          elevation: 10,
+          shadowColor: COLORS.primary,
+          shadowOpacity: 0.1,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 6 },
+        },
+        tabBarItemStyle: {
+          height: 52,
+        },
+      }}
+    >
+      <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: "Home",
+          tabBarIcon: ({ focused }) => (
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              size={24}
+              color={focused ? COLORS.primary : COLORS.muted}
+            />
+          ),
         }}
       />
+
       <Tabs.Screen
         name="explore"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: "Explore",
+          tabBarIcon: ({ focused }) => (
+            <Ionicons
+              name={focused ? "compass" : "compass-outline"}
+              size={30}
+              color={focused ? COLORS.primary : COLORS.muted}
+            />
+          ),
         }}
-      /> */}
+      />
+
+      <Tabs.Screen
+        name="create"
+        options={{
+          title: "Create",
+          headerShown: false,
+          tabBarIcon: ({ focused }) => (
+            <View
+              style={{
+                width: 58,
+                height: 58,
+                borderRadius: 29,
+                backgroundColor: focused ? COLORS.primary2 : COLORS.primary,
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 26,
+                borderWidth: 4,
+                borderColor: COLORS.background,
+                shadowColor: COLORS.primaryLight,
+                shadowOpacity: 0.28,
+                shadowRadius: 10,
+                shadowOffset: { width: 0, height: 6 },
+                elevation: 8,
+              }}
+            >
+              <Ionicons name="add" size={28} color="#fff" />
+            </View>
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: "Messages",
+          tabBarIcon: ({ focused }) => (
+            <Ionicons
+              name={focused ? "chatbubble" : "chatbubble-outline"}
+              size={24}
+              color={focused ? COLORS.primary : COLORS.muted}
+            />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ focused }) => (
+            <Ionicons
+              name={focused ? "person" : "person-outline"}
+              size={24}
+              color={focused ? COLORS.primary : COLORS.muted}
+            />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

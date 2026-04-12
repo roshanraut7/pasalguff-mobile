@@ -60,7 +60,7 @@
 
         --field-shadow:
             0 1px 2px 0 rgba(22, 101, 52, 0.04);
-    }
+         }
 
     @variant dark {
         --background: #052e16;
