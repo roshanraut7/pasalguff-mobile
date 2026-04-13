@@ -19,7 +19,7 @@ import {
     type SignupFormValues,
 } from "@/schema/singup.schema";
 import { mapSignupValues } from "@/lib/auth-mapper";
-import { signUpWithEmail } from "@/lib/auth-client";
+import { signUpWithEmail } from "@/api/better-auth-client";
 
 export default function SignupForm() {
     const [serverError, setServerError] = useState("");

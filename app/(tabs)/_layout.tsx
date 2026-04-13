@@ -1,12 +1,26 @@
 import AppHeader from "@/components/common/app-header";
 import { COLORS } from "@/constants/colors";
+import { useSession } from "@/api/better-auth-client";
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs, router } from "expo-router";
+import { Redirect, Tabs, router } from "expo-router";
 import React, { useState } from "react";
-import { View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
 
 export default function TabLayout() {
   const [searchValue, setSearchValue] = useState("");
+  const { data: session, isPending } = useSession();
+
+  if (isPending) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.background }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  if (!session?.user) {
+    return <Redirect href="/(auth)" />;
+  }
 
   return (
     <Tabs
@@ -16,10 +30,10 @@ export default function TabLayout() {
           <AppHeader
             searchValue={searchValue}
             onSearchChange={setSearchValue}
-            userName="Nikhil Kumar"
-            avatarUrl={null}
+            userName={session.user.name}
+            avatarUrl={session.user.image ?? null}
             onAvatarPress={() => router.push("/(tabs)/profile")}
-            onNotificationPress={() => {}}
+            onNotificationPress={() => { }}
           />
         ),
         tabBarShowLabel: false,

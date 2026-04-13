@@ -14,7 +14,7 @@ import {
 
 import { COLORS } from "@/constants/colors";
 import { loginSchema, type LoginFormValues } from "@/schema/login.schema";
-import { signInWithEmail } from "@/lib/auth-client";
+import { signInWithEmail } from "@/api/better-auth-client";
 
 export default function LoginForm() {
     const [serverError, setServerError] = useState("");
