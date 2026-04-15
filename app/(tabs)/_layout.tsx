@@ -5,10 +5,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { Redirect, Tabs, router } from "expo-router";
 import React, { useState } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { useGetMyProfileQuery } from "@/store/api/profileApi";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
 
 export default function TabLayout() {
   const [searchValue, setSearchValue] = useState("");
-  const { data: session, isPending } = useSession();
+  const { data: session, isPending } = useSession();  
+  const { data: profile } = useGetMyProfileQuery();
+   const headerName =
+  profile?.name?.trim() ||
+  `${profile?.firstName ?? ""} ${profile?.lastName ?? ""}`.trim() ||
+  "User";
+  const headerAvatar = toAbsoluteFileUrl(profile?.image);
+
 
   if (isPending) {
     return (
@@ -22,6 +31,9 @@ export default function TabLayout() {
     return <Redirect href="/(auth)" />;
   }
 
+ 
+  
+
   return (
     <Tabs
       screenOptions={{
@@ -30,8 +42,8 @@ export default function TabLayout() {
           <AppHeader
             searchValue={searchValue}
             onSearchChange={setSearchValue}
-            userName={session.user.name}
-            avatarUrl={session.user.image ?? null}
+            userName={headerName}
+            avatarUrl={headerAvatar}
             onAvatarPress={() => router.push("/(tabs)/profile")}
             onNotificationPress={() => { }}
           />

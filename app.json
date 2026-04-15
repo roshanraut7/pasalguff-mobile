@@ -40,7 +40,15 @@
         }
       ],
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Pasalguff to access your photos so you can update profile and cover images.",
+          "cameraPermission": "Allow Pasalguff to use your camera so you can take profile and cover photos.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

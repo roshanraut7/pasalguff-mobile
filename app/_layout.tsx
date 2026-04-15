@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFonts } from "expo-font";
 import { Provider } from "react-redux";
 import { store } from "@/store";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
   Poppins_400Regular,
   Poppins_500Medium,
@@ -29,6 +30,7 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
+    <SafeAreaProvider>
     <Provider store={store}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <HeroUINativeProvider>
@@ -43,5 +45,6 @@ export default function RootLayout() {
         </HeroUINativeProvider>
       </GestureHandlerRootView>
     </Provider>
+    </SafeAreaProvider>
   );
 }

@@ -59,7 +59,13 @@ export default function AppHeader({
               borderColor: COLORS.border,
             }}
           >
-            {avatarUrl ? <Avatar.Image source={{ uri: avatarUrl }} /> : null}
+            {avatarUrl ? (
+              <Avatar.Image
+                key={avatarUrl}
+                source={{ uri: avatarUrl }}
+              />
+            ) : null}
+
             <Avatar.Fallback>
               <Text
                 style={{
