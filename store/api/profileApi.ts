@@ -32,7 +32,7 @@ export const profileApi = baseApi.injectEndpoints({
         url: "/profile",
         method: "GET",
       }),
-      providesTags: ["Profile"],
+      providesTags: [{ type: "Profile", id: "ME" }],
     }),
 
     updateMyProfile: builder.mutation<ProfileItem, UpdateProfilePayload>({
@@ -41,7 +41,7 @@ export const profileApi = baseApi.injectEndpoints({
         method: "PATCH",
         body,
       }),
-      invalidatesTags: ["Profile"],
+      invalidatesTags: [{ type: "Profile", id: "ME" }],
     }),
   }),
 });

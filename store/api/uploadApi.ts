@@ -42,10 +42,28 @@ export const uploadApi = baseApi.injectEndpoints({
         body: buildFormData(payload, "profile-cover"),
       }),
     }),
+
+    uploadCommunityAvatar: builder.mutation<UploadResponse, UploadFilePayload>({
+      query: (payload) => ({
+        url: "/uploads/community/avatar",
+        method: "POST",
+        body: buildFormData(payload, "community-avatar"),
+      }),
+    }),
+
+    uploadCommunityCover: builder.mutation<UploadResponse, UploadFilePayload>({
+      query: (payload) => ({
+        url: "/uploads/community/cover",
+        method: "POST",
+        body: buildFormData(payload, "community-cover"),
+      }),
+    }),
   }),
 });
 
 export const {
   useUploadProfileAvatarMutation,
   useUploadProfileCoverMutation,
+  useUploadCommunityAvatarMutation,
+  useUploadCommunityCoverMutation,
 } = uploadApi;

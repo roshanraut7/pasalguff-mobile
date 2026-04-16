@@ -49,7 +49,14 @@ const baseQueryWithAuth: BaseQueryFn<
 export const baseApi = createApi({
   reducerPath: "api",
   baseQuery: baseQueryWithAuth,
-  tagTypes: ["Category", "Community", "Profile"],
+  tagTypes: [
+    "Category",
+    "Community",
+    "MyCommunity",
+    "CommunityMembers",
+    "CommunityAccess",
+    "Profile"
+  ],
   refetchOnFocus: true,
   refetchOnReconnect: true,
   endpoints: () => ({}),
