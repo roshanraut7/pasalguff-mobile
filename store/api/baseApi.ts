@@ -55,7 +55,10 @@ export const baseApi = createApi({
     "MyCommunity",
     "CommunityMembers",
     "CommunityAccess",
-    "Profile"
+    "CommunityJoinRequests",
+    "Profile",
+    "Post",
+    "DraftPost",
   ],
   refetchOnFocus: true,
   refetchOnReconnect: true,

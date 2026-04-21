@@ -31,7 +31,9 @@ type ImageTarget = "avatar" | "cover";
 export default function ProfileScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [tab, setTab] = useState("posts");
-  const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(null);
+  const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(
+    null,
+  );
 
   const { data: session, isPending } = useSession();
 
@@ -72,6 +74,18 @@ export default function ProfileScreen() {
 
   const displayAvatar = toAbsoluteFileUrl(user?.image);
   const displayCover = toAbsoluteFileUrl(user?.coverImage);
+
+  const ownedCommunities = useMemo(() => {
+    return myCommunities.filter(
+      (community) => community.memberRole === "ADMIN",
+    );
+  }, [myCommunities]);
+
+  const joinedCommunities = useMemo(() => {
+    return myCommunities.filter(
+      (community) => community.memberRole !== "ADMIN",
+    );
+  }, [myCommunities]);
 
   const handleLogout = async () => {
     try {
@@ -165,6 +179,9 @@ export default function ProfileScreen() {
     }
   };
 
+  const isUploadingAvatar = uploadingTarget === "avatar";
+  const isUploadingCover = uploadingTarget === "cover";
+
   if (isPending || profileLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -176,9 +193,6 @@ export default function ProfileScreen() {
   if (!session?.user) {
     return <Redirect href="/(auth)" />;
   }
-
-  const isUploadingAvatar = uploadingTarget === "avatar";
-  const isUploadingCover = uploadingTarget === "cover";
 
   return (
     <ScrollView
@@ -476,7 +490,11 @@ export default function ProfileScreen() {
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   scrollAlign="start"
-                  contentContainerStyle={{ flexDirection: "row", gap: 20, paddingRight: 24 }}
+                  contentContainerStyle={{
+                    flexDirection: "row",
+                    gap: 20,
+                    paddingRight: 24,
+                  }}
                 >
                   <Tabs.Indicator />
                   <Tabs.Trigger value="posts">
@@ -591,7 +609,7 @@ export default function ProfileScreen() {
                       >
                         Failed to load communities
                       </Text>
-                    ) : myCommunities.length === 0 ? (
+                    ) : ownedCommunities.length === 0 ? (
                       <>
                         <Text
                           className="mt-2 text-muted"
@@ -601,7 +619,7 @@ export default function ProfileScreen() {
                             fontFamily: "Poppins_400Regular",
                           }}
                         >
-                          You have not created any communities yet.
+                          You do not own any communities yet.
                         </Text>
 
                         <Text
@@ -612,25 +630,39 @@ export default function ProfileScreen() {
                             fontFamily: "Poppins_500Medium",
                           }}
                         >
-                          Use the menu at the top right to create a new community.
+                          Use the menu at the top right to create a new
+                          community.
                         </Text>
                       </>
                     ) : (
                       <View className="mt-4 gap-3">
-                        {myCommunities.map((community) => (
+                        {ownedCommunities.map((community) => (
                           <Pressable
                             key={community.id}
+                            onPress={() =>
+                              router.push(
+                                `/community-dashboard/${community.slug}`,
+                              )
+                            }
                             className="overflow-hidden rounded-[22px] border border-border bg-surface"
                           >
                             {!!community.coverImage ? (
                               <Image
-                                source={{ uri: toAbsoluteFileUrl(community.coverImage)! }}
+                                source={{
+                                  uri: toAbsoluteFileUrl(
+                                    community.coverImage,
+                                  )!,
+                                }}
                                 style={{ width: "100%", height: 110 }}
                                 resizeMode="cover"
                               />
                             ) : (
                               <LinearGradient
-                                colors={[COLORS.primary, COLORS.primary2, COLORS.soft]}
+                                colors={[
+                                  COLORS.primary,
+                                  COLORS.primary2,
+                                  COLORS.soft,
+                                ]}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={{ height: 110 }}
@@ -642,7 +674,11 @@ export default function ProfileScreen() {
                                 <View className="h-[52px] w-[52px] overflow-hidden rounded-full border border-border bg-segment">
                                   {!!community.avatarImage ? (
                                     <Image
-                                      source={{ uri: toAbsoluteFileUrl(community.avatarImage)! }}
+                                      source={{
+                                        uri: toAbsoluteFileUrl(
+                                          community.avatarImage,
+                                        )!,
+                                      }}
                                       style={{ width: "100%", height: "100%" }}
                                       resizeMode="cover"
                                     />
@@ -658,27 +694,44 @@ export default function ProfileScreen() {
                                 </View>
 
                                 <View className="flex-1">
-                                  <Text
-                                    className="text-foreground"
-                                    style={{
-                                      fontSize: 16,
-                                      lineHeight: 22,
-                                      fontFamily: "Poppins_700Bold",
-                                    }}
-                                  >
-                                    {community.name}
-                                  </Text>
+                                  <View className="flex-row items-start justify-between gap-3">
+                                    <View className="flex-1">
+                                      <Text
+                                        className="text-foreground"
+                                        style={{
+                                          fontSize: 16,
+                                          lineHeight: 22,
+                                          fontFamily: "Poppins_700Bold",
+                                        }}
+                                      >
+                                        {community.name}
+                                      </Text>
 
-                                  <Text
-                                    className="mt-1 text-muted"
-                                    style={{
-                                      fontSize: 13,
-                                      lineHeight: 18,
-                                      fontFamily: "Poppins_500Medium",
-                                    }}
-                                  >
-                                    {community.category?.name} • {community.visibility}
-                                  </Text>
+                                      <Text
+                                        className="mt-1 text-muted"
+                                        style={{
+                                          fontSize: 13,
+                                          lineHeight: 18,
+                                          fontFamily: "Poppins_500Medium",
+                                        }}
+                                      >
+                                        {community.category?.name} •{" "}
+                                        {community.visibility}
+                                      </Text>
+                                    </View>
+
+                                    <View className="rounded-full bg-segment px-3 py-2">
+                                      <Text
+                                        style={{
+                                          color: COLORS.primary,
+                                          fontSize: 12,
+                                          fontFamily: "Poppins_600SemiBold",
+                                        }}
+                                      >
+                                        Owner
+                                      </Text>
+                                    </View>
+                                  </View>
 
                                   {!!community.description && (
                                     <Text
@@ -715,16 +768,155 @@ export default function ProfileScreen() {
                       Joined Communities
                     </Text>
 
-                    <Text
-                      className="mt-2 text-muted"
-                      style={{
-                        fontSize: 14,
-                        lineHeight: 22,
-                        fontFamily: "Poppins_400Regular",
-                      }}
-                    >
-                      Joined communities will appear here after you add the joined-community backend and API.
-                    </Text>
+                    {myCommunitiesLoading ? (
+                      <Text
+                        className="mt-3 text-muted"
+                        style={{
+                          fontSize: 14,
+                          fontFamily: "Poppins_400Regular",
+                        }}
+                      >
+                        Loading joined communities...
+                      </Text>
+                    ) : myCommunitiesError ? (
+                      <Text
+                        className="mt-3"
+                        style={{
+                          color: COLORS.danger,
+                          fontSize: 14,
+                          fontFamily: "Poppins_500Medium",
+                        }}
+                      >
+                        Failed to load joined communities
+                      </Text>
+                    ) : joinedCommunities.length === 0 ? (
+                      <Text
+                        className="mt-2 text-muted"
+                        style={{
+                          fontSize: 14,
+                          lineHeight: 22,
+                          fontFamily: "Poppins_400Regular",
+                        }}
+                      >
+                        You have not joined any communities yet.
+                      </Text>
+                    ) : (
+                      <View className="mt-4 gap-3">
+                        {joinedCommunities.map((community) => (
+                          <Pressable
+                            key={community.id}
+                            onPress={() =>
+                              router.push(`/community/${community.slug}`)
+                            }
+                            className="overflow-hidden rounded-[22px] border border-border bg-surface"
+                          >
+                            {!!community.coverImage ? (
+                              <Image
+                                source={{
+                                  uri: toAbsoluteFileUrl(
+                                    community.coverImage,
+                                  )!,
+                                }}
+                                style={{ width: "100%", height: 110 }}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <LinearGradient
+                                colors={[
+                                  COLORS.primary,
+                                  COLORS.primary2,
+                                  COLORS.soft,
+                                ]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={{ height: 110 }}
+                              />
+                            )}
+
+                            <View className="p-4">
+                              <View className="flex-row items-start gap-3">
+                                <View className="h-[52px] w-[52px] overflow-hidden rounded-full border border-border bg-segment">
+                                  {!!community.avatarImage ? (
+                                    <Image
+                                      source={{
+                                        uri: toAbsoluteFileUrl(
+                                          community.avatarImage,
+                                        )!,
+                                      }}
+                                      style={{ width: "100%", height: "100%" }}
+                                      resizeMode="cover"
+                                    />
+                                  ) : (
+                                    <View className="h-full w-full items-center justify-center">
+                                      <Ionicons
+                                        name="people-outline"
+                                        size={22}
+                                        color={COLORS.primary}
+                                      />
+                                    </View>
+                                  )}
+                                </View>
+
+                                <View className="flex-1">
+                                  <View className="flex-row items-start justify-between gap-3">
+                                    <View className="flex-1">
+                                      <Text
+                                        className="text-foreground"
+                                        style={{
+                                          fontSize: 16,
+                                          lineHeight: 22,
+                                          fontFamily: "Poppins_700Bold",
+                                        }}
+                                      >
+                                        {community.name}
+                                      </Text>
+
+                                      <Text
+                                        className="mt-1 text-muted"
+                                        style={{
+                                          fontSize: 13,
+                                          lineHeight: 18,
+                                          fontFamily: "Poppins_500Medium",
+                                        }}
+                                      >
+                                        {community.category?.name} •{" "}
+                                        {community.visibility}
+                                      </Text>
+                                    </View>
+
+                                    <View className="rounded-full bg-segment px-3 py-2">
+                                      <Text
+                                        style={{
+                                          color: COLORS.primary,
+                                          fontSize: 12,
+                                          fontFamily: "Poppins_600SemiBold",
+                                        }}
+                                      >
+                                        {community.memberRole ?? "Joined"}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  {!!community.description && (
+                                    <Text
+                                      className="mt-2 text-muted"
+                                      numberOfLines={2}
+                                      style={{
+                                        fontSize: 13,
+                                        lineHeight: 20,
+                                        fontFamily: "Poppins_400Regular",
+                                      }}
+                                    >
+                                      {community.description}
+                                    </Text>
+                                  )}
+                                </View>
+                              </View>
+                            </View>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
                   </View>
                 </Tabs.Content>
               </View>

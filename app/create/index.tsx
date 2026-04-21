@@ -42,7 +42,7 @@ export default function CreateCommunityPage() {
                   name="arrow-back-outline"
                   size={20}
                   color={COLORS.primary}
-                />
+                />    
               </Pressable>
 
               <View className="flex-1">

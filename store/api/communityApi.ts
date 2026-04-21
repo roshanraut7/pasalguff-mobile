@@ -17,6 +17,14 @@ export type CreateCategoryPayload = {
 
 export type CommunityRole = "ADMIN" | "MODERATOR" | "MEMBER";
 
+export type CommunityPermissions = {
+  canEditCommunity: boolean;
+  canManageMembers: boolean;
+  canManagePosts: boolean;
+  canManageComments: boolean;
+  canManageReports: boolean;
+};
+
 export type CommunityItem = {
   id: string;
   name: string;
@@ -35,9 +43,18 @@ export type CommunityItem = {
     name: string;
     slug: string;
   };
+
+  // user/community relation fields
   isJoined?: boolean;
+  isBanned?: boolean;
+  hasPendingJoinRequest?: boolean;
   memberRole?: CommunityRole | null;
   canViewContent?: boolean;
+  permissions?: CommunityPermissions | null;
+
+  // dashboard/supporting fields
+  memberCount?: number;
+  postCount?: number;
 };
 
 export type CommunityAccessItem = {
@@ -45,17 +62,14 @@ export type CommunityAccessItem = {
   communityName: string;
   visibility: "PUBLIC" | "PRIVATE";
   isJoined: boolean;
+  isBanned?: boolean;
+  hasPendingJoinRequest?: boolean;
   role: CommunityRole | null;
   canViewContent: boolean;
   canCreatePost: boolean;
   canComment: boolean;
-  permissions: {
-    canEditCommunity: boolean;
-    canManageMembers: boolean;
-    canManagePosts: boolean;
-    canManageComments: boolean;
-    canManageReports: boolean;
-  } | null;
+  canJoin?: boolean;
+  permissions: CommunityPermissions | null;
 };
 
 export type CommunityMemberItem = {
@@ -78,6 +92,21 @@ export type CommunityMemberItem = {
   };
 };
 
+export type CommunityJoinRequestItem = {
+  id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  message?: string | null;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    firstName?: string;
+    lastName?: string;
+    image?: string | null;
+    businessName?: string;
+  };
+};
+
 export type CreateCommunityPayload = {
   name: string;
   categoryId: string;
@@ -86,6 +115,23 @@ export type CreateCommunityPayload = {
   coverImage?: string;
   visibility?: "PUBLIC" | "PRIVATE";
 };
+
+export type UpdateCommunityPayload = {
+  communityId: string;
+  name?: string;
+  categoryId?: string;
+  description?: string;
+  avatarImage?: string;
+  coverImage?: string;
+  visibility?: "PUBLIC" | "PRIVATE";
+};
+
+export type JoinCommunityPayload =
+  | string
+  | {
+      communityId: string;
+      message?: string;
+    };
 
 export type UpdateCommunityMemberRolePayload = {
   communityId: string;
@@ -103,8 +149,28 @@ export type TransferCommunityAdminPayload = {
   newAdminUserId: string;
 };
 
+export type ReviewCommunityJoinRequestPayload = {
+  communityId: string;
+  requestId: string;
+  action: "APPROVE" | "REJECT";
+};
+
+export type BanCommunityMemberPayload = {
+  communityId: string;
+  targetUserId: string;
+  reason?: string;
+};
+
+export type UnbanCommunityMemberPayload = {
+  communityId: string;
+  targetUserId: string;
+};
+
 export const communityApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
+    /**
+     * Categories
+     */
     getCategories: builder.query<CategoryItem[], void>({
       query: () => ({
         url: "/categories",
@@ -123,6 +189,9 @@ export const communityApi = baseApi.injectEndpoints({
       invalidatesTags: [{ type: "Category", id: "LIST" }],
     }),
 
+    /**
+     * Community list/detail
+     */
     getExploreCommunities: builder.query<CommunityItem[], void>({
       query: () => ({
         url: "/communities/explore",
@@ -189,6 +258,19 @@ export const communityApi = baseApi.injectEndpoints({
       ],
     }),
 
+    getCommunityJoinRequests: builder.query<CommunityJoinRequestItem[], string>({
+      query: (communityId) => ({
+        url: `/communities/${communityId}/join-requests`,
+        method: "GET",
+      }),
+      providesTags: (_result, _error, communityId) => [
+        { type: "CommunityJoinRequests", id: communityId },
+      ],
+    }),
+
+    /**
+     * Community create/update
+     */
     createCommunity: builder.mutation<CommunityItem, CreateCommunityPayload>({
       query: (body) => ({
         url: "/communities",
@@ -201,18 +283,47 @@ export const communityApi = baseApi.injectEndpoints({
       ],
     }),
 
-    joinCommunity: builder.mutation<unknown, string>({
-      query: (communityId) => ({
-        url: `/communities/${communityId}/join`,
-        method: "POST",
+    updateCommunity: builder.mutation<CommunityItem, UpdateCommunityPayload>({
+      query: ({ communityId, ...body }) => ({
+        url: `/communities/${communityId}`,
+        method: "PATCH",
+        body,
       }),
-      invalidatesTags: (_result, _error, communityId) => [
-        { type: "Community", id: "LIST" },
+      invalidatesTags: (_result, _error, { communityId }) => [
         { type: "Community", id: communityId },
+        { type: "Community", id: "LIST" },
         { type: "MyCommunity", id: "LIST" },
         { type: "CommunityAccess", id: communityId },
-        { type: "CommunityMembers", id: communityId },
       ],
+    }),
+
+    /**
+     * Membership
+     */
+    joinCommunity: builder.mutation<unknown, JoinCommunityPayload>({
+      query: (arg) => {
+        const payload =
+          typeof arg === "string" ? { communityId: arg } : arg;
+
+        return {
+          url: `/communities/${payload.communityId}/join`,
+          method: "POST",
+          body: payload.message ? { message: payload.message } : {},
+        };
+      },
+      invalidatesTags: (_result, _error, arg) => {
+        const communityId =
+          typeof arg === "string" ? arg : arg.communityId;
+
+        return [
+          { type: "Community", id: "LIST" },
+          { type: "Community", id: communityId },
+          { type: "MyCommunity", id: "LIST" },
+          { type: "CommunityAccess", id: communityId },
+          { type: "CommunityMembers", id: communityId },
+          { type: "CommunityJoinRequests", id: communityId },
+        ];
+      },
     }),
 
     leaveCommunity: builder.mutation<unknown, string>({
@@ -226,9 +337,13 @@ export const communityApi = baseApi.injectEndpoints({
         { type: "MyCommunity", id: "LIST" },
         { type: "CommunityAccess", id: communityId },
         { type: "CommunityMembers", id: communityId },
+        { type: "CommunityJoinRequests", id: communityId },
       ],
     }),
 
+    /**
+     * Role / ownership management
+     */
     updateCommunityMemberRole: builder.mutation<
       unknown,
       UpdateCommunityMemberRolePayload
@@ -264,6 +379,58 @@ export const communityApi = baseApi.injectEndpoints({
         { type: "MyCommunity", id: "LIST" },
       ],
     }),
+
+    /**
+     * Join request review
+     */
+    reviewCommunityJoinRequest: builder.mutation<
+      unknown,
+      ReviewCommunityJoinRequestPayload
+    >({
+      query: ({ communityId, requestId, action }) => ({
+        url: `/communities/${communityId}/join-requests/${requestId}`,
+        method: "PATCH",
+        body: { action },
+      }),
+      invalidatesTags: (_result, _error, { communityId }) => [
+        { type: "CommunityJoinRequests", id: communityId },
+        { type: "CommunityMembers", id: communityId },
+        { type: "Community", id: communityId },
+        { type: "Community", id: "LIST" },
+        { type: "MyCommunity", id: "LIST" },
+      ],
+    }),
+
+    /**
+     * Member moderation
+     */
+    banCommunityMember: builder.mutation<unknown, BanCommunityMemberPayload>({
+      query: ({ communityId, targetUserId, reason }) => ({
+        url: `/communities/${communityId}/members/${targetUserId}/ban`,
+        method: "PATCH",
+        body: reason ? { reason } : {},
+      }),
+      invalidatesTags: (_result, _error, { communityId }) => [
+        { type: "CommunityMembers", id: communityId },
+        { type: "CommunityJoinRequests", id: communityId },
+        { type: "Community", id: communityId },
+        { type: "Community", id: "LIST" },
+        { type: "MyCommunity", id: "LIST" },
+      ],
+    }),
+
+    unbanCommunityMember: builder.mutation<unknown, UnbanCommunityMemberPayload>({
+      query: ({ communityId, targetUserId }) => ({
+        url: `/communities/${communityId}/members/${targetUserId}/unban`,
+        method: "PATCH",
+      }),
+      invalidatesTags: (_result, _error, { communityId }) => [
+        { type: "CommunityMembers", id: communityId },
+        { type: "Community", id: communityId },
+        { type: "Community", id: "LIST" },
+        { type: "MyCommunity", id: "LIST" },
+      ],
+    }),
   }),
 });
 
@@ -275,9 +442,14 @@ export const {
   useGetCommunityBySlugQuery,
   useGetCommunityAccessQuery,
   useGetCommunityMembersQuery,
+  useGetCommunityJoinRequestsQuery,
   useCreateCommunityMutation,
+  useUpdateCommunityMutation,
   useJoinCommunityMutation,
   useLeaveCommunityMutation,
   useUpdateCommunityMemberRoleMutation,
   useTransferCommunityAdminMutation,
+  useReviewCommunityJoinRequestMutation,
+  useBanCommunityMemberMutation,
+  useUnbanCommunityMemberMutation,
 } = communityApi;
