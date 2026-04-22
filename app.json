@@ -48,7 +48,8 @@
           "cameraPermission": "Allow Pasalguff to use your camera so you can take profile and cover photos.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

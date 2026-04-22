@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -12,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { Menu, Tabs } from "heroui-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { COLORS } from "@/constants/colors";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
@@ -22,11 +24,31 @@ import {
   useUpdateMyProfileMutation,
 } from "@/store/api/profileApi";
 import {
+  type CommunityPostMedia,
+  useGetMyPostsQuery,
+} from "@/store/api/postApi";
+import {
   useUploadProfileAvatarMutation,
   useUploadProfileCoverMutation,
 } from "@/store/api/uploadApi";
+import CommunityPostCard from "@/components/post/CommunityPostCard";
+import PostMediaViewer from "@/components/post/PostMediaViewer";
 
 type ImageTarget = "avatar" | "cover";
+
+type CommunityPreview = {
+  id: string;
+  slug: string;
+  name: string;
+  visibility: string;
+  description?: string | null;
+  coverImage?: string | null;
+  avatarImage?: string | null;
+  memberRole?: string | null;
+  category?: {
+    name?: string | null;
+  } | null;
+};
 
 export default function ProfileScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -34,6 +56,15 @@ export default function ProfileScreen() {
   const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(
     null,
   );
+  const [viewer, setViewer] = useState<{
+    visible: boolean;
+    media: CommunityPostMedia[];
+    index: number;
+  }>({
+    visible: false,
+    media: [],
+    index: 0,
+  });
 
   const { data: session, isPending } = useSession();
 
@@ -50,6 +81,14 @@ export default function ProfileScreen() {
     isLoading: myCommunitiesLoading,
     error: myCommunitiesError,
   } = useGetMyCommunitiesQuery(undefined, {
+    skip: !session?.user,
+  });
+
+  const {
+    data: myPosts = [],
+    isLoading: myPostsLoading,
+    error: myPostsError,
+  } = useGetMyPostsQuery(undefined, {
     skip: !session?.user,
   });
 
@@ -106,6 +145,21 @@ export default function ProfileScreen() {
   const handleEditProfile = () => {
     router.push("/editprofile");
   };
+
+  const openViewer = useCallback((media: CommunityPostMedia[], index: number) => {
+    setViewer({
+      visible: true,
+      media,
+      index,
+    });
+  }, []);
+
+  const closeViewer = useCallback(() => {
+    setViewer((prev) => ({
+      ...prev,
+      visible: false,
+    }));
+  }, []);
 
   const uploadPickedAsset = async (
     asset: ImagePicker.ImagePickerAsset,
@@ -184,9 +238,11 @@ export default function ProfileScreen() {
 
   if (isPending || profileLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
+      <SafeAreaView style={styles.root} edges={["top"]}>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -195,135 +251,44 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerStyle={{ paddingBottom: 120 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View className="bg-background">
-        <View className="relative">
-          {!!displayCover ? (
-            <Image
-              source={{ uri: displayCover }}
-              style={{
-                width: "100%",
-                height: 230,
-                borderBottomLeftRadius: 30,
-                borderBottomRightRadius: 30,
-              }}
-              resizeMode="cover"
-            />
-          ) : (
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.primary2, COLORS.soft]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{
-                height: 230,
-                borderBottomLeftRadius: 30,
-                borderBottomRightRadius: 30,
-                overflow: "hidden",
-              }}
-            >
-              <View className="flex-1 justify-end px-5 pb-5 pt-6">
-                <View>
-                  <Text
-                    className="text-white/90"
-                    style={{
-                      fontSize: 13,
-                      fontFamily: "Poppins_500Medium",
-                    }}
-                  >
-                    {user?.businessType || "Profile"}
-                  </Text>
-
-                  <Text
-                    className="text-white"
-                    style={{
-                      fontSize: 28,
-                      lineHeight: 36,
-                      fontFamily: "Poppins_700Bold",
-                      marginTop: 6,
-                    }}
-                  >
-                    {user?.businessName || fullName}
-                  </Text>
-                </View>
-              </View>
-            </LinearGradient>
-          )}
-
-          <View className="absolute right-5 top-5">
-            <Menu>
-              <Menu.Trigger asChild>
-                <Pressable className="h-[42px] w-[42px] items-center justify-center rounded-full border border-white/20 bg-white/15">
-                  <Ionicons name="camera-outline" size={20} color="#fff" />
-                </Pressable>
-              </Menu.Trigger>
-
-              <Menu.Portal>
-                <Menu.Overlay />
-                <Menu.Content
-                  presentation="popover"
-                  placement="bottom"
-                  align="end"
-                  width={220}
-                  className="rounded-2xl border border-border bg-surface"
+    <>
+      <SafeAreaView style={styles.root} edges={["top"]}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.page}>
+            <View style={styles.coverSection}>
+              {!!displayCover ? (
+                <Image
+                  source={{ uri: displayCover }}
+                  style={styles.coverImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <LinearGradient
+                  colors={[COLORS.primary, COLORS.primary2, COLORS.soft]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.coverFallback}
                 >
-                  <Menu.Item onPress={() => pickFromCamera("cover")}>
-                    <Menu.ItemTitle>
-                      {isUploadingCover ? "Uploading..." : "Take photo"}
-                    </Menu.ItemTitle>
-                  </Menu.Item>
-
-                  <Menu.Item onPress={() => pickFromGallery("cover")}>
-                    <Menu.ItemTitle>Choose from gallery</Menu.ItemTitle>
-                  </Menu.Item>
-
-                  <Menu.Item
-                    onPress={() => removeProfileImage("cover")}
-                    variant="danger"
-                  >
-                    <Menu.ItemTitle>Remove cover photo</Menu.ItemTitle>
-                  </Menu.Item>
-                </Menu.Content>
-              </Menu.Portal>
-            </Menu>
-          </View>
-
-          <View className="absolute left-5 -bottom-[54px]">
-            <View className="relative h-[116px] w-[116px]">
-              <View className="h-[116px] w-[116px] items-center justify-center overflow-hidden rounded-full border-4 border-background bg-surface">
-                {displayAvatar ? (
-                  <Image
-                    source={{ uri: displayAvatar }}
-                    style={{ width: "100%", height: "100%" }}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View className="h-full w-full items-center justify-center bg-segment">
-                    <Text
-                      className="text-accent"
-                      style={{
-                        fontSize: 36,
-                        fontFamily: "Poppins_700Bold",
-                      }}
-                    >
-                      {initials}
+                  <View style={styles.coverFallbackContent}>
+                    <Text style={styles.coverSmallText}>
+                      {user?.businessType || "Profile"}
+                    </Text>
+                    <Text style={styles.coverBigText}>
+                      {user?.businessName || fullName}
                     </Text>
                   </View>
-                )}
-              </View>
+                </LinearGradient>
+              )}
 
-              <View className="absolute bottom-1 right-1">
+              <View style={styles.coverActionWrap}>
                 <Menu>
                   <Menu.Trigger asChild>
-                    <Pressable className="h-[34px] w-[34px] items-center justify-center rounded-full border border-border bg-surface">
-                      <Ionicons
-                        name="camera-outline"
-                        size={16}
-                        color={COLORS.primary}
-                      />
+                    <Pressable style={styles.coverActionButton}>
+                      <Ionicons name="camera-outline" size={20} color="#fff" />
                     </Pressable>
                   </Menu.Trigger>
 
@@ -336,221 +301,229 @@ export default function ProfileScreen() {
                       width={220}
                       className="rounded-2xl border border-border bg-surface"
                     >
-                      <Menu.Item onPress={() => pickFromCamera("avatar")}>
+                      <Menu.Item onPress={() => pickFromCamera("cover")}>
                         <Menu.ItemTitle>
-                          {isUploadingAvatar ? "Uploading..." : "Take photo"}
+                          {isUploadingCover ? "Uploading..." : "Take photo"}
                         </Menu.ItemTitle>
                       </Menu.Item>
 
-                      <Menu.Item onPress={() => pickFromGallery("avatar")}>
+                      <Menu.Item onPress={() => pickFromGallery("cover")}>
                         <Menu.ItemTitle>Choose from gallery</Menu.ItemTitle>
                       </Menu.Item>
 
                       <Menu.Item
-                        onPress={() => removeProfileImage("avatar")}
+                        onPress={() => removeProfileImage("cover")}
                         variant="danger"
                       >
-                        <Menu.ItemTitle>Remove profile photo</Menu.ItemTitle>
+                        <Menu.ItemTitle>Remove cover photo</Menu.ItemTitle>
                       </Menu.Item>
                     </Menu.Content>
                   </Menu.Portal>
                 </Menu>
               </View>
-            </View>
-          </View>
-        </View>
 
-        <View className="px-5 pt-[68px]">
-          <View className="flex-row items-start justify-between gap-3">
-            <View className="flex-1">
-              <Text
-                className="text-foreground"
-                style={{
-                  fontSize: 30,
-                  lineHeight: 38,
-                  fontFamily: "Poppins_700Bold",
-                }}
-              >
-                {fullName}
-              </Text>
-
-              <Text
-                className="mt-1 text-muted"
-                style={{
-                  fontSize: 15,
-                  lineHeight: 22,
-                  fontFamily: "Poppins_400Regular",
-                }}
-              >
-                {user?.email}
-              </Text>
-
-              {!!user?.businessType && (
-                <Text
-                  className="mt-2 text-muted"
-                  style={{
-                    fontSize: 14,
-                    lineHeight: 20,
-                    fontFamily: "Poppins_500Medium",
-                  }}
-                >
-                  {user.businessType}
-                </Text>
-              )}
-
-              {profileError ? (
-                <Text
-                  className="mt-2"
-                  style={{
-                    color: COLORS.danger,
-                    fontSize: 13,
-                    fontFamily: "Poppins_500Medium",
-                  }}
-                >
-                  Failed to load profile
-                </Text>
-              ) : null}
-            </View>
-
-            <Menu>
-              <Menu.Trigger asChild>
-                <Pressable className="h-[46px] w-[46px] items-center justify-center rounded-full border border-border bg-surface">
-                  <Ionicons
-                    name="ellipsis-horizontal"
-                    size={22}
-                    color={COLORS.primary}
-                  />
-                </Pressable>
-              </Menu.Trigger>
-
-              <Menu.Portal>
-                <Menu.Overlay />
-                <Menu.Content
-                  presentation="popover"
-                  placement="bottom"
-                  align="end"
-                  width={230}
-                  className="rounded-2xl border border-border bg-surface"
-                >
-                  <Menu.Item
-                    onPress={handleEditProfile}
-                    className="flex-row items-center gap-3"
-                  >
-                    <Ionicons
-                      name="create-outline"
-                      size={20}
-                      color={COLORS.primary}
+              <View style={styles.avatarFloatingWrap}>
+                <View style={styles.avatarOuter}>
+                  {displayAvatar ? (
+                    <Image
+                      source={{ uri: displayAvatar }}
+                      style={styles.avatarImage}
+                      resizeMode="cover"
                     />
-                    <Menu.ItemTitle>Edit Profile</Menu.ItemTitle>
-                  </Menu.Item>
+                  ) : (
+                    <View style={styles.avatarFallback}>
+                      <Text style={styles.avatarFallbackText}>{initials}</Text>
+                    </View>
+                  )}
+                </View>
 
-                  <Menu.Item
-                    onPress={handleCreateCommunity}
-                    className="flex-row items-center gap-3"
-                  >
-                    <Ionicons
-                      name="add-circle-outline"
-                      size={20}
-                      color={COLORS.primary}
-                    />
-                    <Menu.ItemTitle>Create Community</Menu.ItemTitle>
-                  </Menu.Item>
+                <View style={styles.avatarActionWrap}>
+                  <Menu>
+                    <Menu.Trigger asChild>
+                      <Pressable style={styles.avatarActionButton}>
+                        <Ionicons
+                          name="camera-outline"
+                          size={16}
+                          color={COLORS.primary}
+                        />
+                      </Pressable>
+                    </Menu.Trigger>
 
-                  <Menu.Item
-                    onPress={handleLogout}
-                    variant="danger"
-                    isDisabled={isLoggingOut}
-                    className="flex-row items-center gap-3"
-                  >
-                    <Ionicons
-                      name="log-out-outline"
-                      size={20}
-                      color={COLORS.danger}
-                    />
-                    <Menu.ItemTitle>
-                      {isLoggingOut ? "Logging out..." : "Logout"}
-                    </Menu.ItemTitle>
-                  </Menu.Item>
-                </Menu.Content>
-              </Menu.Portal>
-            </Menu>
-          </View>
-        </View>
-
-        <View className="mt-6 px-5">
-          <View className="px-4 py-4">
-            <Tabs
-              value={tab}
-              onValueChange={setTab}
-              variant="secondary"
-              style={{ width: "100%" }}
-            >
-              <Tabs.List>
-                <Tabs.ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  scrollAlign="start"
-                  contentContainerStyle={{
-                    flexDirection: "row",
-                    gap: 20,
-                    paddingRight: 24,
-                  }}
-                >
-                  <Tabs.Indicator />
-                  <Tabs.Trigger value="posts">
-                    <Tabs.Label>Posts</Tabs.Label>
-                  </Tabs.Trigger>
-                  <Tabs.Trigger value="about">
-                    <Tabs.Label>About</Tabs.Label>
-                  </Tabs.Trigger>
-                  <Tabs.Trigger value="communities">
-                    <Tabs.Label>Communities</Tabs.Label>
-                  </Tabs.Trigger>
-                  <Tabs.Trigger value="joinedCommunities">
-                    <Tabs.Label>Joined</Tabs.Label>
-                  </Tabs.Trigger>
-                </Tabs.ScrollView>
-              </Tabs.List>
-
-              <View className="pt-5">
-                <Tabs.Content value="posts">
-                  <View className="bg-background p-4">
-                    <Text
-                      className="text-foreground"
-                      style={{
-                        fontSize: 20,
-                        fontFamily: "Poppins_700Bold",
-                      }}
-                    >
-                      Posts
-                    </Text>
-                    <Text
-                      className="mt-2 text-muted"
-                      style={{
-                        fontSize: 14,
-                        lineHeight: 22,
-                        fontFamily: "Poppins_400Regular",
-                      }}
-                    >
-                      Your post activity will appear here.
-                    </Text>
-                  </View>
-                </Tabs.Content>
-
-                <Tabs.Content value="about">
-                  <View className="gap-3">
-                    <View className="p-2">
-                      <Text
-                        className="text-foreground"
-                        style={{
-                          fontSize: 20,
-                          fontFamily: "Poppins_700Bold",
-                        }}
+                    <Menu.Portal>
+                      <Menu.Overlay />
+                      <Menu.Content
+                        presentation="popover"
+                        placement="bottom"
+                        align="end"
+                        width={220}
+                        className="rounded-2xl border border-border bg-surface"
                       >
-                        About
-                      </Text>
+                        <Menu.Item onPress={() => pickFromCamera("avatar")}>
+                          <Menu.ItemTitle>
+                            {isUploadingAvatar ? "Uploading..." : "Take photo"}
+                          </Menu.ItemTitle>
+                        </Menu.Item>
 
-                      <View className="mt-4 gap-3">
+                        <Menu.Item onPress={() => pickFromGallery("avatar")}>
+                          <Menu.ItemTitle>Choose from gallery</Menu.ItemTitle>
+                        </Menu.Item>
+
+                        <Menu.Item
+                          onPress={() => removeProfileImage("avatar")}
+                          variant="danger"
+                        >
+                          <Menu.ItemTitle>Remove profile photo</Menu.ItemTitle>
+                        </Menu.Item>
+                      </Menu.Content>
+                    </Menu.Portal>
+                  </Menu>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.profileInfoSection}>
+              <View style={styles.profileInfoRow}>
+                <View style={styles.profileInfoLeft}>
+                  <Text style={styles.profileName}>{fullName}</Text>
+
+                  <Text style={styles.profileEmail}>{user?.email}</Text>
+
+                  {!!user?.businessType && (
+                    <Text style={styles.profileBusinessType}>
+                      {user.businessType}
+                    </Text>
+                  )}
+
+                  {profileError ? (
+                    <Text style={styles.errorText}>Failed to load profile</Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.profileInfoRight}>
+                  <Menu>
+                    <Menu.Trigger asChild>
+                      <Pressable style={styles.menuButton}>
+                        <Ionicons
+                          name="ellipsis-horizontal"
+                          size={22}
+                          color={COLORS.primary}
+                        />
+                      </Pressable>
+                    </Menu.Trigger>
+
+                    <Menu.Portal>
+                      <Menu.Overlay />
+                      <Menu.Content
+                        presentation="popover"
+                        placement="bottom"
+                        align="end"
+                        width={230}
+                        className="rounded-2xl border border-border bg-surface"
+                      >
+                        <Menu.Item onPress={handleEditProfile}>
+                          <Menu.ItemTitle>Edit Profile</Menu.ItemTitle>
+                        </Menu.Item>
+
+                        <Menu.Item onPress={handleCreateCommunity}>
+                          <Menu.ItemTitle>Create Community</Menu.ItemTitle>
+                        </Menu.Item>
+
+                        <Menu.Item
+                          onPress={handleLogout}
+                          variant="danger"
+                          isDisabled={isLoggingOut}
+                        >
+                          <Menu.ItemTitle>
+                            {isLoggingOut ? "Logging out..." : "Logout"}
+                          </Menu.ItemTitle>
+                        </Menu.Item>
+                      </Menu.Content>
+                    </Menu.Portal>
+                  </Menu>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.tabsSection}>
+              <Tabs
+                value={tab}
+                onValueChange={setTab}
+                variant="secondary"
+                style={{ width: "100%" }}
+              >
+                <Tabs.List>
+                  <Tabs.ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    scrollAlign="start"
+                    contentContainerStyle={styles.tabsListContent}
+                  >
+                    <Tabs.Indicator />
+                    <Tabs.Trigger value="posts">
+                      <Tabs.Label>Posts</Tabs.Label>
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="about">
+                      <Tabs.Label>About</Tabs.Label>
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="communities">
+                      <Tabs.Label>Communities</Tabs.Label>
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="joinedCommunities">
+                      <Tabs.Label>Joined</Tabs.Label>
+                    </Tabs.Trigger>
+                  </Tabs.ScrollView>
+                </Tabs.List>
+
+                <View style={styles.tabsBody}>
+                  <Tabs.Content value="posts">
+                    <View style={styles.tabPanel}>
+                      {myPostsLoading ? (
+                        <View style={styles.stateWrap}>
+                          <ActivityIndicator size="small" color={COLORS.primary} />
+                        </View>
+                      ) : myPostsError ? (
+                        <Text style={styles.errorText}>
+                          Failed to load your posts.
+                        </Text>
+                      ) : myPosts.length === 0 ? (
+                        <View style={styles.emptyState}>
+                          <Text style={styles.sectionTitle}>Posts</Text>
+                          <Text style={styles.sectionText}>
+                            You have not posted anything yet.
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.postsList}>
+                          {myPosts.map((post) => (
+                            <CommunityPostCard
+                              key={post.id}
+                              post={post}
+                              disableMediaPlayback={viewer.visible}
+                              onPressLike={(item) => {
+                                console.log("Like pressed:", item.id);
+                              }}
+                              onPressComment={(item) => {
+                                console.log("Comment pressed:", item.id);
+                              }}
+                              onPressShare={(item) => {
+                                console.log("Share pressed:", item.id);
+                              }}
+                              onPressAuthor={(authorId) => {
+                                console.log("Open author:", authorId);
+                              }}
+                              onPressMedia={openViewer}
+                            />
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  </Tabs.Content>
+
+                  <Tabs.Content value="about">
+                    <View style={styles.paddedPanel}>
+                      <Text style={styles.sectionTitle}>About</Text>
+
+                      <View style={styles.infoList}>
                         <InfoRow
                           icon="person-outline"
                           label="Name"
@@ -573,358 +546,162 @@ export default function ProfileScreen() {
                         />
                       </View>
                     </View>
-                  </View>
-                </Tabs.Content>
+                  </Tabs.Content>
 
-                <Tabs.Content value="communities">
-                  <View className="bg-background p-2">
-                    <Text
-                      className="text-foreground"
-                      style={{
-                        fontSize: 20,
-                        fontFamily: "Poppins_700Bold",
-                      }}
-                    >
-                      Communities
-                    </Text>
+                  <Tabs.Content value="communities">
+                    <View style={styles.paddedPanel}>
+                      <Text style={styles.sectionTitle}>Communities</Text>
 
-                    {myCommunitiesLoading ? (
-                      <Text
-                        className="mt-3 text-muted"
-                        style={{
-                          fontSize: 14,
-                          fontFamily: "Poppins_400Regular",
-                        }}
-                      >
-                        Loading communities...
-                      </Text>
-                    ) : myCommunitiesError ? (
-                      <Text
-                        className="mt-3"
-                        style={{
-                          color: COLORS.danger,
-                          fontSize: 14,
-                          fontFamily: "Poppins_500Medium",
-                        }}
-                      >
-                        Failed to load communities
-                      </Text>
-                    ) : ownedCommunities.length === 0 ? (
-                      <>
-                        <Text
-                          className="mt-2 text-muted"
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 22,
-                            fontFamily: "Poppins_400Regular",
-                          }}
-                        >
-                          You do not own any communities yet.
+                      {myCommunitiesLoading ? (
+                        <Text style={styles.sectionText}>Loading communities...</Text>
+                      ) : myCommunitiesError ? (
+                        <Text style={styles.errorText}>
+                          Failed to load communities
                         </Text>
+                      ) : ownedCommunities.length === 0 ? (
+                        <>
+                          <Text style={styles.sectionText}>
+                            You do not own any communities yet.
+                          </Text>
+                          <Text style={styles.sectionHint}>
+                            Use the menu at the top right to create a new community.
+                          </Text>
+                        </>
+                      ) : (
+                        <View style={styles.communityList}>
+                          {ownedCommunities.map((community) => (
+                            <CommunityPreviewCard
+                              key={community.id}
+                              community={community}
+                              badgeText="Owner"
+                              onPress={() =>
+                                router.push(`/community-dashboard/${community.slug}`)
+                              }
+                            />
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  </Tabs.Content>
 
-                        <Text
-                          className="mt-4 text-muted"
-                          style={{
-                            fontSize: 13,
-                            lineHeight: 20,
-                            fontFamily: "Poppins_500Medium",
-                          }}
-                        >
-                          Use the menu at the top right to create a new
-                          community.
+                  <Tabs.Content value="joinedCommunities">
+                    <View style={styles.paddedPanel}>
+                      <Text style={styles.sectionTitle}>Joined Communities</Text>
+
+                      {myCommunitiesLoading ? (
+                        <Text style={styles.sectionText}>
+                          Loading joined communities...
                         </Text>
-                      </>
-                    ) : (
-                      <View className="mt-4 gap-3">
-                        {ownedCommunities.map((community) => (
-                          <Pressable
-                            key={community.id}
-                            onPress={() =>
-                              router.push(
-                                `/community-dashboard/${community.slug}`,
-                              )
-                            }
-                            className="overflow-hidden rounded-[22px] border border-border bg-surface"
-                          >
-                            {!!community.coverImage ? (
-                              <Image
-                                source={{
-                                  uri: toAbsoluteFileUrl(
-                                    community.coverImage,
-                                  )!,
-                                }}
-                                style={{ width: "100%", height: 110 }}
-                                resizeMode="cover"
-                              />
-                            ) : (
-                              <LinearGradient
-                                colors={[
-                                  COLORS.primary,
-                                  COLORS.primary2,
-                                  COLORS.soft,
-                                ]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={{ height: 110 }}
-                              />
-                            )}
+                      ) : myCommunitiesError ? (
+                        <Text style={styles.errorText}>
+                          Failed to load joined communities
+                        </Text>
+                      ) : joinedCommunities.length === 0 ? (
+                        <Text style={styles.sectionText}>
+                          You have not joined any communities yet.
+                        </Text>
+                      ) : (
+                        <View style={styles.communityList}>
+                          {joinedCommunities.map((community) => (
+                            <CommunityPreviewCard
+                              key={community.id}
+                              community={community}
+                              badgeText={community.memberRole ?? "Joined"}
+                              onPress={() =>
+                                router.push(`/community/${community.slug}`)
+                              }
+                            />
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  </Tabs.Content>
+                </View>
+              </Tabs>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
 
-                            <View className="p-4">
-                              <View className="flex-row items-start gap-3">
-                                <View className="h-[52px] w-[52px] overflow-hidden rounded-full border border-border bg-segment">
-                                  {!!community.avatarImage ? (
-                                    <Image
-                                      source={{
-                                        uri: toAbsoluteFileUrl(
-                                          community.avatarImage,
-                                        )!,
-                                      }}
-                                      style={{ width: "100%", height: "100%" }}
-                                      resizeMode="cover"
-                                    />
-                                  ) : (
-                                    <View className="h-full w-full items-center justify-center">
-                                      <Ionicons
-                                        name="people-outline"
-                                        size={22}
-                                        color={COLORS.primary}
-                                      />
-                                    </View>
-                                  )}
-                                </View>
+      <PostMediaViewer
+        visible={viewer.visible}
+        media={viewer.media}
+        initialIndex={viewer.index}
+        onClose={closeViewer}
+      />
+    </>
+  );
+}
 
-                                <View className="flex-1">
-                                  <View className="flex-row items-start justify-between gap-3">
-                                    <View className="flex-1">
-                                      <Text
-                                        className="text-foreground"
-                                        style={{
-                                          fontSize: 16,
-                                          lineHeight: 22,
-                                          fontFamily: "Poppins_700Bold",
-                                        }}
-                                      >
-                                        {community.name}
-                                      </Text>
+function CommunityPreviewCard({
+  community,
+  badgeText,
+  onPress,
+}: {
+  community: CommunityPreview;
+  badgeText: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.communityCard}>
+      {!!community.coverImage ? (
+        <Image
+          source={{ uri: toAbsoluteFileUrl(community.coverImage)! }}
+          style={styles.communityCover}
+          resizeMode="cover"
+        />
+      ) : (
+        <LinearGradient
+          colors={[COLORS.primary, COLORS.primary2, COLORS.soft]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.communityCover}
+        />
+      )}
 
-                                      <Text
-                                        className="mt-1 text-muted"
-                                        style={{
-                                          fontSize: 13,
-                                          lineHeight: 18,
-                                          fontFamily: "Poppins_500Medium",
-                                        }}
-                                      >
-                                        {community.category?.name} •{" "}
-                                        {community.visibility}
-                                      </Text>
-                                    </View>
-
-                                    <View className="rounded-full bg-segment px-3 py-2">
-                                      <Text
-                                        style={{
-                                          color: COLORS.primary,
-                                          fontSize: 12,
-                                          fontFamily: "Poppins_600SemiBold",
-                                        }}
-                                      >
-                                        Owner
-                                      </Text>
-                                    </View>
-                                  </View>
-
-                                  {!!community.description && (
-                                    <Text
-                                      className="mt-2 text-muted"
-                                      numberOfLines={2}
-                                      style={{
-                                        fontSize: 13,
-                                        lineHeight: 20,
-                                        fontFamily: "Poppins_400Regular",
-                                      }}
-                                    >
-                                      {community.description}
-                                    </Text>
-                                  )}
-                                </View>
-                              </View>
-                            </View>
-                          </Pressable>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                </Tabs.Content>
-
-                <Tabs.Content value="joinedCommunities">
-                  <View className="bg-background p-2">
-                    <Text
-                      className="text-foreground"
-                      style={{
-                        fontSize: 20,
-                        fontFamily: "Poppins_700Bold",
-                      }}
-                    >
-                      Joined Communities
-                    </Text>
-
-                    {myCommunitiesLoading ? (
-                      <Text
-                        className="mt-3 text-muted"
-                        style={{
-                          fontSize: 14,
-                          fontFamily: "Poppins_400Regular",
-                        }}
-                      >
-                        Loading joined communities...
-                      </Text>
-                    ) : myCommunitiesError ? (
-                      <Text
-                        className="mt-3"
-                        style={{
-                          color: COLORS.danger,
-                          fontSize: 14,
-                          fontFamily: "Poppins_500Medium",
-                        }}
-                      >
-                        Failed to load joined communities
-                      </Text>
-                    ) : joinedCommunities.length === 0 ? (
-                      <Text
-                        className="mt-2 text-muted"
-                        style={{
-                          fontSize: 14,
-                          lineHeight: 22,
-                          fontFamily: "Poppins_400Regular",
-                        }}
-                      >
-                        You have not joined any communities yet.
-                      </Text>
-                    ) : (
-                      <View className="mt-4 gap-3">
-                        {joinedCommunities.map((community) => (
-                          <Pressable
-                            key={community.id}
-                            onPress={() =>
-                              router.push(`/community/${community.slug}`)
-                            }
-                            className="overflow-hidden rounded-[22px] border border-border bg-surface"
-                          >
-                            {!!community.coverImage ? (
-                              <Image
-                                source={{
-                                  uri: toAbsoluteFileUrl(
-                                    community.coverImage,
-                                  )!,
-                                }}
-                                style={{ width: "100%", height: 110 }}
-                                resizeMode="cover"
-                              />
-                            ) : (
-                              <LinearGradient
-                                colors={[
-                                  COLORS.primary,
-                                  COLORS.primary2,
-                                  COLORS.soft,
-                                ]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={{ height: 110 }}
-                              />
-                            )}
-
-                            <View className="p-4">
-                              <View className="flex-row items-start gap-3">
-                                <View className="h-[52px] w-[52px] overflow-hidden rounded-full border border-border bg-segment">
-                                  {!!community.avatarImage ? (
-                                    <Image
-                                      source={{
-                                        uri: toAbsoluteFileUrl(
-                                          community.avatarImage,
-                                        )!,
-                                      }}
-                                      style={{ width: "100%", height: "100%" }}
-                                      resizeMode="cover"
-                                    />
-                                  ) : (
-                                    <View className="h-full w-full items-center justify-center">
-                                      <Ionicons
-                                        name="people-outline"
-                                        size={22}
-                                        color={COLORS.primary}
-                                      />
-                                    </View>
-                                  )}
-                                </View>
-
-                                <View className="flex-1">
-                                  <View className="flex-row items-start justify-between gap-3">
-                                    <View className="flex-1">
-                                      <Text
-                                        className="text-foreground"
-                                        style={{
-                                          fontSize: 16,
-                                          lineHeight: 22,
-                                          fontFamily: "Poppins_700Bold",
-                                        }}
-                                      >
-                                        {community.name}
-                                      </Text>
-
-                                      <Text
-                                        className="mt-1 text-muted"
-                                        style={{
-                                          fontSize: 13,
-                                          lineHeight: 18,
-                                          fontFamily: "Poppins_500Medium",
-                                        }}
-                                      >
-                                        {community.category?.name} •{" "}
-                                        {community.visibility}
-                                      </Text>
-                                    </View>
-
-                                    <View className="rounded-full bg-segment px-3 py-2">
-                                      <Text
-                                        style={{
-                                          color: COLORS.primary,
-                                          fontSize: 12,
-                                          fontFamily: "Poppins_600SemiBold",
-                                        }}
-                                      >
-                                        {community.memberRole ?? "Joined"}
-                                      </Text>
-                                    </View>
-                                  </View>
-
-                                  {!!community.description && (
-                                    <Text
-                                      className="mt-2 text-muted"
-                                      numberOfLines={2}
-                                      style={{
-                                        fontSize: 13,
-                                        lineHeight: 20,
-                                        fontFamily: "Poppins_400Regular",
-                                      }}
-                                    >
-                                      {community.description}
-                                    </Text>
-                                  )}
-                                </View>
-                              </View>
-                            </View>
-                          </Pressable>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                </Tabs.Content>
+      <View style={styles.communityBody}>
+        <View style={styles.communityRow}>
+          <View style={styles.communityAvatarWrap}>
+            {!!community.avatarImage ? (
+              <Image
+                source={{ uri: toAbsoluteFileUrl(community.avatarImage)! }}
+                style={styles.communityAvatar}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.communityAvatarFallback}>
+                <Ionicons
+                  name="people-outline"
+                  size={22}
+                  color={COLORS.primary}
+                />
               </View>
-            </Tabs>
+            )}
+          </View>
+
+          <View style={styles.communityTextArea}>
+            <View style={styles.communityHeaderRow}>
+              <View style={styles.communityTitleArea}>
+                <Text style={styles.communityName}>{community.name}</Text>
+                <Text style={styles.communityMeta}>
+                  {community.category?.name} • {community.visibility}
+                </Text>
+              </View>
+
+              <View style={styles.communityBadge}>
+                <Text style={styles.communityBadgeText}>{badgeText}</Text>
+              </View>
+            </View>
+
+            {!!community.description && (
+              <Text style={styles.communityDescription} numberOfLines={2}>
+                {community.description}
+              </Text>
+            )}
           </View>
         </View>
       </View>
-    </ScrollView>
+    </Pressable>
   );
 }
 
@@ -938,32 +715,368 @@ function InfoRow({
   value: string;
 }) {
   return (
-    <View className="flex-row items-start rounded-[18px] bg-surface px-4 py-3">
-      <View className="mr-3 h-[34px] w-[34px] items-center justify-center rounded-full bg-segment">
+    <View style={styles.infoRow}>
+      <View style={styles.infoIconWrap}>
         <Ionicons name={icon} size={18} color={COLORS.primary} />
       </View>
 
-      <View className="flex-1">
-        <Text
-          className="text-muted"
-          style={{
-            fontSize: 12,
-            fontFamily: "Poppins_500Medium",
-          }}
-        >
-          {label}
-        </Text>
-        <Text
-          className="mt-1 text-foreground"
-          style={{
-            fontSize: 15,
-            lineHeight: 22,
-            fontFamily: "Poppins_600SemiBold",
-          }}
-        >
-          {value}
-        </Text>
+      <View style={styles.infoTextWrap}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoValue}>{value}</Text>
       </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  scroll: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 120,
+    backgroundColor: COLORS.background,
+  },
+  page: {
+    backgroundColor: COLORS.background,
+  },
+
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.background,
+  },
+
+  coverSection: {
+    position: "relative",
+  },
+  coverImage: {
+    width: "100%",
+    height: 230,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+  },
+  coverFallback: {
+    height: 230,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    overflow: "hidden",
+  },
+  coverFallbackContent: {
+    flex: 1,
+    justifyContent: "flex-end",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 24,
+  },
+  coverSmallText: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 13,
+    fontFamily: "Poppins_500Medium",
+  },
+  coverBigText: {
+    color: "#ffffff",
+    fontSize: 28,
+    lineHeight: 36,
+    fontFamily: "Poppins_700Bold",
+    marginTop: 6,
+  },
+  coverActionWrap: {
+    position: "absolute",
+    right: 20,
+    top: 20,
+  },
+  coverActionButton: {
+    height: 42,
+    width: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+
+  avatarFloatingWrap: {
+    position: "absolute",
+    left: 20,
+    bottom: -54,
+    width: 116,
+    height: 116,
+  },
+  avatarOuter: {
+    width: 116,
+    height: 116,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    borderRadius: 999,
+    borderWidth: 4,
+    borderColor: COLORS.background,
+    backgroundColor: COLORS.card,
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+  },
+  avatarFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.soft,
+  },
+  avatarFallbackText: {
+    color: COLORS.primary,
+    fontSize: 36,
+    fontFamily: "Poppins_700Bold",
+  },
+  avatarActionWrap: {
+    position: "absolute",
+    right: 4,
+    bottom: 4,
+  },
+  avatarActionButton: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+  },
+
+  profileInfoSection: {
+    paddingHorizontal: 20,
+    paddingTop: 68,
+  },
+  profileInfoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  profileInfoLeft: {
+    width: "78%",
+  },
+  profileInfoRight: {
+    width: "18%",
+    alignItems: "flex-end",
+  },
+  profileName: {
+    color: COLORS.text,
+    fontSize: 30,
+    lineHeight: 38,
+    fontFamily: "Poppins_700Bold",
+  },
+  profileEmail: {
+    marginTop: 4,
+    color: COLORS.muted,
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: "Poppins_400Regular",
+  },
+  profileBusinessType: {
+    marginTop: 8,
+    color: COLORS.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: "Poppins_500Medium",
+  },
+
+  tabsSection: {
+    marginTop: 24,
+  },
+  tabsListContent: {
+    flexDirection: "row",
+    gap: 20,
+    paddingLeft: 20,
+    paddingRight: 24,
+  },
+  tabsBody: {
+    paddingTop: 20,
+    backgroundColor: COLORS.background,
+  },
+
+  tabPanel: {
+    backgroundColor: COLORS.background,
+  },
+  paddedPanel: {
+    paddingHorizontal: 20,
+    backgroundColor: COLORS.background,
+  },
+  postsList: {
+    marginTop: 8,
+  },
+  stateWrap: {
+    paddingVertical: 32,
+  },
+  emptyState: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  sectionTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontFamily: "Poppins_700Bold",
+  },
+  sectionText: {
+    marginTop: 8,
+    color: COLORS.muted,
+    fontSize: 14,
+    lineHeight: 22,
+    fontFamily: "Poppins_400Regular",
+  },
+  sectionHint: {
+    marginTop: 16,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Poppins_500Medium",
+  },
+  errorText: {
+    marginTop: 8,
+    color: COLORS.danger,
+    fontSize: 14,
+    fontFamily: "Poppins_500Medium",
+  },
+
+  infoList: {
+    marginTop: 16,
+    rowGap: 12,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    borderRadius: 18,
+    backgroundColor: COLORS.card,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  infoIconWrap: {
+    marginRight: 12,
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    backgroundColor: COLORS.soft,
+  },
+  infoTextWrap: {
+    width: "84%",
+  },
+  infoLabel: {
+    color: COLORS.muted,
+    fontSize: 12,
+    fontFamily: "Poppins_500Medium",
+  },
+  infoValue: {
+    marginTop: 4,
+    color: COLORS.text,
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: "Poppins_600SemiBold",
+  },
+
+  communityList: {
+    marginTop: 16,
+    rowGap: 12,
+  },
+  communityCard: {
+    overflow: "hidden",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+  },
+  communityCover: {
+    width: "100%",
+    height: 110,
+  },
+  communityBody: {
+    padding: 16,
+  },
+  communityRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  communityAvatarWrap: {
+    width: 52,
+    height: 52,
+    overflow: "hidden",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.soft,
+  },
+  communityAvatar: {
+    width: "100%",
+    height: "100%",
+  },
+  communityAvatarFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  communityTextArea: {
+    width: "82%",
+    marginLeft: 12,
+  },
+  communityHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  communityTitleArea: {
+    width: "72%",
+  },
+  communityName: {
+    color: COLORS.text,
+    fontSize: 16,
+    lineHeight: 22,
+    fontFamily: "Poppins_700Bold",
+  },
+  communityMeta: {
+    marginTop: 4,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Poppins_500Medium",
+  },
+  communityBadge: {
+    borderRadius: 999,
+    backgroundColor: COLORS.soft,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  communityBadgeText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  communityDescription: {
+    marginTop: 8,
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
+  },
+
+  menuButton: {
+    width: 46,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+  },
+});
