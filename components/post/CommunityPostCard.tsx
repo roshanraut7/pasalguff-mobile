@@ -15,7 +15,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { Avatar, Surface } from "heroui-native";
+import { Avatar, Dialog, Menu, Surface } from "heroui-native";
 import { Ionicons } from "@expo/vector-icons";
 import Carousel from "react-native-reanimated-carousel";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -31,8 +31,10 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import type { CommunityPost, CommunityPostMedia } from "@/store/api/postApi";
+
 const systemFonts = [
   ...defaultSystemFonts,
   "Poppins_400Regular",
@@ -44,6 +46,8 @@ const systemFonts = [
 
 dayjs.extend(relativeTime);
 
+type AppColors = ReturnType<typeof useAppTheme>["colors"];
+
 type CommunityPostCardProps = {
   post: CommunityPost;
   disableMediaPlayback?: boolean;
@@ -52,6 +56,9 @@ type CommunityPostCardProps = {
   onPressShare?: (post: CommunityPost) => void;
   onPressAuthor?: (authorId: string) => void;
   onPressMedia?: (media: CommunityPostMedia[], startIndex: number) => void;
+  canDelete?: boolean;
+  isDeleting?: boolean;
+  onDelete?: (post: CommunityPost) => Promise<void> | void;
 };
 
 function getAuthorName(author: CommunityPost["author"]) {
@@ -90,11 +97,15 @@ const ReactionButton = memo(function ReactionButton({
   label,
   active = false,
   onPress,
+  colors,
+  styles,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   active?: boolean;
   onPress?: () => void;
+  colors: AppColors;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <Pressable
@@ -107,7 +118,7 @@ const ReactionButton = memo(function ReactionButton({
       <Ionicons
         name={icon}
         size={18}
-        color={active ? "#166534" : "#6b7280"}
+        color={active ? colors.accent : colors.muted}
       />
       <Text
         numberOfLines={1}
@@ -161,7 +172,7 @@ const MediaTapLayer = memo(function MediaTapLayer({
   };
 
   return (
-    <Pressable onPress={handlePress} style={styles.tapLayer}>
+    <Pressable onPress={handlePress} style={stylesStatic.tapLayer}>
       {children}
     </Pressable>
   );
@@ -171,10 +182,12 @@ const ImageSlide = memo(function ImageSlide({
   uri,
   onSingleTap,
   onDoubleTap,
+  styles,
 }: {
   uri: string;
   onSingleTap?: () => void;
   onDoubleTap?: () => void;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <MediaTapLayer onSingleTap={onSingleTap} onDoubleTap={onDoubleTap}>
@@ -195,11 +208,13 @@ const VideoSlide = memo(function VideoSlide({
   active,
   onSingleTap,
   onDoubleTap,
+  styles,
 }: {
   uri: string;
   active: boolean;
   onSingleTap?: () => void;
   onDoubleTap?: () => void;
+  styles: ReturnType<typeof createStyles>;
 }) {
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
@@ -231,11 +246,15 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
   disabled,
   onPressMedia,
   onDoubleTapLike,
+  colors,
+  styles,
 }: {
   media: CommunityPostMedia[];
   disabled?: boolean;
   onPressMedia?: (media: CommunityPostMedia[], startIndex: number) => void;
   onDoubleTapLike?: () => void;
+  colors: AppColors;
+  styles: ReturnType<typeof createStyles>;
 }) {
   const { width: screenWidth } = useWindowDimensions();
   const [index, setIndex] = useState(0);
@@ -297,12 +316,14 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
               active={!disabled && index === mediaIndex}
               onSingleTap={() => onPressMedia?.(normalizedMedia, mediaIndex)}
               onDoubleTap={triggerHeart}
+              styles={styles}
             />
           ) : (
             <ImageSlide
               uri={item.url}
               onSingleTap={() => onPressMedia?.(normalizedMedia, mediaIndex)}
               onDoubleTap={triggerHeart}
+              styles={styles}
             />
           )
         }
@@ -334,8 +355,13 @@ export default function CommunityPostCard({
   onPressShare,
   onPressAuthor,
   onPressMedia,
+  canDelete = false,
+  isDeleting = false,
+  onDelete,
 }: CommunityPostCardProps) {
   const { width } = useWindowDimensions();
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const authorName = getAuthorName(post.author);
   const authorImage = toAbsoluteFileUrl(post.author.image) ?? undefined;
@@ -343,6 +369,7 @@ export default function CommunityPostCard({
 
   const [expanded, setExpanded] = useState(false);
   const [liked, setLiked] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const plainText = useMemo(() => htmlToPlainText(post.content), [post.content]);
   const shouldCollapse = plainText.length > 220;
@@ -394,6 +421,17 @@ export default function CommunityPostCard({
     }
   }, []);
 
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!onDelete) return;
+
+    try {
+      await onDelete(post);
+      setIsDeleteDialogOpen(false);
+    } catch (error) {
+      console.log("Delete post failed:", error);
+    }
+  }, [onDelete, post]);
+
   return (
     <Surface variant="default" style={styles.card}>
       <View style={styles.header}>
@@ -422,24 +460,51 @@ export default function CommunityPostCard({
           </View>
         </Pressable>
 
-        <Pressable style={styles.moreButton}>
-          <Ionicons name="ellipsis-horizontal" size={20} color="#6b7280" />
-        </Pressable>
+        {canDelete ? (
+          <View style={styles.moreWrap}>
+            <Menu>
+              <Menu.Trigger asChild>
+                <Pressable style={styles.moreButton}>
+                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+                </Pressable>
+              </Menu.Trigger>
+
+              <Menu.Portal>
+                <Menu.Overlay />
+                <Menu.Content
+                  presentation="popover"
+                  placement="bottom"
+                  align="end"
+                  width={180}
+                  className="rounded-2xl border border-border bg-surface"
+                >
+                  <Menu.Item
+                    onPress={() => setIsDeleteDialogOpen(true)}
+                    variant="danger"
+                    className="flex-row items-center gap-3"
+                  >
+                    <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                    <Menu.ItemTitle>Delete post</Menu.ItemTitle>
+                  </Menu.Item>
+                </Menu.Content>
+              </Menu.Portal>
+            </Menu>
+          </View>
+        ) : (
+          <Pressable style={styles.moreButton}>
+            <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+          </Pressable>
+        )}
       </View>
 
       {htmlSource ? (
         <View style={styles.htmlWrap}>
-          <View
-            style={[
-              styles.htmlRenderBox,
-              !expanded && shouldCollapse && styles.htmlRenderBoxCollapsed,
-            ]}
-          >
+          {expanded ? (
             <RenderHTML
               contentWidth={contentWidth}
               source={htmlSource}
-                systemFonts={systemFonts}
-                ignoredDomTags={["label"]}
+              systemFonts={systemFonts}
+              ignoredDomTags={["label"]}
               tagsStyles={{
                 body: styles.htmlBody,
                 div: styles.htmlBody,
@@ -470,11 +535,14 @@ export default function CommunityPostCard({
                 },
               }}
             />
-            {!expanded && shouldCollapse ? <View style={styles.fadeOverlay} /> : null}
-          </View>
+          ) : (
+            <Text style={styles.previewText} numberOfLines={4}>
+              {plainText}
+            </Text>
+          )}
 
           {shouldCollapse && (
-            <Pressable onPress={() => setExpanded((prev) => !prev)}>
+            <Pressable onPress={() => setExpanded((prev) => !prev)} style={styles.seeMoreWrap}>
               <Text style={styles.seeMoreText}>
                 {expanded ? "See less" : "See more"}
               </Text>
@@ -484,8 +552,11 @@ export default function CommunityPostCard({
       ) : null}
 
       {!!post.linkUrl && !hasMedia && (
-        <Pressable style={styles.linkCard} onPress={() => handleOpenLink(null, post.linkUrl ?? undefined)}>
-          <Ionicons name="link-outline" size={16} color="#166534" />
+        <Pressable
+          style={styles.linkCard}
+          onPress={() => handleOpenLink(null, post.linkUrl ?? undefined)}
+        >
+          <Ionicons name="link-outline" size={16} color={colors.link} />
           <Text numberOfLines={1} style={styles.linkText}>
             {post.linkUrl}
           </Text>
@@ -498,6 +569,8 @@ export default function CommunityPostCard({
           disabled={disableMediaPlayback}
           onPressMedia={onPressMedia}
           onDoubleTapLike={handleDoubleTapLike}
+          colors={colors}
+          styles={styles}
         />
       ) : null}
 
@@ -507,291 +580,408 @@ export default function CommunityPostCard({
           label="Like"
           active={liked}
           onPress={toggleLike}
+          colors={colors}
+          styles={styles}
         />
         <ReactionButton
           icon="chatbubble-outline"
           label="Comment"
           onPress={() => onPressComment?.(post)}
+          colors={colors}
+          styles={styles}
         />
         <ReactionButton
           icon="share-social-outline"
           label="Share"
           onPress={handleShare}
+          colors={colors}
+          styles={styles}
         />
       </View>
+
+      <Dialog isOpen={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay />
+          <Dialog.Content className="mx-5 rounded-[24px] bg-surface px-5 py-5">
+            <View style={styles.dialogContent}>
+              <Dialog.Title>Delete post</Dialog.Title>
+              <Dialog.Description>
+                Are you sure you want to delete this post? This action cannot be undone.
+              </Dialog.Description>
+
+              <View style={styles.deleteWarningRow}>
+                <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                <View style={styles.deleteWarningTextWrap}>
+                  <Text style={styles.deleteWarningTitle}>Permanent action</Text>
+                  <Text style={styles.deleteWarningText}>
+                    The post will be removed from your profile and community feed.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.dialogActions}>
+                <Pressable
+                  style={[styles.dialogButton, styles.dialogCancelButton]}
+                  onPress={() => setIsDeleteDialogOpen(false)}
+                  disabled={isDeleting}
+                >
+                  <Text style={styles.dialogCancelText}>Cancel</Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.dialogButton, styles.dialogDeleteButton]}
+                  onPress={handleDeleteConfirm}
+                  disabled={isDeleting}
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={16}
+                    color={colors.dangerForeground}
+                  />
+                  <Text style={styles.dialogDeleteText}>
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog>
     </Surface>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    marginTop: 6,
-    paddingHorizontal: 0,
-    paddingTop: 10,
-    paddingBottom: 8,
-    borderRadius: 0,
-    gap: 8,
-    borderWidth: 0,
-    shadowOpacity: 0,
-    elevation: 0,
-    backgroundColor: "#ffffff",
-  },
-  header: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-  },
-  authorRow: {
-    width: "86%",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  authorMeta: {
-    width: "78%",
-    marginLeft: 8,
-  },
-  authorName: {
-    fontSize: 15,
-    color: "#052e16",
-    fontFamily: "Poppins_600SemiBold",
-  },
-  subMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 1,
-  },
-  communityName: {
-    maxWidth: 130,
-    fontSize: 12,
-    color: "#6b7280",
-    fontFamily: "Poppins_400Regular",
-  },
-  subMetaDot: {
-    marginHorizontal: 6,
-    color: "#9ca3af",
-  },
-  timeText: {
-    fontSize: 12,
-    color: "#6b7280",
-    fontFamily: "Poppins_400Regular",
-  },
-  moreButton: {
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 999,
-  },
-  htmlWrap: {
-    width: "100%",
-    marginTop: 2,
-    paddingHorizontal: 12,
-  },
-  htmlRenderBox: {
-    position: "relative",
-    overflow: "hidden",
-  },
-  htmlRenderBoxCollapsed: {
-    maxHeight: 126,
-  },
-  fadeOverlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 42,
-    backgroundColor: "rgba(255,255,255,0.92)",
-  },
-  seeMoreText: {
-    marginTop: 4,
-    color: "#166534",
-    fontSize: 13,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  htmlBody: {
-    color: "#052e16",
-    fontSize: 15,
-    lineHeight: 24,
-    fontFamily: "Poppins_400Regular",
-  },
-  htmlParagraph: {
-    marginTop: 0,
-    marginBottom: 8,
-    color: "#052e16",
-    fontSize: 15,
-    lineHeight: 24,
-    fontFamily: "Poppins_400Regular",
-  },
-  htmlSpan: {
-    color: "#052e16",
-    fontSize: 15,
-    lineHeight: 24,
-    fontFamily: "Poppins_400Regular",
-  },
-  htmlStrong: {
-    color: "#052e16",
-    fontFamily: "Poppins_600SemiBold",
-  },
-  htmlEm: {
-    color: "#052e16",
-    fontStyle: "italic",
-  },
-  htmlUnderline: {
-    color: "#052e16",
-    textDecorationLine: "underline",
-  },
-  htmlList: {
-    marginTop: 0,
-    marginBottom: 8,
-    paddingLeft: 18,
-  },
-  htmlListItem: {
-    color: "#052e16",
-    fontSize: 15,
-    lineHeight: 24,
-    marginBottom: 4,
-    fontFamily: "Poppins_400Regular",
-  },
-  htmlLink: {
-    color: "#166534",
-    textDecorationLine: "underline",
-  },
-  htmlH1: {
-    fontSize: 28,
-    lineHeight: 36,
-    fontFamily: "Poppins_700Bold",
-    color: "#052e16",
-    marginBottom: 8,
-  },
-  htmlH2: {
-    fontSize: 24,
-    lineHeight: 32,
-    fontFamily: "Poppins_700Bold",
-    color: "#052e16",
-    marginBottom: 8,
-  },
-  htmlH3: {
-    fontSize: 20,
-    lineHeight: 28,
-    fontFamily: "Poppins_600SemiBold",
-    color: "#052e16",
-    marginBottom: 8,
-  },
-  htmlH4: {
-    fontSize: 18,
-    lineHeight: 26,
-    fontFamily: "Poppins_600SemiBold",
-    color: "#052e16",
-    marginBottom: 8,
-  },
-  htmlH5: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontFamily: "Poppins_600SemiBold",
-    color: "#052e16",
-    marginBottom: 8,
-  },
-  htmlH6: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: "Poppins_600SemiBold",
-    color: "#052e16",
-    marginBottom: 8,
-  },
-  linkCard: {
-    marginHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#d1fae5",
-    backgroundColor: "#f8fffa",
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  linkText: {
-    width: "92%",
-    color: "#166534",
-    fontSize: 13,
-    fontFamily: "Poppins_500Medium",
-  },
-  mediaWrap: {
-    width: "100%",
-    borderRadius: 0,
-    overflow: "hidden",
-    backgroundColor: "#ffffff",
-    position: "relative",
-    marginTop: 2,
-  },
+const stylesStatic = StyleSheet.create({
   tapLayer: {
     width: "100%",
     height: "100%",
   },
-  slideMedia: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#ffffff",
-  },
-  heartOverlay: {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    marginLeft: -44,
-    marginTop: -44,
-    zIndex: 20,
-  },
-  dotsRow: {
-    position: "absolute",
-    bottom: 8,
-    alignSelf: "center",
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(0,0,0,0.28)",
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.55)",
-  },
-  dotActive: {
-    backgroundColor: "#ffffff",
-    width: 16,
-  },
-  reactionsRow: {
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: 6,
-    paddingHorizontal: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#e5e7eb",
-  },
-  reactionButton: {
-    width: "32.2%",
-    minHeight: 36,
-    borderRadius: 12,
-    paddingHorizontal: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-  },
-  reactionButtonPressed: {
-    backgroundColor: "#f0fdf4",
-  },
-  reactionText: {
-    color: "#6b7280",
-    fontSize: 12,
-    fontFamily: "Poppins_500Medium",
-  },
-  reactionTextActive: {
-    color: "#166534",
-  },
 });
+
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    card: {
+      marginTop: 6,
+      paddingHorizontal: 0,
+      paddingTop: 10,
+      paddingBottom: 8,
+      borderRadius: 0,
+      gap: 8,
+      borderWidth: 0,
+      shadowOpacity: 0,
+      elevation: 0,
+      backgroundColor: colors.surface,
+    },
+    header: {
+      width: "100%",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+    },
+    authorRow: {
+      width: "86%",
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    authorMeta: {
+      width: "78%",
+      marginLeft: 8,
+    },
+    authorName: {
+      fontSize: 15,
+      color: colors.foreground,
+      fontFamily: "Poppins_600SemiBold",
+    },
+    subMetaRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 1,
+    },
+    communityName: {
+      maxWidth: 130,
+      fontSize: 12,
+      color: colors.muted,
+      fontFamily: "Poppins_400Regular",
+    },
+    subMetaDot: {
+      marginHorizontal: 6,
+      color: colors.placeholder,
+    },
+    timeText: {
+      fontSize: 12,
+      color: colors.muted,
+      fontFamily: "Poppins_400Regular",
+    },
+    moreWrap: {
+      position: "relative",
+    },
+    moreButton: {
+      width: 32,
+      height: 32,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 999,
+    },
+
+    htmlWrap: {
+      width: "100%",
+      marginTop: 2,
+      paddingHorizontal: 12,
+      paddingBottom: 2,
+    },
+    previewText: {
+      color: colors.foreground,
+      fontSize: 15,
+      lineHeight: 24,
+      fontFamily: "Poppins_400Regular",
+    },
+    seeMoreWrap: {
+      marginTop: 6,
+    },
+    seeMoreText: {
+      color: colors.link,
+      fontSize: 13,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    htmlBody: {
+      color: colors.foreground,
+      fontSize: 15,
+      lineHeight: 24,
+      fontFamily: "Poppins_400Regular",
+    },
+    htmlParagraph: {
+      marginTop: 0,
+      marginBottom: 8,
+      color: colors.foreground,
+      fontSize: 15,
+      lineHeight: 24,
+      fontFamily: "Poppins_400Regular",
+    },
+    htmlSpan: {
+      color: colors.foreground,
+      fontSize: 15,
+      lineHeight: 24,
+      fontFamily: "Poppins_400Regular",
+    },
+    htmlStrong: {
+      color: colors.foreground,
+      fontFamily: "Poppins_600SemiBold",
+    },
+    htmlEm: {
+      color: colors.foreground,
+      fontStyle: "italic",
+    },
+    htmlUnderline: {
+      color: colors.foreground,
+      textDecorationLine: "underline",
+    },
+    htmlList: {
+      marginTop: 0,
+      marginBottom: 8,
+      paddingLeft: 18,
+    },
+    htmlListItem: {
+      color: colors.foreground,
+      fontSize: 15,
+      lineHeight: 24,
+      marginBottom: 4,
+      fontFamily: "Poppins_400Regular",
+    },
+    htmlLink: {
+      color: colors.link,
+      textDecorationLine: "underline",
+    },
+    htmlH1: {
+      fontSize: 28,
+      lineHeight: 36,
+      fontFamily: "Poppins_700Bold",
+      color: colors.foreground,
+      marginBottom: 8,
+    },
+    htmlH2: {
+      fontSize: 24,
+      lineHeight: 32,
+      fontFamily: "Poppins_700Bold",
+      color: colors.foreground,
+      marginBottom: 8,
+    },
+    htmlH3: {
+      fontSize: 20,
+      lineHeight: 28,
+      fontFamily: "Poppins_600SemiBold",
+      color: colors.foreground,
+      marginBottom: 8,
+    },
+    htmlH4: {
+      fontSize: 18,
+      lineHeight: 26,
+      fontFamily: "Poppins_600SemiBold",
+      color: colors.foreground,
+      marginBottom: 8,
+    },
+    htmlH5: {
+      fontSize: 16,
+      lineHeight: 24,
+      fontFamily: "Poppins_600SemiBold",
+      color: colors.foreground,
+      marginBottom: 8,
+    },
+    htmlH6: {
+      fontSize: 15,
+      lineHeight: 22,
+      fontFamily: "Poppins_600SemiBold",
+      color: colors.foreground,
+      marginBottom: 8,
+    },
+
+    linkCard: {
+      marginHorizontal: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+      borderRadius: 14,
+      paddingHorizontal: 10,
+      paddingVertical: 9,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    linkText: {
+      width: "92%",
+      color: colors.link,
+      fontSize: 13,
+      fontFamily: "Poppins_500Medium",
+    },
+
+    mediaWrap: {
+      width: "100%",
+      borderRadius: 0,
+      overflow: "hidden",
+      backgroundColor: colors.surface,
+      position: "relative",
+      marginTop: 4,
+    },
+    slideMedia: {
+      width: "100%",
+      height: "100%",
+      backgroundColor: colors.surface,
+    },
+    heartOverlay: {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      marginLeft: -44,
+      marginTop: -44,
+      zIndex: 20,
+    },
+    dotsRow: {
+      position: "absolute",
+      bottom: 8,
+      alignSelf: "center",
+      flexDirection: "row",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 999,
+      backgroundColor: "rgba(0,0,0,0.28)",
+    },
+    dot: {
+      width: 7,
+      height: 7,
+      borderRadius: 999,
+      backgroundColor: "rgba(255,255,255,0.55)",
+    },
+    dotActive: {
+      backgroundColor: "#ffffff",
+      width: 16,
+    },
+
+    reactionsRow: {
+      width: "100%",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingTop: 6,
+      paddingHorizontal: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    reactionButton: {
+      width: "32.2%",
+      minHeight: 36,
+      borderRadius: 12,
+      paddingHorizontal: 6,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 5,
+    },
+    reactionButtonPressed: {
+      backgroundColor: colors.segment,
+    },
+    reactionText: {
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_500Medium",
+    },
+    reactionTextActive: {
+      color: colors.accent,
+    },
+
+    dialogContent: {
+      gap: 14,
+    },
+    deleteWarningRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+    },
+    deleteWarningTextWrap: {
+      width: "88%",
+    },
+    deleteWarningTitle: {
+      color: colors.danger,
+      fontSize: 15,
+      fontFamily: "Poppins_600SemiBold",
+    },
+    deleteWarningText: {
+      marginTop: 2,
+      color: colors.muted,
+      fontSize: 14,
+      lineHeight: 22,
+      fontFamily: "Poppins_400Regular",
+    },
+    dialogActions: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: 10,
+      marginTop: 4,
+    },
+    dialogButton: {
+      minHeight: 42,
+      borderRadius: 14,
+      paddingHorizontal: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+    },
+    dialogCancelButton: {
+      backgroundColor: colors.surfaceSecondary,
+    },
+    dialogDeleteButton: {
+      backgroundColor: colors.danger,
+    },
+    dialogCancelText: {
+      color: colors.foreground,
+      fontSize: 14,
+      fontFamily: "Poppins_600SemiBold",
+    },
+    dialogDeleteText: {
+      color: colors.dangerForeground,
+      fontSize: 14,
+      fontFamily: "Poppins_600SemiBold",
+    },
+  });
+}

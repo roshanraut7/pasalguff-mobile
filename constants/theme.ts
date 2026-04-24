@@ -1,53 +1,119 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
+import { DarkTheme, DefaultTheme, Theme } from "@react-navigation/native";
 
-import { Platform } from 'react-native';
+export const lightColors = {
+  background: "#f0fdf4",
+  foreground: "#052e16",
+  surface: "#ffffff",
+  surfaceSecondary: "#f8fffa",
+  surfaceTertiary: "#dcfce7",
+  overlay: "#ffffff",
+  muted: "#6b7280",
+  accent: "#166534",
+  accentForeground: "#ffffff",
+  border: "#bbf7d0",
+  separator: "#d1fae5",
+  danger: "#dc2626",
+  dangerForeground: "#ffffff",
+  success: "#15803d",
+  successForeground: "#ffffff",
+  warning: "#f59e0b",
+  warningForeground: "#ffffff",
+  placeholder: "#9ca3af",
+  segment: "#dcfce7",
+  segmentForeground: "#166534",
+  backdrop: "rgba(0,0,0,0.20)",
+  link: "#15803d",
+};
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+export const darkColors = {
+  background: "#030712",
+  foreground: "#ffffff",
+  surface: "#0b0f14",
+  surfaceSecondary: "#111827",
+  surfaceTertiary: "#1f2937",
+  overlay: "#0b0f14",
+  muted: "#9ca3af",
+  accent: "#22c55e",
+  accentForeground: "#03130a",
+  border: "#1f2937",
+  separator: "#1f2937",
+  danger: "#ef4444",
+  dangerForeground: "#ffffff",
+  success: "#22c55e",
+  successForeground: "#03130a",
+  warning: "#f59e0b",
+  warningForeground: "#03130a",
+  placeholder: "#6b7280",
+  segment: "#111827",
+  segmentForeground: "#ffffff",
+  backdrop: "rgba(0,0,0,0.45)",
+  link: "#4ade80",
+};
 
-export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+export type AppColorName =
+  keyof typeof lightColors & keyof typeof darkColors;
+
+export const NavigationLightTheme: Theme = {
+  ...DefaultTheme,
+  dark: false,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: lightColors.accent,
+    background: lightColors.background,
+    card: lightColors.surface,
+    text: lightColors.foreground,
+    border: lightColors.border,
+    notification: lightColors.danger,
   },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+  fonts: {
+    regular: {
+      fontFamily: "Poppins_400Regular",
+      fontWeight: "400",
+    },
+    medium: {
+      fontFamily: "Poppins_500Medium",
+      fontWeight: "500",
+    },
+    bold: {
+      fontFamily: "Poppins_700Bold",
+      fontWeight: "700",
+    },
+    heavy: {
+      fontFamily: "Poppins_700Bold",
+      fontWeight: "700",
+    },
   },
 };
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
+export const NavigationDarkTheme: Theme = {
+  ...DarkTheme,
+  dark: true,
+  colors: {
+    ...DarkTheme.colors,
+    primary: darkColors.accent,
+    background: darkColors.background,
+    card: darkColors.surface,
+    text: darkColors.foreground,
+    border: darkColors.border,
+    notification: darkColors.danger,
   },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
+  fonts: {
+    regular: {
+      fontFamily: "Poppins_400Regular",
+      fontWeight: "400",
+    },
+    medium: {
+      fontFamily: "Poppins_500Medium",
+      fontWeight: "500",
+    },
+    bold: {
+      fontFamily: "Poppins_700Bold",
+      fontWeight: "700",
+    },
+    heavy: {
+      fontFamily: "Poppins_700Bold",
+      fontWeight: "700",
+    },
   },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-  },
-});
+};
+export type AppColors = typeof lightColors;

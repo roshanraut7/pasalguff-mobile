@@ -42,43 +42,43 @@
         --field-shadow: 0 1px 2px 0 rgba(22, 101, 52, 0.04);
     }
 
-    @variant dark {
-        --background: #052e16;
-        --foreground: #f0fdf4;
-        --surface: #0b3f20;
-        --surface-foreground: #f0fdf4;
-        --surface-secondary: #14532d;
-        --surface-secondary-foreground: #f0fdf4;
-        --surface-tertiary: #166534;
-        --surface-tertiary-foreground: #f0fdf4;
-        --overlay: #14532d;
-        --overlay-foreground: #f0fdf4;
-        --backdrop: oklch(0% 0 0 / 35%);
-        --muted: #a7f3d0;
-        --default: #166534;
-        --default-foreground: #f0fdf4;
-        --accent: #22c55e;
-        --accent-foreground: #052e16;
-        --field-background: #14532d;
-        --field-foreground: #f0fdf4;
-        --field-placeholder: #a7f3d0;
-        --field-border: #166534;
-        --success: #22c55e;
-        --success-foreground: #052e16;
-        --warning: #f59e0b;
-        --warning-foreground: #052e16;
-        --danger: #ef4444;
-        --danger-foreground: #ffffff;
-        --segment: #166534;
-        --segment-foreground: #f0fdf4;
-        --border: #166534;
-        --separator: #166534;
-        --focus: #22c55e;
-        --link: #4ade80;
-        --surface-shadow: 0 0 0 0 transparent;
-        --overlay-shadow: 0 0 1px 0 rgba(255, 255, 255, 0.15) inset;
-        --field-shadow: 0 0 0 0 transparent;
-    }
+   @variant dark {
+    --background: #030712;
+    --foreground: #ffffff;
+    --surface: #0b0f14;
+    --surface-foreground: #ffffff;
+    --surface-secondary: #111827;
+    --surface-secondary-foreground: #ffffff;
+    --surface-tertiary: #1f2937;
+    --surface-tertiary-foreground: #ffffff;
+    --overlay: #0b0f14;
+    --overlay-foreground: #ffffff;
+    --backdrop: oklch(0% 0 0 / 45%);
+    --muted: #9ca3af;
+    --default: #111827;
+    --default-foreground: #ffffff;
+    --accent: #22c55e;
+    --accent-foreground: #03130a;
+    --field-background: #111827;
+    --field-foreground: #ffffff;
+    --field-placeholder: #6b7280;
+    --field-border: #1f2937;
+    --success: #22c55e;
+    --success-foreground: #03130a;
+    --warning: #f59e0b;
+    --warning-foreground: #03130a;
+    --danger: #ef4444;
+    --danger-foreground: #ffffff;
+    --segment: #111827;
+    --segment-foreground: #ffffff;
+    --border: #1f2937;
+    --separator: #1f2937;
+    --focus: #22c55e;
+    --link: #4ade80;
+    --surface-shadow: 0 0 0 0 transparent;
+    --overlay-shadow: 0 0 0 0 transparent;
+    --field-shadow: 0 0 0 0 transparent;
+}
 }
 
 @theme {

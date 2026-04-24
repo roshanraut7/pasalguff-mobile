@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,7 +15,7 @@ import {
   TextField,
 } from "heroui-native";
 
-import { COLORS } from "@/constants/colors";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import {
   editProfileSchema,
@@ -34,6 +34,8 @@ import {
 type ImageTarget = "avatar" | "cover";
 
 export default function EditProfileForm() {
+  const { colors } = useAppTheme();
+
   const [serverError, setServerError] = useState("");
   const [tab, setTab] = useState("edit");
   const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(null);
@@ -90,7 +92,7 @@ export default function EditProfileForm() {
 
   const uploadPickedAsset = async (
     asset: ImagePicker.ImagePickerAsset,
-    target: ImageTarget,
+    target: ImageTarget
   ) => {
     setServerError("");
     setUploadingTarget(target);
@@ -175,32 +177,29 @@ export default function EditProfileForm() {
       shouldValidate: true,
     });
   };
-const onSubmit = async (values: EditProfileFormValues) => {
-  try {
-    console.log("onSubmit called", values);
-    setServerError("");
 
-    const fullName = `${values.firstName.trim()} ${values.lastName.trim()}`.trim();
+  const onSubmit = async (values: EditProfileFormValues) => {
+    try {
+      setServerError("");
 
-    await updateMyProfile({
-      name: fullName,
-      firstName: values.firstName.trim(),
-      lastName: values.lastName.trim(),
-      businessName: values.businessName.trim(),
-      businessType: values.businessType.trim(),
-      address: values.address.trim(),
-      image: values.image ?? null,
-      coverImage: values.coverImage ?? null,
-    }).unwrap();
+      const fullName = `${values.firstName.trim()} ${values.lastName.trim()}`.trim();
 
-    // console.log("profile updated");
-    router.back();
-  } catch (error: any) {
-    // console.log("update error", error);
-    setServerError(error?.data?.message || "Failed to update profile");
-  }
-};
-// console.log("form errors", errors);
+      await updateMyProfile({
+        name: fullName,
+        firstName: values.firstName.trim(),
+        lastName: values.lastName.trim(),
+        businessName: values.businessName.trim(),
+        businessType: values.businessType.trim(),
+        address: values.address.trim(),
+        image: values.image ?? null,
+        coverImage: values.coverImage ?? null,
+      }).unwrap();
+
+      router.back();
+    } catch (error: any) {
+      setServerError(error?.data?.message || "Failed to update profile");
+    }
+  };
 
   if (isLoading) {
     return (
@@ -263,7 +262,11 @@ const onSubmit = async (values: EditProfileFormValues) => {
                   />
                 ) : (
                   <View className="h-[170px] items-center justify-center bg-segment">
-                    <Ionicons name="image-outline" size={28} color={COLORS.primary} />
+                    <Ionicons
+                      name="image-outline"
+                      size={28}
+                      color={colors.accent}
+                    />
                   </View>
                 )}
 
@@ -271,7 +274,11 @@ const onSubmit = async (values: EditProfileFormValues) => {
                   <Menu>
                     <Menu.Trigger asChild>
                       <Pressable className="h-[52px] w-[52px] items-center justify-center rounded-full border border-white/20 bg-black/25">
-                        <Ionicons name="camera-outline" size={22} color="#fff" />
+                        {isUploadingCover ? (
+                          <ActivityIndicator size="small" color="#ffffff" />
+                        ) : (
+                          <Ionicons name="camera-outline" size={22} color="#fff" />
+                        )}
                       </Pressable>
                     </Menu.Trigger>
 
@@ -320,7 +327,7 @@ const onSubmit = async (values: EditProfileFormValues) => {
                         <Ionicons
                           name="person-outline"
                           size={30}
-                          color={COLORS.primary}
+                          color={colors.accent}
                         />
                       </View>
                     )}
@@ -330,11 +337,15 @@ const onSubmit = async (values: EditProfileFormValues) => {
                     <Menu>
                       <Menu.Trigger asChild>
                         <Pressable className="h-[38px] w-[38px] items-center justify-center rounded-full border border-border bg-surface">
-                          <Ionicons
-                            name="camera-outline"
-                            size={18}
-                            color={COLORS.primary}
-                          />
+                          {isUploadingAvatar ? (
+                            <ActivityIndicator size="small" color={colors.accent} />
+                          ) : (
+                            <Ionicons
+                              name="camera-outline"
+                              size={18}
+                              color={colors.accent}
+                            />
+                          )}
                         </Pressable>
                       </Menu.Trigger>
 
@@ -483,7 +494,7 @@ const onSubmit = async (values: EditProfileFormValues) => {
               {serverError ? (
                 <Text
                   style={{
-                    color: COLORS.danger,
+                    color: colors.danger,
                     fontSize: 13,
                     fontFamily: "Poppins_500Medium",
                   }}

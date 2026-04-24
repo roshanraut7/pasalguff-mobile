@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { COLORS } from "@/constants/colors";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import {
   useGetCategoriesQuery,
@@ -25,11 +25,10 @@ import {
 export default function ExploreScreen() {
   const categoryScrollRef = useRef<ScrollView>(null);
   const currentScrollX = useRef(0);
+  const { colors } = useAppTheme();
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
-  const [joiningCommunityId, setJoiningCommunityId] = useState<string | null>(
-    null,
-  );
+  const [joiningCommunityId, setJoiningCommunityId] = useState<string | null>(null);
   const [categoryContainerWidth, setCategoryContainerWidth] = useState(0);
   const [categoryContentWidth, setCategoryContentWidth] = useState(0);
 
@@ -65,7 +64,7 @@ export default function ExploreScreen() {
     }
 
     return communities.filter(
-      (community) => community.category?.id === selectedCategoryId,
+      (community) => community.category?.id === selectedCategoryId
     );
   }, [communities, selectedCategoryId]);
 
@@ -78,7 +77,7 @@ export default function ExploreScreen() {
     categoryContentWidth > categoryContainerWidth + 8;
 
   const handleCategoryScroll = (
-    event: NativeSyntheticEvent<NativeScrollEvent>,
+    event: NativeSyntheticEvent<NativeScrollEvent>
   ) => {
     currentScrollX.current = event.nativeEvent.contentOffset.x;
   };
@@ -109,7 +108,7 @@ export default function ExploreScreen() {
         setJoiningCommunityId(null);
       }
     },
-    [joinCommunity],
+    [joinCommunity]
   );
 
   return (
@@ -121,7 +120,9 @@ export default function ExploreScreen() {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={handleRefresh}
-          tintColor={COLORS.primary}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+          progressBackgroundColor={colors.surface}
         />
       }
     >
@@ -153,12 +154,12 @@ export default function ExploreScreen() {
           <View className="flex-1" onLayout={handleCategoryContainerLayout}>
             {categoriesLoading ? (
               <View className="py-3">
-                <ActivityIndicator size="small" color={COLORS.primary} />
+                <ActivityIndicator size="small" color={colors.accent} />
               </View>
             ) : categoriesError ? (
               <Text
                 style={{
-                  color: COLORS.danger,
+                  color: colors.danger,
                   fontSize: 13,
                   fontFamily: "Poppins_500Medium",
                 }}
@@ -195,7 +196,9 @@ export default function ExploreScreen() {
                       <Text
                         numberOfLines={1}
                         style={{
-                          color: isActive ? "#ffffff" : COLORS.text,
+                          color: isActive
+                            ? colors.accentForeground
+                            : colors.foreground,
                           fontSize: 13,
                           fontFamily: "Poppins_500Medium",
                         }}
@@ -217,7 +220,7 @@ export default function ExploreScreen() {
               <Ionicons
                 name="chevron-forward"
                 size={18}
-                color={COLORS.primary}
+                color={colors.accent}
               />
             </Pressable>
           ) : null}
@@ -251,12 +254,12 @@ export default function ExploreScreen() {
         <View className="mt-4 gap-4">
           {communitiesLoading ? (
             <View className="py-8">
-              <ActivityIndicator size="large" color={COLORS.primary} />
+              <ActivityIndicator size="large" color={colors.accent} />
             </View>
           ) : communitiesError ? (
             <Text
               style={{
-                color: COLORS.danger,
+                color: colors.danger,
                 fontSize: 14,
                 fontFamily: "Poppins_500Medium",
               }}
@@ -299,8 +302,7 @@ export default function ExploreScreen() {
                 community.memberRole === "MEMBER";
 
               const showJoinButton = !isOwner && !isJoined;
-              const joiningThisCommunity =
-                joiningCommunityId === community.id;
+              const joiningThisCommunity = joiningCommunityId === community.id;
 
               return (
                 <Pressable
@@ -330,7 +332,7 @@ export default function ExploreScreen() {
                             <Ionicons
                               name="people-outline"
                               size={24}
-                              color={COLORS.primary}
+                              color={colors.segmentForeground}
                             />
                           </View>
                         )}
@@ -369,7 +371,7 @@ export default function ExploreScreen() {
                             <View className="rounded-full bg-segment px-3 py-2">
                               <Text
                                 style={{
-                                  color: COLORS.primary,
+                                  color: colors.segmentForeground,
                                   fontSize: 12,
                                   fontFamily: "Poppins_600SemiBold",
                                 }}
@@ -381,7 +383,7 @@ export default function ExploreScreen() {
                             <View className="rounded-full bg-segment px-3 py-2">
                               <Text
                                 style={{
-                                  color: COLORS.primary,
+                                  color: colors.segmentForeground,
                                   fontSize: 12,
                                   fontFamily: "Poppins_600SemiBold",
                                 }}
@@ -401,12 +403,12 @@ export default function ExploreScreen() {
                               {joiningThisCommunity ? (
                                 <ActivityIndicator
                                   size="small"
-                                  color="#ffffff"
+                                  color={colors.accentForeground}
                                 />
                               ) : (
                                 <Text
                                   style={{
-                                    color: "#ffffff",
+                                    color: colors.accentForeground,
                                     fontSize: 12,
                                     fontFamily: "Poppins_600SemiBold",
                                   }}

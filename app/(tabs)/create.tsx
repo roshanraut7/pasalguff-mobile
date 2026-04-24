@@ -6,19 +6,16 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
-  useColorScheme,
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { Button, useToast } from "heroui-native";
+import { useToast } from "heroui-native";
 import { useBridgeState } from "@10play/tentap-editor";
 
-import { COLORS } from "@/constants/colors";
 import {
   CommunityPost,
   CommunityPostMedia,
@@ -33,10 +30,7 @@ import {
   useUploadPostMediaMutation,
 } from "@/store/api/postApi";
 import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
-import {
-  AppRichTextEditor,
-  useCreateEditor,
-} from "@/components/editor/editor";
+import { AppRichTextEditor, useCreateEditor } from "@/components/editor/editor";
 import { DraftPostsPanel } from "@/components/post/DraftPostsPanel";
 import {
   POST_TAGS,
@@ -44,8 +38,11 @@ import {
   publishPostSchema,
   stripHtml,
 } from "@/schema/post.schema";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import {
+  createCreatePostStyles,
+  getCreatePostPalette,
+} from "@/constants/styles/create-post.styles";
+import { useAppTheme } from "@/hooks/useAppTheme";
 
 type ComposerAttachment = {
   id: string;
@@ -64,8 +61,6 @@ type TagOptionMeta = {
   description: string;
 };
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
 const TAG_DESCRIPTIONS: Record<PostTag, string> = {
   GENERAL: "General update or everyday post",
   ANNOUNCEMENT: "Important notice for members",
@@ -83,14 +78,14 @@ const TAG_OPTIONS: TagOptionMeta[] = POST_TAGS.map((tag) => ({
 }));
 
 const MAX_ATTACHMENTS = 10;
+const FLOATING_TAB_OFFSET = 92;
+const FOOTER_RESERVED_SPACE = 180;
 
 let _idCounter = 0;
 function makeId(prefix: string): string {
   _idCounter += 1;
   return `${prefix}-${_idCounter}`;
 }
-
-// ─── Community Picker Modal ───────────────────────────────────────────────────
 
 type CommunityPickerModalProps = {
   visible: boolean;
@@ -106,7 +101,6 @@ type CommunityPickerModalProps = {
   onSearchChange: (v: string) => void;
   onSelect: (id: string) => void;
   onClose: () => void;
-  isDark: boolean;
 };
 
 function CommunityPickerModal({
@@ -117,18 +111,10 @@ function CommunityPickerModal({
   onSearchChange,
   onSelect,
   onClose,
-  isDark,
 }: CommunityPickerModalProps) {
-  const p = {
-    backdrop: "rgba(0,0,0,0.3)",
-    overlay: isDark ? "#0b3f20" : "#ffffff",
-    surface: isDark ? "#14532d" : "#f8fffa",
-    text: isDark ? "#f0fdf4" : COLORS.text,
-    muted: isDark ? "#a7f3d0" : COLORS.muted,
-    border: isDark ? "#166534" : COLORS.border,
-    placeholder: isDark ? "#a7f3d0" : COLORS.placeholder,
-    selected: isDark ? "#166534" : "#dcfce7",
-  };
+  const { colors, isDark } = useAppTheme();
+  const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
+  const styles = useMemo(() => createCreatePostStyles(p), [p]);
 
   return (
     <Modal
@@ -140,45 +126,25 @@ function CommunityPickerModal({
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Pressable
-          style={[styles.backdrop, { backgroundColor: p.backdrop }]}
-          onPress={onClose}
-        >
-          <Pressable
-            style={[
-              styles.pickerOverlay,
-              { backgroundColor: p.overlay, borderColor: p.border },
-            ]}
-            onPress={() => {}}
-          >
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable style={styles.pickerOverlay} onPress={() => {}}>
             <View style={styles.pickerHeader}>
-              <Text style={[styles.pickerTitle, { color: p.text }]}>Post to</Text>
-              <Pressable
-                onPress={onClose}
-                style={[
-                  styles.closeBtn,
-                  { backgroundColor: p.surface, borderColor: p.border },
-                ]}
-              >
+              <Text style={styles.pickerTitle}>Post to</Text>
+              <Pressable onPress={onClose} style={styles.closeBtn}>
                 <Ionicons name="close" size={18} color={p.text} />
               </Pressable>
             </View>
 
-            <View
-              style={[
-                styles.searchRow,
-                { backgroundColor: p.surface, borderColor: p.border },
-              ]}
-            >
+            <View style={styles.searchRow}>
               <Ionicons name="search-outline" size={18} color={p.muted} />
               <TextInput
                 value={searchValue}
                 onChangeText={onSearchChange}
                 placeholder="Search communities"
                 placeholderTextColor={p.placeholder}
-                style={[styles.searchInput, { color: p.text }]}
+                style={styles.searchInput}
                 returnKeyType="search"
                 autoCorrect={false}
               />
@@ -190,12 +156,11 @@ function CommunityPickerModal({
               keyboardShouldPersistTaps="handled"
             >
               {communities.length === 0 ? (
-                <Text style={[styles.emptyText, { color: p.muted }]}>
-                  No community found
-                </Text>
+                <Text style={styles.emptyText}>No community found</Text>
               ) : (
                 communities.map((item) => {
                   const isSelected = item.id === selectedId;
+
                   return (
                     <Pressable
                       key={item.id}
@@ -205,46 +170,33 @@ function CommunityPickerModal({
                       }}
                       style={[
                         styles.communityRow,
-                        {
-                          borderBottomColor: p.border,
-                          backgroundColor: isSelected ? p.selected : "transparent",
-                        },
+                        isSelected && styles.communityRowSelected,
                       ]}
                     >
-                      <View
-                        style={[
-                          styles.communityAvatar,
-                          { backgroundColor: p.surface, borderColor: p.border },
-                        ]}
-                      >
+                      <View style={styles.communityAvatar}>
                         {item.avatarImage ? (
                           <Image
                             source={{ uri: item.avatarImage }}
                             style={styles.communityAvatarImg}
                           />
                         ) : (
-                          <Text
-                            style={[styles.communityAvatarText, { color: p.muted }]}
-                          >
+                          <Text style={styles.communityAvatarText}>
                             {item.name.charAt(0).toUpperCase()}
                           </Text>
                         )}
                       </View>
 
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.communityName, { color: p.text }]}>
-                          {item.name}
-                        </Text>
+                        <Text style={styles.communityName}>{item.name}</Text>
+
                         {item.memberCount != null && (
-                          <Text style={[styles.communityMeta, { color: p.muted }]}>
+                          <Text style={styles.communityMeta}>
                             {item.memberCount.toLocaleString()} members · Joined
                           </Text>
                         )}
+
                         {!!item.description && (
-                          <Text
-                            numberOfLines={1}
-                            style={[styles.communityDesc, { color: p.muted }]}
-                          >
+                          <Text numberOfLines={1} style={styles.communityDesc}>
                             {item.description}
                           </Text>
                         )}
@@ -254,7 +206,7 @@ function CommunityPickerModal({
                         <Ionicons
                           name="checkmark-circle"
                           size={20}
-                          color={COLORS.primary}
+                          color={p.accentStrong}
                         />
                       )}
                     </Pressable>
@@ -269,14 +221,11 @@ function CommunityPickerModal({
   );
 }
 
-// ─── Tag Picker Modal ─────────────────────────────────────────────────────────
-
 type TagPickerModalProps = {
   visible: boolean;
   selectedTag: PostTag;
   onSelect: (tag: PostTag) => void;
   onClose: () => void;
-  isDark: boolean;
 };
 
 function TagPickerModal({
@@ -284,17 +233,10 @@ function TagPickerModal({
   selectedTag,
   onSelect,
   onClose,
-  isDark,
 }: TagPickerModalProps) {
-  const p = {
-    backdrop: "rgba(0,0,0,0.3)",
-    overlay: isDark ? "#0b3f20" : "#ffffff",
-    surface: isDark ? "#14532d" : "#f8fffa",
-    text: isDark ? "#f0fdf4" : COLORS.text,
-    muted: isDark ? "#a7f3d0" : COLORS.muted,
-    border: isDark ? "#166534" : COLORS.border,
-    selected: isDark ? "#166534" : "#dcfce7",
-  };
+  const { colors, isDark } = useAppTheme();
+  const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
+  const styles = useMemo(() => createCreatePostStyles(p), [p]);
 
   return (
     <Modal
@@ -304,26 +246,11 @@ function TagPickerModal({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Pressable
-        style={[styles.backdrop, { backgroundColor: p.backdrop }]}
-        onPress={onClose}
-      >
-        <Pressable
-          style={[
-            styles.pickerOverlay,
-            { backgroundColor: p.overlay, borderColor: p.border },
-          ]}
-          onPress={() => {}}
-        >
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.pickerOverlay} onPress={() => {}}>
           <View style={styles.pickerHeader}>
-            <Text style={[styles.pickerTitle, { color: p.text }]}>Choose tag</Text>
-            <Pressable
-              onPress={onClose}
-              style={[
-                styles.closeBtn,
-                { backgroundColor: p.surface, borderColor: p.border },
-              ]}
-            >
+            <Text style={styles.pickerTitle}>Choose tag</Text>
+            <Pressable onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={18} color={p.text} />
             </Pressable>
           </View>
@@ -334,6 +261,7 @@ function TagPickerModal({
           >
             {TAG_OPTIONS.map((item) => {
               const isSelected = item.value === selectedTag;
+
               return (
                 <Pressable
                   key={item.value}
@@ -341,24 +269,19 @@ function TagPickerModal({
                     onSelect(item.value);
                     onClose();
                   }}
-                  style={[
-                    styles.tagRow,
-                    {
-                      borderColor: p.border,
-                      backgroundColor: isSelected ? p.selected : p.surface,
-                    },
-                  ]}
+                  style={[styles.tagRow, isSelected && styles.tagRowSelected]}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.tagLabel, { color: p.text }]}>
-                      {item.label}
-                    </Text>
-                    <Text style={[styles.tagDesc, { color: p.muted }]}>
-                      {item.description}
-                    </Text>
+                    <Text style={styles.tagLabel}>{item.label}</Text>
+                    <Text style={styles.tagDesc}>{item.description}</Text>
                   </View>
+
                   {isSelected && (
-                    <Ionicons name="checkmark" size={18} color={COLORS.primary} />
+                    <Ionicons
+                      name="checkmark"
+                      size={18}
+                      color={p.accentStrong}
+                    />
                   )}
                 </Pressable>
               );
@@ -370,29 +293,51 @@ function TagPickerModal({
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+function ComposerActionButton({
+  label,
+  variant,
+  disabled,
+  onPress,
+  styles,
+}: {
+  label: string;
+  variant: "outline" | "secondary" | "primary";
+  disabled?: boolean;
+  onPress?: () => void;
+  styles: ReturnType<typeof createCreatePostStyles>;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.footerButton,
+        variant === "outline" && styles.footerButtonOutline,
+        variant === "secondary" && styles.footerButtonSecondary,
+        variant === "primary" && styles.footerButtonPrimary,
+        disabled && styles.buttonDisabled,
+      ]}
+    >
+      <Text
+        style={[
+          variant === "outline" && styles.footerButtonTextOutline,
+          variant === "secondary" && styles.footerButtonTextSecondary,
+          variant === "primary" && styles.footerButtonTextPrimary,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 export default function CreatePostScreen() {
-  const scheme = useColorScheme();
-  const isDark = scheme === "dark";
+  const { colors, isDark } = useAppTheme();
   const { toast } = useToast();
   const insets = useSafeAreaInsets();
 
-  const p = {
-    screen: isDark ? "#052e16" : COLORS.background,
-    card: isDark ? "#0b3f20" : COLORS.card,
-    soft: isDark ? "#14532d" : "#f8fffa",
-    text: isDark ? "#f0fdf4" : COLORS.text,
-    muted: isDark ? "#a7f3d0" : COLORS.muted,
-    border: isDark ? "#166534" : COLORS.border,
-    input: isDark ? "#14532d" : COLORS.card,
-    placeholder: isDark ? "#a7f3d0" : COLORS.placeholder,
-    danger: COLORS.danger,
-    divider: isDark ? "#166534" : "#e8f5e9",
-    iconSurface: isDark ? "rgba(5,46,22,0.9)" : "rgba(255,255,255,0.95)",
-    iconBorder: isDark ? "#166534" : "#d1fae5",
-    badgeBg: isDark ? "rgba(5,46,22,0.85)" : "rgba(255,255,255,0.92)",
-  };
+  const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
+  const styles = useMemo(() => createCreatePostStyles(p), [p]);
 
   const isMountedRef = useRef(true);
 
@@ -413,15 +358,14 @@ export default function CreatePostScreen() {
           <Ionicons
             name={variant === "success" ? "checkmark-circle" : "close-circle"}
             size={20}
-            color={variant === "success" ? COLORS.primary : COLORS.danger}
+            color={variant === "success" ? colors.success : colors.danger}
           />
         ),
       });
     },
-    [toast]
+    [toast, colors.success, colors.danger]
   );
 
-  // ── State ──
   const [postTab, setPostTab] = useState<PostTab>("text");
   const [draftsTabActive, setDraftsTabActive] = useState(false);
   const [communitySearch, setCommunitySearch] = useState("");
@@ -436,7 +380,6 @@ export default function CreatePostScreen() {
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // ── Queries ──
   const { data: communities = [], isLoading: isLoadingCommunities } =
     useGetMyCommunitiesQuery();
   const { data: drafts = [], isLoading: isLoadingDrafts } = useGetMyDraftsQuery();
@@ -460,11 +403,12 @@ export default function CreatePostScreen() {
     isUpdatingPost ||
     isPublishingDraft;
 
-  // ── Editor ──
-  const editor = useCreateEditor(isDark);
+  const editor = useCreateEditor();
 
   const bridgeState = useBridgeState(editor);
   const isEditorReady = bridgeState?.isReady ?? false;
+  const isEditorFocused = bridgeState?.isFocused ?? false;
+
   const isEditorReadyRef = useRef(false);
   const pendingContentRef = useRef<string | null>(null);
 
@@ -488,7 +432,6 @@ export default function CreatePostScreen() {
     [editor]
   );
 
-  // ── Defaults ──
   useEffect(() => {
     if (!selectedCommunityId && communities.length > 0) {
       setSelectedCommunityId(communities[0].id);
@@ -511,7 +454,6 @@ export default function CreatePostScreen() {
     [selectedTag]
   );
 
-  // ── Helpers ──
   const resetComposer = useCallback(() => {
     setActiveDraftId(null);
     setSelectedTag("GENERAL");
@@ -678,7 +620,6 @@ export default function CreatePostScreen() {
     };
   }, []);
 
-  // ── Actions ──
   const saveDraft = async () => {
     try {
       setErrors({});
@@ -722,11 +663,7 @@ export default function CreatePostScreen() {
         }).unwrap();
 
         if (isMountedRef.current) {
-          showStatusToast(
-            "success",
-            "Draft updated",
-            "Your draft has been updated."
-          );
+          showStatusToast("success", "Draft updated", "Your draft has been updated.");
         }
       } else {
         const created = await createCommunityDraft({
@@ -736,11 +673,7 @@ export default function CreatePostScreen() {
 
         if (isMountedRef.current) {
           setActiveDraftId(created.id);
-          showStatusToast(
-            "success",
-            "Draft saved",
-            "Your draft has been saved."
-          );
+          showStatusToast("success", "Draft saved", "Your draft has been saved.");
         }
       }
 
@@ -889,11 +822,7 @@ export default function CreatePostScreen() {
       return (
         <View
           key={item.id}
-          style={[
-            styles.mediaTile,
-            index % 3 !== 2 && styles.mediaTileGap,
-            { backgroundColor: p.soft, borderColor: p.border },
-          ]}
+          style={[styles.mediaTile, index % 3 !== 2 && styles.mediaTileGap]}
         >
           <View style={styles.mediaPreviewWrap}>
             {isImage ? (
@@ -903,53 +832,24 @@ export default function CreatePostScreen() {
                 resizeMode="cover"
               />
             ) : (
-              <View style={[styles.mediaVideoBox, { backgroundColor: p.soft }]}>
+              <View style={styles.mediaVideoBox}>
                 <Ionicons name="videocam-outline" size={22} color={p.text} />
-                <Text style={[styles.videoText, { color: p.text }]}>Video</Text>
+                <Text style={styles.videoText}>Video</Text>
               </View>
             )}
 
             <View style={styles.mediaActionRow}>
-              <Pressable
-                onPress={() => replaceAttachment(item.id)}
-                style={[
-                  styles.mediaActionBtn,
-                  {
-                    backgroundColor: p.iconSurface,
-                    borderColor: p.iconBorder,
-                  },
-                ]}
-              >
+              <Pressable onPress={() => replaceAttachment(item.id)} style={styles.mediaActionBtn}>
                 <Ionicons name="create-outline" size={15} color={p.text} />
               </Pressable>
 
-              <Pressable
-                onPress={() => removeAttachment(item.id)}
-                style={[
-                  styles.mediaActionBtn,
-                  {
-                    backgroundColor: p.iconSurface,
-                    borderColor: p.iconBorder,
-                  },
-                ]}
-              >
-                <Ionicons name="trash-outline" size={15} color={COLORS.danger} />
+              <Pressable onPress={() => removeAttachment(item.id)} style={styles.mediaActionBtn}>
+                <Ionicons name="trash-outline" size={15} color={p.danger} />
               </Pressable>
             </View>
 
-            <View
-              style={[
-                styles.mediaBadge,
-                {
-                  backgroundColor: p.badgeBg,
-                  borderColor: p.iconBorder,
-                },
-              ]}
-            >
-              <Text
-                numberOfLines={1}
-                style={[styles.mediaBadgeText, { color: p.text }]}
-              >
+            <View style={styles.mediaBadge}>
+              <Text numberOfLines={1} style={styles.mediaBadgeText}>
                 {item.source === "local" ? "Ready" : "Uploaded"}
               </Text>
             </View>
@@ -957,27 +857,22 @@ export default function CreatePostScreen() {
         </View>
       );
     },
-    [p, removeAttachment, replaceAttachment]
+    [p.text, p.danger, removeAttachment, replaceAttachment, styles]
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: p.screen }} edges={["top"]}>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.contentWrap}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={{ flex: 1 }}>
-          <View style={[styles.topBar, { borderBottomColor: p.divider }]}>
-            <Text style={[styles.screenTitle, { color: p.text }]}>Create post</Text>
+        <View style={styles.contentWrap}>
+          <View style={styles.topBar}>
+            <Text style={styles.screenTitle}>Create post</Text>
 
-            <Pressable
-              onPress={() => setDraftsTabActive((v) => !v)}
-              style={styles.draftsChip}
-            >
-              <Text style={[styles.draftsChipText, { color: COLORS.primary }]}>
-                Drafts
-              </Text>
-              <View style={[styles.draftsCount, { backgroundColor: COLORS.primary }]}>
+            <Pressable onPress={() => setDraftsTabActive((v) => !v)} style={styles.draftsChip}>
+              <Text style={styles.draftsChipText}>Drafts</Text>
+              <View style={styles.draftsCount}>
                 <Text style={styles.draftsCountText}>{drafts.length}</Text>
               </View>
             </Pressable>
@@ -985,16 +880,14 @@ export default function CreatePostScreen() {
 
           {draftsTabActive ? (
             <View style={styles.draftsContainer}>
-              <View style={[styles.draftsHeader, { borderBottomColor: p.divider }]}>
-                <Text style={[styles.draftPanelTitle, { color: p.text }]}>
-                  Your drafts
-                </Text>
+              <View style={styles.draftsHeader}>
+                <Text style={styles.draftPanelTitle}>Your drafts</Text>
                 <Pressable onPress={() => setDraftsTabActive(false)}>
                   <Ionicons name="close" size={22} color={p.muted} />
                 </Pressable>
               </View>
 
-              <Text style={[styles.draftPanelSub, { color: p.muted }]}>
+              <Text style={styles.draftPanelSub}>
                 Open a draft to continue editing or delete the ones you do not need.
               </Text>
 
@@ -1010,19 +903,16 @@ export default function CreatePostScreen() {
             </View>
           ) : (
             <>
-              <View style={[styles.communityBar, { borderBottomColor: p.divider }]}>
+              <View style={styles.communityBar}>
                 <Pressable
                   onPress={() => setCommunityModalVisible(true)}
-                  style={[
-                    styles.communityBtn,
-                    { backgroundColor: p.soft, borderColor: p.border },
-                  ]}
+                  style={styles.communityBtn}
                 >
                   <Text
                     numberOfLines={1}
                     style={[
                       styles.communityBtnText,
-                      { color: selectedCommunity ? p.text : p.placeholder },
+                      !selectedCommunity && { color: p.placeholder },
                     ]}
                   >
                     {isLoadingCommunities
@@ -1033,7 +923,7 @@ export default function CreatePostScreen() {
                 </Pressable>
               </View>
 
-              <View style={[styles.tabBar, { borderBottomColor: p.divider }]}>
+              <View style={styles.tabBar}>
                 {(["text", "media", "link"] as PostTab[]).map((tab) => {
                   const labels: Record<PostTab, string> = {
                     text: "Text",
@@ -1049,7 +939,7 @@ export default function CreatePostScreen() {
                       style={[
                         styles.tabItem,
                         isActive && {
-                          borderBottomColor: COLORS.primary,
+                          borderBottomColor: p.accentStrong,
                           borderBottomWidth: 2,
                         },
                       ]}
@@ -1057,7 +947,7 @@ export default function CreatePostScreen() {
                       <Text
                         style={[
                           styles.tabLabel,
-                          { color: isActive ? COLORS.primary : p.muted },
+                          { color: isActive ? p.accentStrong : p.muted },
                         ]}
                       >
                         {labels[tab]}
@@ -1068,24 +958,24 @@ export default function CreatePostScreen() {
               </View>
 
               <ScrollView
-                style={{ flex: 1 }}
+                style={styles.composerScroll}
+                scrollEnabled={!isEditorFocused}
+                nestedScrollEnabled={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="none"
                 contentContainerStyle={[
                   styles.scrollContent,
-                  { paddingBottom: insets.bottom + 16 },
+                  {
+                    paddingBottom:
+                      insets.bottom + FLOATING_TAB_OFFSET + FOOTER_RESERVED_SPACE,
+                  },
                 ]}
-                keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
               >
                 <View style={styles.tagsRow}>
-                  <Pressable
-                    onPress={() => setTagModalVisible(true)}
-                    style={[
-                      styles.tagChip,
-                      { backgroundColor: p.soft, borderColor: p.border },
-                    ]}
-                  >
+                  <Pressable onPress={() => setTagModalVisible(true)} style={styles.tagChip}>
                     <Ionicons name="pricetag-outline" size={14} color={p.muted} />
-                    <Text style={[styles.tagChipText, { color: p.muted }]}>
+                    <Text style={styles.tagChipText}>
                       {selectedTagMeta ? selectedTagMeta.label : "Add tags"}
                     </Text>
                     <Ionicons name="chevron-down" size={14} color={p.muted} />
@@ -1097,16 +987,11 @@ export default function CreatePostScreen() {
                     <AppRichTextEditor
                       editor={editor}
                       onChangeHtml={handleHtmlChange}
-                      placeholder="Write something..."
                       label="Description"
-                      editorHeight={260}
-                      showToolbar={true}
+                      editorHeight={320}
+                      showToolbar
                     />
-                    {errors.content ? (
-                      <Text style={[styles.errorText, { color: p.danger }]}>
-                        {errors.content}
-                      </Text>
-                    ) : null}
+                    {errors.content ? <Text style={styles.errorText}>{errors.content}</Text> : null}
                   </>
                 )}
 
@@ -1115,102 +1000,55 @@ export default function CreatePostScreen() {
                     <AppRichTextEditor
                       editor={editor}
                       onChangeHtml={handleHtmlChange}
-                      placeholder="Write something..."
                       label="Description"
-                      editorHeight={220}
-                      showToolbar={true}
+                      editorHeight={280}
+                      showToolbar
                     />
-                    {errors.content ? (
-                      <Text style={[styles.errorText, { color: p.danger }]}>
-                        {errors.content}
-                      </Text>
-                    ) : null}
+                    {errors.content ? <Text style={styles.errorText}>{errors.content}</Text> : null}
 
-                    <View
-                      style={[
-                        styles.sectionCard,
-                        { backgroundColor: p.card, borderColor: p.border },
-                      ]}
-                    >
+                    <View style={styles.sectionCard}>
                       <View style={styles.mediaSectionHeader}>
-                        <Text style={[styles.sectionTitle, { color: p.text }]}>
-                          Images & Video
-                        </Text>
+                        <Text style={styles.sectionTitle}>Images & Video</Text>
 
                         {attachments.length > 0 && (
-                          <Pressable
-                            onPress={pickMedia}
-                            style={[
-                              styles.addMoreBtn,
-                              { backgroundColor: p.soft, borderColor: p.border },
-                            ]}
-                          >
-                            <Ionicons name="add" size={14} color={COLORS.primary} />
+                          <Pressable onPress={pickMedia} style={styles.addMoreBtn}>
+                            <Ionicons name="add" size={14} color={p.accentStrong} />
                             <Text style={styles.addMoreBtnText}>Add more</Text>
                           </Pressable>
                         )}
                       </View>
 
                       {attachments.length === 0 ? (
-                        <Pressable
-                          onPress={pickMedia}
-                          style={[
-                            styles.mediaDropZone,
-                            { borderColor: p.border, backgroundColor: p.soft },
-                          ]}
-                        >
+                        <Pressable onPress={pickMedia} style={styles.mediaDropZone}>
                           <Ionicons
                             name="cloud-upload-outline"
                             size={28}
                             color={p.muted}
                           />
-                          <Text style={[styles.mediaDropText, { color: p.muted }]}>
-                            Tap to upload media
-                          </Text>
+                          <Text style={styles.mediaDropText}>Tap to upload media</Text>
                         </Pressable>
                       ) : (
                         <>
-                          <Text style={[styles.uploadCountText, { color: p.muted }]}>
+                          <Text style={styles.uploadCountText}>
                             {attachments.length}/{MAX_ATTACHMENTS} selected
                           </Text>
 
                           <View style={styles.mediaGrid}>
-                            {attachments.map((item, index) =>
-                              renderMediaTile(item, index)
-                            )}
+                            {attachments.map((item, index) => renderMediaTile(item, index))}
                           </View>
                         </>
                       )}
 
-                      {errors.media ? (
-                        <Text style={[styles.errorText, { color: p.danger }]}>
-                          {errors.media}
-                        </Text>
-                      ) : null}
+                      {errors.media ? <Text style={styles.errorText}>{errors.media}</Text> : null}
                     </View>
                   </>
                 )}
 
                 {postTab === "link" && (
-                  <View
-                    style={[
-                      styles.sectionCard,
-                      { backgroundColor: p.card, borderColor: p.border },
-                    ]}
-                  >
-                    <Text style={[styles.sectionTitle, { color: p.text }]}>
-                      Link
-                    </Text>
+                  <View style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>Link</Text>
 
-                    <View
-                      style={[
-                        styles.linkWrap,
-                        {
-                          borderColor: p.border,
-                          backgroundColor: p.input,
-                        },
-                      ]}
-                    >
+                    <View style={styles.linkWrap}>
                       <TextInput
                         value={linkUrl}
                         onChangeText={setLinkUrl}
@@ -1218,49 +1056,52 @@ export default function CreatePostScreen() {
                         placeholderTextColor={p.placeholder}
                         autoCapitalize="none"
                         keyboardType="url"
-                        style={[styles.linkInput, { color: p.text }]}
+                        style={styles.linkInput}
                       />
                     </View>
 
-                    {errors.linkUrl ? (
-                      <Text style={[styles.errorText, { color: p.danger }]}>
-                        {errors.linkUrl}
-                      </Text>
-                    ) : null}
+                    {errors.linkUrl ? <Text style={styles.errorText}>{errors.linkUrl}</Text> : null}
                   </View>
                 )}
-
-                <View style={[styles.actionRow, { borderTopColor: p.divider }]}>
-                  {activeDraftId && (
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      isDisabled={busy}
-                      onPress={resetComposer}
-                    >
-                      <Button.Label>New post</Button.Label>
-                    </Button>
-                  )}
-
-                  <Button
-                    variant="secondary"
-                    className="flex-1"
-                    isDisabled={busy || isLoadingCommunities}
-                    onPress={saveDraft}
-                  >
-                    <Button.Label>Save Draft</Button.Label>
-                  </Button>
-
-                  <Button
-                    variant="primary"
-                    className="flex-1"
-                    isDisabled={busy || isLoadingCommunities}
-                    onPress={publish}
-                  >
-                    <Button.Label>Post</Button.Label>
-                  </Button>
-                </View>
               </ScrollView>
+
+              <View
+                style={[
+                  styles.footerWrap,
+                  {
+                    paddingBottom: Math.max(insets.bottom, 10),
+                    marginBottom: FLOATING_TAB_OFFSET,
+                  },
+                ]}
+              >
+                <View style={styles.footerRow}>
+                  {activeDraftId ? (
+                    <ComposerActionButton
+                      label="New post"
+                      variant="outline"
+                      disabled={busy}
+                      onPress={resetComposer}
+                      styles={styles}
+                    />
+                  ) : null}
+
+                  <ComposerActionButton
+                    label="Save Draft"
+                    variant="secondary"
+                    disabled={busy || isLoadingCommunities}
+                    onPress={saveDraft}
+                    styles={styles}
+                  />
+
+                  <ComposerActionButton
+                    label="Post"
+                    variant="primary"
+                    disabled={busy || isLoadingCommunities}
+                    onPress={publish}
+                    styles={styles}
+                  />
+                </View>
+              </View>
             </>
           )}
         </View>
@@ -1277,7 +1118,6 @@ export default function CreatePostScreen() {
           setCommunityModalVisible(false);
           setCommunitySearch("");
         }}
-        isDark={isDark}
       />
 
       <TagPickerModal
@@ -1285,397 +1125,7 @@ export default function CreatePostScreen() {
         selectedTag={selectedTag}
         onSelect={(tag) => setSelectedTag(tag)}
         onClose={() => setTagModalVisible(false)}
-        isDark={isDark}
       />
     </SafeAreaView>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  screenTitle: {
-    fontSize: 22,
-    fontFamily: "Poppins_600SemiBold",
-  },
-
-  draftsChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  draftsChipText: {
-    fontSize: 14,
-    fontFamily: "Poppins_500Medium",
-  },
-  draftsCount: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-  },
-  draftsCountText: {
-    color: "#fff",
-    fontSize: 11,
-    fontFamily: "Poppins_600SemiBold",
-  },
-
-  communityBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  communityBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderRadius: 20,
-  },
-  communityBtnText: {
-    fontSize: 14,
-    fontFamily: "Poppins_500Medium",
-    maxWidth: 200,
-  },
-
-  tabBar: {
-    flexDirection: "row",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 4,
-  },
-  tabItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-  tabLabel: {
-    fontSize: 14,
-    fontFamily: "Poppins_500Medium",
-  },
-
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    gap: 14,
-  },
-
-  tagsRow: {
-    flexDirection: "row",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-  tagChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderRadius: 20,
-    borderStyle: "dashed",
-  },
-  tagChipText: {
-    fontSize: 13,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  sectionCard: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 14,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontFamily: "Poppins_600SemiBold",
-  },
-
-  mediaSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  addMoreBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  addMoreBtnText: {
-    fontSize: 12,
-    color: COLORS.primary,
-    fontFamily: "Poppins_500Medium",
-  },
-  uploadCountText: {
-    marginTop: 12,
-    fontSize: 12,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  linkWrap: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginTop: 12,
-  },
-  linkInput: {
-    fontSize: 15,
-    fontFamily: "Poppins_400Regular",
-    minHeight: 46,
-  },
-
-  errorText: {
-    fontSize: 12,
-    fontFamily: "Poppins_400Regular",
-    marginTop: 6,
-  },
-
-  mediaDropZone: {
-    borderWidth: 1.5,
-    borderStyle: "dashed",
-    borderRadius: 16,
-    paddingVertical: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    marginTop: 12,
-  },
-  mediaDropText: {
-    fontSize: 14,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  mediaGrid: {
-    marginTop: 12,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "flex-start",
-  },
-  mediaTile: {
-    width: "31.33%",
-    marginBottom: 10,
-  },
-  mediaTileGap: {
-    marginRight: "3%",
-  },
-  mediaPreviewWrap: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 16,
-    overflow: "hidden",
-    position: "relative",
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  mediaImage: {
-    width: "100%",
-    height: "100%",
-  },
-  mediaVideoBox: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
-  videoText: {
-    fontSize: 11,
-    fontFamily: "Poppins_500Medium",
-  },
-  mediaActionRow: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    flexDirection: "row",
-    gap: 6,
-  },
-  mediaActionBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  mediaBadge: {
-    position: "absolute",
-    left: 6,
-    bottom: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    maxWidth: "80%",
-  },
-  mediaBadgeText: {
-    fontSize: 10,
-    fontFamily: "Poppins_500Medium",
-  },
-
-  actionRow: {
-    flexDirection: "row",
-    gap: 10,
-    paddingTop: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    marginTop: 4,
-  },
-
-  draftsContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
-  draftsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 8,
-  },
-  draftPanelTitle: {
-    fontSize: 20,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  draftPanelSub: {
-    fontSize: 13,
-    lineHeight: 20,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  backdrop: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 16,
-  },
-  pickerOverlay: {
-    maxHeight: "78%",
-    borderWidth: 1,
-    borderRadius: 24,
-    overflow: "hidden",
-  },
-  pickerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  pickerTitle: {
-    fontSize: 18,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    paddingHorizontal: 14,
-    height: 48,
-    borderWidth: 1,
-    borderRadius: 14,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: "Poppins_400Regular",
-  },
-  pickerList: {
-    paddingHorizontal: 0,
-    paddingBottom: 16,
-  },
-  communityRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  communityAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  communityAvatarImg: {
-    width: 40,
-    height: 40,
-  },
-  communityAvatarText: {
-    fontSize: 16,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  communityName: {
-    fontSize: 15,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  communityMeta: {
-    fontSize: 12,
-    fontFamily: "Poppins_400Regular",
-    marginTop: 2,
-  },
-  communityDesc: {
-    fontSize: 12,
-    fontFamily: "Poppins_400Regular",
-    marginTop: 2,
-  },
-  emptyText: {
-    textAlign: "center",
-    padding: 24,
-    fontSize: 14,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  tagRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderRadius: 14,
-    gap: 12,
-  },
-  tagLabel: {
-    fontSize: 15,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  tagDesc: {
-    fontSize: 12,
-    fontFamily: "Poppins_400Regular",
-    marginTop: 3,
-    lineHeight: 18,
-  },
-});

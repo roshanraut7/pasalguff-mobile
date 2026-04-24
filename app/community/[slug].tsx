@@ -12,7 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "heroui-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { COLORS } from "@/constants/colors";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { useSession } from "@/api/better-auth-client";
 import {
@@ -31,6 +31,7 @@ import PostMediaViewer from "@/components/post/PostMediaViewer";
 export default function CommunityDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { data: session, isPending } = useSession();
+  const { colors } = useAppTheme();
 
   const [tab, setTab] = useState("posts");
   const [isJoining, setIsJoining] = useState(false);
@@ -151,7 +152,7 @@ export default function CommunityDetailScreen() {
   if (isPending || communityLoading || accessLoading) {
     return (
       <View style={{ flex: 1 }} className="items-center justify-center bg-background">
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
@@ -160,17 +161,10 @@ export default function CommunityDetailScreen() {
     return <Redirect href="/(auth)" />;
   }
 
-  if (!community || communityError) {
+  if (communityError || !community) {
     return (
-      <SafeAreaView style={{ flex: 1 }} className="bg-background">
-        <View className="px-5 pt-6">
-          <Pressable
-            onPress={() => router.back()}
-            className="mb-5 h-[42px] w-[42px] items-center justify-center rounded-full border border-border bg-surface"
-          >
-            <Ionicons name="chevron-back" size={20} color={COLORS.primary} />
-          </Pressable>
-
+      <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
+        <View className="flex-1 items-center justify-center px-6">
           <Text
             className="text-foreground"
             style={{
@@ -250,7 +244,7 @@ export default function CommunityDetailScreen() {
                       <Ionicons
                         name="people-outline"
                         size={40}
-                        color={COLORS.primary}
+                        color={colors.accent}
                       />
                     </View>
                   )}
@@ -306,7 +300,7 @@ export default function CommunityDetailScreen() {
                     <View className="rounded-full bg-segment px-3 py-2">
                       <Text
                         style={{
-                          color: COLORS.primary,
+                          color: colors.segmentForeground,
                           fontSize: 12,
                           fontFamily: "Poppins_600SemiBold",
                         }}
@@ -321,11 +315,14 @@ export default function CommunityDetailScreen() {
                       className="rounded-full bg-accent px-4 py-2"
                     >
                       {isJoining ? (
-                        <ActivityIndicator size="small" color="#ffffff" />
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.accentForeground}
+                        />
                       ) : (
                         <Text
                           style={{
-                            color: "#ffffff",
+                            color: colors.accentForeground,
                             fontSize: 12,
                             fontFamily: "Poppins_600SemiBold",
                           }}
@@ -338,16 +335,13 @@ export default function CommunityDetailScreen() {
                 </View>
               </View>
 
-              <View
-                className="mt-5 flex-row justify-between"
-                style={{ width: "100%" }}
-              >
+              <View className="mt-5 flex-row items-center gap-3">
+                <StatCard label="Posts" value={totalPostCount} />
                 <StatCard label="Members" value={String(memberCount)} />
-                <StatCard label="Posts" value={String(totalPostCount)} />
               </View>
             </View>
 
-            <View className="mt-5">
+            <View className="mt-6">
               <Tabs
                 value={tab}
                 onValueChange={setTab}
@@ -361,7 +355,7 @@ export default function CommunityDetailScreen() {
                     scrollAlign="start"
                     contentContainerStyle={{
                       flexDirection: "row",
-                      gap: 14,
+                      gap: 20,
                       paddingLeft: 20,
                       paddingRight: 24,
                     }}
@@ -398,13 +392,13 @@ export default function CommunityDetailScreen() {
                         </Text>
                       ) : postsLoading ? (
                         <View className="py-8">
-                          <ActivityIndicator size="small" color={COLORS.primary} />
+                          <ActivityIndicator size="small" color={colors.accent} />
                         </View>
                       ) : postsError ? (
                         <Text
                           className="mt-2 px-5"
                           style={{
-                            color: COLORS.danger,
+                            color: colors.danger,
                             fontSize: 14,
                             fontFamily: "Poppins_500Medium",
                           }}
@@ -455,27 +449,32 @@ export default function CommunityDetailScreen() {
                         icon="people-outline"
                         label="Community Name"
                         value={community.name}
+                        colors={colors}
                       />
                       <InfoRow
                         icon="grid-outline"
                         label="Category"
                         value={community.category?.name ?? "-"}
+                        colors={colors}
                       />
                       <InfoRow
                         icon="lock-closed-outline"
                         label="Visibility"
                         value={community.visibility}
+                        colors={colors}
                       />
                       <InfoRow
                         icon="shield-checkmark-outline"
                         label="Your Role"
                         value={roleLabel ?? "Visitor"}
+                        colors={colors}
                       />
                       <InfoRow
                         icon="document-text-outline"
                         label="Description"
                         value={community.description || "-"}
                         multiline
+                        colors={colors}
                       />
                     </View>
                   </Tabs.Content>
@@ -513,12 +512,12 @@ export default function CommunityDetailScreen() {
                       ) : canLoadMembers ? (
                         membersLoading ? (
                           <View className="py-6">
-                            <ActivityIndicator size="small" color={COLORS.primary} />
+                            <ActivityIndicator size="small" color={colors.accent} />
                           </View>
                         ) : membersError ? (
                           <Text
                             style={{
-                              color: COLORS.danger,
+                              color: colors.danger,
                               fontSize: 14,
                               fontFamily: "Poppins_500Medium",
                             }}
@@ -559,7 +558,7 @@ export default function CommunityDetailScreen() {
                                         <Ionicons
                                           name="person-outline"
                                           size={20}
-                                          color={COLORS.primary}
+                                          color={colors.accent}
                                         />
                                       </View>
                                     )}
@@ -633,28 +632,24 @@ function StatCard({
   value: string;
 }) {
   return (
-    <View
-      className="rounded-[18px] border border-border bg-surface px-4 py-4"
-      style={{ width: "48.5%" }}
-    >
+    <View className="flex-1 rounded-[22px] border border-border bg-surface px-4 py-4">
       <Text
-        className="text-muted"
-        style={{
-          fontSize: 12,
-          fontFamily: "Poppins_500Medium",
-        }}
-      >
-        {label}
-      </Text>
-
-      <Text
-        className="mt-1 text-foreground"
+        className="text-foreground"
         style={{
           fontSize: 22,
           fontFamily: "Poppins_700Bold",
         }}
       >
         {value}
+      </Text>
+      <Text
+        className="mt-1 text-muted"
+        style={{
+          fontSize: 13,
+          fontFamily: "Poppins_400Regular",
+        }}
+      >
+        {label}
       </Text>
     </View>
   );
@@ -665,22 +660,21 @@ function InfoRow({
   label,
   value,
   multiline = false,
+  colors,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   multiline?: boolean;
+  colors: ReturnType<typeof useAppTheme>["colors"];
 }) {
   return (
-    <View
-      className="flex-row items-start rounded-[18px] bg-surface px-4 py-3"
-      style={{ width: "100%" }}
-    >
+    <View className="flex-row rounded-[18px] bg-surface px-4 py-3">
       <View className="mr-3 h-[34px] w-[34px] items-center justify-center rounded-full bg-segment">
-        <Ionicons name={icon} size={18} color={COLORS.primary} />
+        <Ionicons name={icon} size={18} color={colors.accent} />
       </View>
 
-      <View style={{ width: "82%" }}>
+      <View style={{ width: "84%" }}>
         <Text
           className="text-muted"
           style={{
@@ -693,12 +687,12 @@ function InfoRow({
 
         <Text
           className="mt-1 text-foreground"
+          numberOfLines={multiline ? undefined : 2}
           style={{
             fontSize: 15,
             lineHeight: 22,
             fontFamily: "Poppins_600SemiBold",
           }}
-          numberOfLines={multiline ? undefined : 2}
         >
           {value}
         </Text>

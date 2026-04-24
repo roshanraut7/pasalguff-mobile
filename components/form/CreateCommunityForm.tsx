@@ -13,8 +13,7 @@ import {
   Menu,
   TextField,
 } from "heroui-native";
-
-import { COLORS } from "@/constants/colors";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import {
   createCommunitySchema,
@@ -33,6 +32,7 @@ import {
 type ImageTarget = "avatar" | "cover";
 
 export default function CreateCommunityForm() {
+    const { colors } = useAppTheme();
   const [serverError, setServerError] = useState("");
   const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(null);
 
@@ -220,7 +220,7 @@ export default function CreateCommunityForm() {
             />
           ) : (
             <View className="h-[170px] items-center justify-center bg-segment">
-              <Ionicons name="image-outline" size={28} color={COLORS.primary} />
+              <Ionicons name="image-outline" size={28} color={colors.accent} />
             </View>
           )}
 
@@ -283,7 +283,7 @@ export default function CreateCommunityForm() {
                   <Ionicons
                     name="people-outline"
                     size={30}
-                    color={COLORS.primary}
+                    color={colors.accent}
                   />
                 </View>
               )}
@@ -294,12 +294,12 @@ export default function CreateCommunityForm() {
                 <Menu.Trigger asChild>
                   <Pressable className="h-[38px] w-[38px] items-center justify-center rounded-full border border-border bg-surface">
                     {isUploadingAvatar ? (
-                      <ActivityIndicator size="small" color={COLORS.primary} />
+                      <ActivityIndicator size="small" color={colors.accent} />
                     ) : (
                       <Ionicons
                         name="camera-outline"
                         size={18}
-                        color={COLORS.primary}
+                        color={colors.accent}
                       />
                     )}
                   </Pressable>
@@ -387,11 +387,11 @@ export default function CreateCommunityForm() {
             <Menu.Trigger asChild>
               <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
                 <Text
-                  className={selectedCategory ? "text-foreground" : "text-muted"}
-                  style={{
-                    fontSize: 15,
-                    fontFamily: "Poppins_500Medium",
-                  }}
+                   style={{
+      color: selectedCategory ? colors.foreground : colors.placeholder,
+      fontSize: 15,
+      fontFamily: "Poppins_400Regular",
+    }}
                 >
                   {categoriesLoading
                     ? "Loading categories..."
@@ -401,48 +401,98 @@ export default function CreateCommunityForm() {
                 <Ionicons
                   name="chevron-down-outline"
                   size={18}
-                  color={COLORS.muted}
+                  color={colors.muted}
                 />
               </Pressable>
             </Menu.Trigger>
 
             <Menu.Portal>
               <Menu.Overlay />
-              <Menu.Content
-                presentation="popover"
-                placement="bottom"
-                align="start"
-                width={260}
-                className="rounded-2xl border border-border bg-surface"
-              >
-                {categoriesLoading ? (
-                  <Menu.Item isDisabled>
-                    <Menu.ItemTitle>Loading categories...</Menu.ItemTitle>
-                  </Menu.Item>
-                ) : categoriesError ? (
-                  <Menu.Item isDisabled>
-                    <Menu.ItemTitle>Failed to load categories</Menu.ItemTitle>
-                  </Menu.Item>
-                ) : categories.length === 0 ? (
-                  <Menu.Item isDisabled>
-                    <Menu.ItemTitle>No categories available</Menu.ItemTitle>
-                  </Menu.Item>
-                ) : (
-                  categories.map((category) => (
-                    <Menu.Item
-                      key={category.id}
-                      onPress={() =>
-                        setValue("categoryId", category.id, {
-                          shouldValidate: true,
-                          shouldDirty: true,
-                        })
-                      }
-                    >
-                      <Menu.ItemTitle>{category.name}</Menu.ItemTitle>
-                    </Menu.Item>
-                  ))
-                )}
-              </Menu.Content>
+           <Menu.Content
+  presentation="popover"
+  placement="bottom"
+  align="center"
+  width={260}
+  className="rounded-2xl border border-border bg-surface"
+>
+  {categoriesLoading ? (
+    <Menu.Item isDisabled>
+      <Menu.ItemTitle
+        style={{
+          color: colors.muted,
+          fontFamily: "Poppins_500Medium",
+        }}
+      >
+        Loading categories...
+      </Menu.ItemTitle>
+    </Menu.Item>
+  ) : categoriesError ? (
+    <Menu.Item isDisabled>
+      <Menu.ItemTitle
+        style={{
+          color: colors.danger,
+          fontFamily: "Poppins_500Medium",
+        }}
+      >
+        Failed to load categories
+      </Menu.ItemTitle>
+    </Menu.Item>
+  ) : categories.length === 0 ? (
+    <Menu.Item isDisabled>
+      <Menu.ItemTitle
+        style={{
+          color: colors.muted,
+          fontFamily: "Poppins_500Medium",
+        }}
+      >
+        No categories available
+      </Menu.ItemTitle>
+    </Menu.Item>
+  ) : (
+    categories.map((category) => {
+      const isSelected = selectedCategoryId === category.id;
+
+      return (
+        <Menu.Item
+          key={category.id}
+          onPress={() =>
+            setValue("categoryId", category.id, {
+              shouldDirty: true,
+              shouldValidate: true,
+            })
+          }
+          className={isSelected ? "bg-segment" : ""}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              width: "100%",
+            }}
+          >
+            <Menu.ItemTitle
+              style={{
+                color: colors.foreground,
+                fontFamily: "Poppins_500Medium",
+              }}
+            >
+              {category.name}
+            </Menu.ItemTitle>
+
+            {isSelected ? (
+              <Ionicons
+                name="checkmark"
+                size={16}
+                color={colors.accent}
+              />
+            ) : null}
+          </View>
+        </Menu.Item>
+      );
+    })
+  )}
+</Menu.Content>
             </Menu.Portal>
           </Menu>
 
@@ -453,7 +503,7 @@ export default function CreateCommunityForm() {
           {categoriesError ? (
             <Text
               style={{
-                color: COLORS.danger,
+                color: colors.danger,
                 fontSize: 13,
                 fontFamily: "Poppins_500Medium",
                 marginTop: 8,
@@ -484,11 +534,11 @@ export default function CreateCommunityForm() {
                         : "globe-outline"
                     }
                     size={18}
-                    color={COLORS.primary}
+                    color={colors.accent}
                   />
                   <Text
                     style={{
-                      color: COLORS.text,
+                      color: colors.muted,
                       fontSize: 15,
                       fontFamily: "Poppins_500Medium",
                     }}
@@ -500,7 +550,7 @@ export default function CreateCommunityForm() {
                 <Ionicons
                   name="chevron-down-outline"
                   size={18}
-                  color={COLORS.muted}
+                  color={colors.muted}
                 />
               </Pressable>
             </Menu.Trigger>
@@ -543,7 +593,7 @@ export default function CreateCommunityForm() {
         {serverError ? (
           <Text
             style={{
-              color: COLORS.danger,
+              color: colors.danger,
               fontSize: 13,
               fontFamily: "Poppins_500Medium",
             }}

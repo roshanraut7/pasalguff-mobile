@@ -11,14 +11,16 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { COLORS } from "@/constants/colors";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import CreateCommunityForm from "@/components/form/CreateCommunityForm";
 
 export default function CreateCommunityPage() {
+  const { colors } = useAppTheme();
+
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: COLORS.background }}
+      style={{ flex: 1, backgroundColor: colors.background }}
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -41,8 +43,8 @@ export default function CreateCommunityPage() {
                 <Ionicons
                   name="arrow-back-outline"
                   size={20}
-                  color={COLORS.primary}
-                />    
+                  color={colors.accent}
+                />
               </Pressable>
 
               <View className="flex-1">

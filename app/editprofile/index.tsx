@@ -11,14 +11,16 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { COLORS } from "@/constants/colors";
 import EditProfileForm from "@/components/form/EditProfileForm";
+import { useAppTheme } from "@/hooks/useAppTheme";
 
 export default function EditProfilePage() {
+  const { colors } = useAppTheme();
+
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: COLORS.background }}
+      style={{ flex: 1, backgroundColor: colors.background }}
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -41,7 +43,7 @@ export default function EditProfilePage() {
                 <Ionicons
                   name="arrow-back-outline"
                   size={20}
-                  color={COLORS.primary}
+                  color={colors.accent}
                 />
               </Pressable>
 
