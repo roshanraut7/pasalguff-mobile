@@ -53,8 +53,12 @@ export default function SignupForm() {
 
       const payload = mapSignupValues(values);
       await signUpWithEmail(payload);
+        const result = await signUpWithEmail(payload);
 
-      router.replace("/(tabs)");
+        const role = result?.user?.role;
+      const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+
+      router.replace(isAdmin ? "/admin" : "/(tabs)");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Signup failed");
     } finally {

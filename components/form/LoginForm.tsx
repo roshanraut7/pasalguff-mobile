@@ -39,12 +39,15 @@ export default function LoginForm() {
       setServerError("");
       setIsSubmitting(true);
 
-      await signInWithEmail({
+      const result = await signInWithEmail({
         email: values.email.trim().toLowerCase(),
         password: values.password,
       });
 
-      router.replace("/(tabs)");
+      const role = result?.user?.role;
+      const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+
+      router.replace(isAdmin ? "/admin" : "/(tabs)");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Login failed");
     } finally {
@@ -72,7 +75,7 @@ export default function LoginForm() {
             fontFamily: "Poppins_400Regular",
           }}
         >
-          Enter your details to continue.
+          Sign in to continue.
         </Text>
       </View>
 
@@ -82,22 +85,15 @@ export default function LoginForm() {
         render={({ field: { onChange, value } }) => (
           <TextField isRequired isInvalid={!!errors.email}>
             <Label>Email</Label>
-
             <InputGroup className="border-field-border bg-field-background">
-              <InputGroup.Prefix isDecorative>
-                <Ionicons name="mail-outline" size={18} color={colors.muted} />
-              </InputGroup.Prefix>
-
               <InputGroup.Input
                 value={value}
                 onChangeText={onChange}
                 placeholder="Enter your email"
-                keyboardType="email-address"
                 autoCapitalize="none"
-                autoCorrect={false}
+                keyboardType="email-address"
               />
             </InputGroup>
-
             {errors.email?.message ? (
               <FieldError>{errors.email.message}</FieldError>
             ) : null}
@@ -111,23 +107,13 @@ export default function LoginForm() {
         render={({ field: { onChange, value } }) => (
           <TextField isRequired isInvalid={!!errors.password}>
             <Label>Password</Label>
-
             <InputGroup className="border-field-border bg-field-background">
-              <InputGroup.Prefix isDecorative>
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={18}
-                  color={colors.muted}
-                />
-              </InputGroup.Prefix>
-
               <InputGroup.Input
                 value={value}
                 onChangeText={onChange}
                 placeholder="Enter your password"
                 secureTextEntry={!showPassword}
               />
-
               <InputGroup.Suffix>
                 <Pressable onPress={() => setShowPassword((prev) => !prev)}>
                   <Ionicons
@@ -138,7 +124,6 @@ export default function LoginForm() {
                 </Pressable>
               </InputGroup.Suffix>
             </InputGroup>
-
             {errors.password?.message ? (
               <FieldError>{errors.password.message}</FieldError>
             ) : null}
@@ -161,24 +146,10 @@ export default function LoginForm() {
       <Button
         onPress={handleSubmit(onSubmit)}
         isDisabled={isSubmitting}
-        className="mt-2 bg-accent rounded-full"
+        className="bg-accent"
       >
-        <Button.Label className="text-accent-foreground">
-          {isSubmitting ? "Logging in..." : "Login"}
-        </Button.Label>
+        {isSubmitting ? "Signing in..." : "Login"}
       </Button>
-
-      <Pressable className="self-center mt-1">
-        <Text
-          style={{
-            color: colors.link,
-            fontSize: 14,
-            fontFamily: "Poppins_600SemiBold",
-          }}
-        >
-          Forgot password?
-        </Text>
-      </Pressable>
     </View>
   );
 }

@@ -35,7 +35,10 @@ export default function AuthPage() {
   }
 
   if (session?.user) {
-    return <Redirect href="/(tabs)" />;
+    const role = session.user.role;
+    const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+
+    return <Redirect href={isAdmin ? "/admin" : "/(tabs)"} />;
   }
 
   return (
@@ -110,76 +113,81 @@ export default function AuthPage() {
             </Text>
           </View>
 
-          <View style={{ alignItems: "center", marginTop: 20 }}>
-            <View
+          <View
+            style={{
+              marginTop: 24,
+              borderRadius: 999,
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+              padding: 6,
+              flexDirection: "row",
+            }}
+          >
+            <Pressable
+              onPress={() => setMode("login")}
               style={{
-                flexDirection: "row",
-                backgroundColor: colors.segment,
+                flex: 1,
+                paddingVertical: 12,
                 borderRadius: 999,
-                padding: 4,
-                marginBottom: 20,
+                backgroundColor:
+                  mode === "login" ? colors.accent : "transparent",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              <Pressable
-                onPress={() => setMode("login")}
+              <Text
                 style={{
-                  paddingHorizontal: 24,
-                  paddingVertical: 10,
-                  borderRadius: 999,
-                  backgroundColor:
-                    mode === "login" ? colors.surface : "transparent",
+                  color:
+                    mode === "login"
+                      ? colors.accentForeground
+                      : colors.foreground,
+                  fontSize: 14,
+                  fontFamily: "Poppins_600SemiBold",
                 }}
               >
-                <Text
-                  style={{
-                    color:
-                      mode === "login"
-                        ? colors.foreground
-                        : colors.segmentForeground,
-                    fontFamily: "Poppins_600SemiBold",
-                  }}
-                >
-                  Login
-                </Text>
-              </Pressable>
+                Login
+              </Text>
+            </Pressable>
 
-              <Pressable
-                onPress={() => setMode("signup")}
-                style={{
-                  paddingHorizontal: 24,
-                  paddingVertical: 10,
-                  borderRadius: 999,
-                  backgroundColor:
-                    mode === "signup" ? colors.surface : "transparent",
-                }}
-              >
-                <Text
-                  style={{
-                    color:
-                      mode === "signup"
-                        ? colors.foreground
-                        : colors.segmentForeground,
-                    fontFamily: "Poppins_600SemiBold",
-                  }}
-                >
-                  Sign Up
-                </Text>
-              </Pressable>
-            </View>
-
-            <View
+            <Pressable
+              onPress={() => setMode("signup")}
               style={{
-                width: "100%",
-                borderRadius: 30,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-                paddingHorizontal: 20,
-                paddingVertical: 24,
+                flex: 1,
+                paddingVertical: 12,
+                borderRadius: 999,
+                backgroundColor:
+                  mode === "signup" ? colors.accent : "transparent",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {mode === "login" ? <LoginForm /> : <SignupForm />}
-            </View>
+              <Text
+                style={{
+                  color:
+                    mode === "signup"
+                      ? colors.accentForeground
+                      : colors.foreground,
+                  fontSize: 14,
+                  fontFamily: "Poppins_600SemiBold",
+                }}
+              >
+                Sign Up
+              </Text>
+            </Pressable>
+          </View>
+
+          <View
+            style={{
+              marginTop: 24,
+              borderRadius: 28,
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+              padding: 18,
+            }}
+          >
+            {mode === "login" ? <LoginForm /> : <SignupForm />}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

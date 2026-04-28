@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 import "../global.css";
 
+import React, { useMemo } from "react";
 import { HeroUINativeConfig, HeroUINativeProvider } from "heroui-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFonts } from "expo-font";
@@ -16,6 +17,8 @@ import {
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { KeyboardAvoidingView, Platform } from "react-native";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { PaperProvider } from "react-native-paper";
+import { buildPaperTheme } from "@/constants/paper-theme";
 
 import {
   Poppins_400Regular,
@@ -26,7 +29,12 @@ import {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
-  const { navigationTheme, statusBarStyle } = useAppTheme();
+  const { navigationTheme, statusBarStyle, colors, isDark } = useAppTheme();
+
+  const paperTheme = useMemo(
+    () => buildPaperTheme(colors, isDark),
+    [colors, isDark]
+  );
 
   const config: HeroUINativeConfig = {
     toast: {
@@ -56,16 +64,19 @@ function AppContent() {
 
   return (
     <HeroUINativeProvider config={config}>
-      <BottomSheetModalProvider>
-        <ThemeProvider value={navigationTheme}>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="modal" options={{ presentation: "modal" }} />
-          </Stack>
-          <StatusBar style={statusBarStyle} />
-        </ThemeProvider>
-      </BottomSheetModalProvider>
+      <PaperProvider theme={paperTheme}>
+        <BottomSheetModalProvider>
+          <ThemeProvider value={navigationTheme}>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="admin" />
+              <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+            </Stack>
+            <StatusBar style={statusBarStyle} />
+          </ThemeProvider>
+        </BottomSheetModalProvider>
+      </PaperProvider>
     </HeroUINativeProvider>
   );
 }
