@@ -37,6 +37,9 @@ function AppContent() {
   );
 
   const config: HeroUINativeConfig = {
+    devInfo: {
+      stylingPrinciples: false,        // ← This disables the warning message
+    },
     toast: {
       defaultProps: {
         placement: "top",

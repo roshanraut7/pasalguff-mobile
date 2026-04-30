@@ -29,7 +29,7 @@ export type CreatePostPalette = {
 
 export function getCreatePostPalette(
   colors: AppColors,
-  isDark: boolean
+  isDark: boolean,
 ): CreatePostPalette {
   return {
     screen: colors.background,
@@ -83,6 +83,19 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderBottomColor: p.divider,
       backgroundColor: p.screen,
     },
+
+    backButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 999,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 8,
+      backgroundColor: p.surface,
+      borderWidth: 1,
+      borderColor: p.border,
+    },
+
     screenTitle: {
       fontSize: 22,
       fontFamily: "Poppins_600SemiBold",
@@ -94,19 +107,21 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
-      paddingLeft: 10,
-      paddingRight: 8,
-      paddingVertical: 6,
+      paddingLeft: 12,
+      paddingRight: 12,
+      paddingVertical: 8,
       borderRadius: 999,
       backgroundColor: p.chipBg,
       borderWidth: 1,
       borderColor: p.chipBorder,
     },
+
     draftsChipText: {
       fontSize: 13,
       fontFamily: "Poppins_500Medium",
       color: p.accentStrong,
     },
+
     draftsCount: {
       minWidth: 22,
       height: 22,
@@ -114,12 +129,14 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 6,
-      backgroundColor: p.accent,
+      backgroundColor: p.accentStrong,
+      marginLeft: 2,
     },
+
     draftsCountText: {
-      color: p.accentStrong,
+      color: p.accentForeground,
       fontSize: 11,
-      fontFamily: "Poppins_600SemiBold",
+      fontFamily: "Poppins_700Bold",
     },
 
     communityBar: {
@@ -129,6 +146,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderBottomColor: p.divider,
       backgroundColor: p.screen,
     },
+
     communityBtn: {
       flexDirection: "row",
       alignItems: "center",
@@ -141,41 +159,34 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.chipBg,
       borderColor: p.chipBorder,
     },
+
     communityBtnText: {
       fontSize: 14,
       fontFamily: "Poppins_500Medium",
-      maxWidth: 210,
+      maxWidth: 230,
       color: p.text,
     },
 
-    tabBar: {
-      flexDirection: "row",
+    postTypeTabsWrap: {
+      paddingHorizontal: 18,
+      paddingTop: 8,
+      paddingBottom: 8,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: p.divider,
-      paddingHorizontal: 10,
-      paddingTop: 6,
-      paddingBottom: 6,
       backgroundColor: p.screen,
-      gap: 8,
     },
-    tabItem: {
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: 14,
-      borderBottomWidth: 0,
-      borderBottomColor: "transparent",
-      backgroundColor: "transparent",
-    },
-    tabLabel: {
-      fontSize: 14,
-      fontFamily: "Poppins_500Medium",
-      color: p.muted,
+
+    postTypeTabsListContent: {
+      flexDirection: "row",
+      gap: 24,
+      paddingRight: 24,
     },
 
     composerScroll: {
       flex: 1,
       backgroundColor: p.screen,
     },
+
     scrollContent: {
       paddingHorizontal: 18,
       paddingTop: 16,
@@ -187,6 +198,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       gap: 8,
       flexWrap: "wrap",
     },
+
     tagChip: {
       flexDirection: "row",
       alignItems: "center",
@@ -198,6 +210,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.chipBg,
       borderColor: p.chipBorder,
     },
+
     tagChipText: {
       fontSize: 13,
       fontFamily: "Poppins_400Regular",
@@ -211,6 +224,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.card,
       borderColor: p.border,
     },
+
     sectionTitle: {
       fontSize: 16,
       fontFamily: "Poppins_600SemiBold",
@@ -224,6 +238,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       justifyContent: "space-between",
       gap: 10,
     },
+
     addMoreBtn: {
       flexDirection: "row",
       alignItems: "center",
@@ -235,11 +250,13 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.chipBg,
       borderColor: p.chipBorder,
     },
+
     addMoreBtnText: {
       fontSize: 12,
       color: p.accentStrong,
       fontFamily: "Poppins_500Medium",
     },
+
     uploadCountText: {
       marginTop: 12,
       fontSize: 12,
@@ -256,6 +273,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderColor: p.border,
       backgroundColor: p.input,
     },
+
     linkInput: {
       fontSize: 15,
       fontFamily: "Poppins_400Regular",
@@ -282,6 +300,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderColor: p.border,
       backgroundColor: p.soft,
     },
+
     mediaDropText: {
       fontSize: 14,
       fontFamily: "Poppins_400Regular",
@@ -294,13 +313,16 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       flexWrap: "wrap",
       alignItems: "flex-start",
     },
+
     mediaTile: {
       width: "31.33%",
       marginBottom: 10,
     },
+
     mediaTileGap: {
       marginRight: "3%",
     },
+
     mediaPreviewWrap: {
       width: "100%",
       aspectRatio: 1,
@@ -311,10 +333,12 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderColor: p.border,
       backgroundColor: p.soft,
     },
+
     mediaImage: {
       width: "100%",
       height: "100%",
     },
+
     mediaVideoBox: {
       width: "100%",
       height: "100%",
@@ -323,11 +347,13 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       gap: 4,
       backgroundColor: p.soft,
     },
+
     videoText: {
       fontSize: 11,
       fontFamily: "Poppins_500Medium",
       color: p.text,
     },
+
     mediaActionRow: {
       position: "absolute",
       top: 8,
@@ -335,6 +361,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       flexDirection: "row",
       gap: 6,
     },
+
     mediaActionBtn: {
       width: 30,
       height: 30,
@@ -345,6 +372,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.iconSurface,
       borderColor: p.iconBorder,
     },
+
     mediaBadge: {
       position: "absolute",
       left: 8,
@@ -357,6 +385,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.badgeBg,
       borderColor: p.iconBorder,
     },
+
     mediaBadgeText: {
       fontSize: 10,
       fontFamily: "Poppins_500Medium",
@@ -364,34 +393,43 @@ export function createCreatePostStyles(p: CreatePostPalette) {
     },
 
     footerWrap: {
-      paddingHorizontal: 18,
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      paddingHorizontal: 0,
       paddingTop: 12,
+      backgroundColor: p.screen,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: p.divider,
-      backgroundColor: p.screen,
     },
+
     footerRow: {
       flexDirection: "row",
-      gap: 10,
+      gap: 12,
+      paddingHorizontal: 18,
     },
 
     footerButton: {
       flex: 1,
-      minHeight: 52,
+      minHeight: 56,
       borderRadius: 18,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 14,
       borderWidth: 1,
     },
+
     footerButtonOutline: {
       backgroundColor: p.surface,
       borderColor: p.border,
     },
+
     footerButtonSecondary: {
       backgroundColor: p.soft,
       borderColor: p.border,
     },
+
     footerButtonPrimary: {
       backgroundColor: p.accentStrong,
       borderColor: p.accentStrong,
@@ -402,11 +440,13 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       fontSize: 15,
       fontFamily: "Poppins_600SemiBold",
     },
+
     footerButtonTextSecondary: {
       color: p.text,
       fontSize: 15,
       fontFamily: "Poppins_600SemiBold",
     },
+
     footerButtonTextPrimary: {
       color: p.accentForeground,
       fontSize: 15,
@@ -423,6 +463,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       paddingTop: 16,
       backgroundColor: p.screen,
     },
+
     draftsHeader: {
       flexDirection: "row",
       alignItems: "center",
@@ -432,11 +473,13 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderBottomColor: p.divider,
       marginBottom: 8,
     },
+
     draftPanelTitle: {
       fontSize: 20,
       fontFamily: "Poppins_600SemiBold",
       color: p.text,
     },
+
     draftPanelSub: {
       fontSize: 13,
       lineHeight: 20,
@@ -450,6 +493,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       paddingHorizontal: 16,
       backgroundColor: p.backdrop,
     },
+
     pickerOverlay: {
       maxHeight: "78%",
       borderWidth: 1,
@@ -458,6 +502,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.overlay,
       borderColor: p.border,
     },
+
     pickerHeader: {
       flexDirection: "row",
       alignItems: "center",
@@ -466,11 +511,13 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       paddingTop: 16,
       paddingBottom: 12,
     },
+
     pickerTitle: {
       fontSize: 18,
       fontFamily: "Poppins_600SemiBold",
       color: p.text,
     },
+
     closeBtn: {
       width: 38,
       height: 38,
@@ -481,6 +528,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.surface,
       borderColor: p.border,
     },
+
     searchRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -494,16 +542,19 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.surface,
       borderColor: p.border,
     },
+
     searchInput: {
       flex: 1,
       fontSize: 15,
       fontFamily: "Poppins_400Regular",
       color: p.text,
     },
+
     pickerList: {
       paddingHorizontal: 0,
       paddingBottom: 16,
     },
+
     communityRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -513,9 +564,11 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: p.border,
     },
+
     communityRowSelected: {
       backgroundColor: p.selected,
     },
+
     communityAvatar: {
       width: 42,
       height: 42,
@@ -527,32 +580,38 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       backgroundColor: p.surface,
       borderColor: p.border,
     },
+
     communityAvatarImg: {
       width: 42,
       height: 42,
     },
+
     communityAvatarText: {
       fontSize: 16,
       fontFamily: "Poppins_600SemiBold",
       color: p.muted,
     },
+
     communityName: {
       fontSize: 15,
       fontFamily: "Poppins_600SemiBold",
       color: p.text,
     },
+
     communityMeta: {
       fontSize: 12,
       fontFamily: "Poppins_400Regular",
       marginTop: 2,
       color: p.muted,
     },
+
     communityDesc: {
       fontSize: 12,
       fontFamily: "Poppins_400Regular",
       marginTop: 2,
       color: p.muted,
     },
+
     emptyText: {
       textAlign: "center",
       padding: 24,
@@ -573,15 +632,18 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderColor: p.border,
       backgroundColor: p.surface,
     },
+
     tagRowSelected: {
       backgroundColor: p.selected,
       borderColor: p.chipBorder,
     },
+
     tagLabel: {
       fontSize: 15,
       fontFamily: "Poppins_600SemiBold",
       color: p.text,
     },
+
     tagDesc: {
       fontSize: 12,
       fontFamily: "Poppins_400Regular",

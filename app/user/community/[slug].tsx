@@ -22,9 +22,12 @@ import {
   useJoinCommunityMutation,
 } from "@/store/api/communityApi";
 import {
-  type CommunityPostMedia,
   useGetCommunityPostsQuery,
+  useLikePostMutation,
+  useSharePostMutation,
+  useUnlikePostMutation,
 } from "@/store/api/postApi";
+import type { CommunityPostMedia } from "@/types/post";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
 
@@ -49,6 +52,7 @@ export default function CommunityDetailScreen() {
     data: community,
     isLoading: communityLoading,
     error: communityError,
+    refetch: refetchCommunity,
   } = useGetCommunityBySlugQuery(slug ?? "", {
     skip: !session?.user || !slug,
     refetchOnMountOrArgChange: true,
@@ -57,82 +61,184 @@ export default function CommunityDetailScreen() {
   const {
     data: access,
     isLoading: accessLoading,
+    refetch: refetchAccess,
   } = useGetCommunityAccessQuery(community?.id ?? "", {
     skip: !session?.user || !community?.id,
     refetchOnMountOrArgChange: true,
   });
 
+  /**
+   * Latest backend fields:
+   * community.myRole, community.isJoined
+   * access.role, access.canView, access.permissions
+   */
+  const isOwner = access?.role === "ADMIN" || community?.myRole === "ADMIN";
+
+  const isModerator =
+    access?.role === "MODERATOR" || community?.myRole === "MODERATOR";
+
+  const isJoined =
+    Boolean(access?.isMember) ||
+    Boolean(community?.isJoined) ||
+    community?.myRole === "ADMIN" ||
+    community?.myRole === "MODERATOR" ||
+    community?.myRole === "MEMBER";
+
+  const canViewContent =
+    Boolean(access?.canView) ||
+    community?.visibility === "PUBLIC" ||
+    Boolean(isJoined);
+
   const canLoadMembers =
     !!session?.user &&
     !!community?.id &&
-    (access?.role === "ADMIN" || access?.permissions?.canManageMembers);
+    (access?.role === "ADMIN" || Boolean(access?.permissions?.canManageMembers));
 
+  /**
+   * Latest members API expects an object:
+   * {
+   *   communityId,
+   *   page,
+   *   limit,
+   * }
+   *
+   * Latest response:
+   * {
+   *   data: CommunityMemberItem[],
+   *   meta: {...}
+   * }
+   */
   const {
-    data: members = [],
+    data: membersResponse,
     isLoading: membersLoading,
     error: membersError,
-  } = useGetCommunityMembersQuery(community?.id ?? "", {
-    skip: !canLoadMembers,
-    refetchOnMountOrArgChange: true,
-  });
+  } = useGetCommunityMembersQuery(
+    {
+      communityId: community?.id ?? "",
+      page: 1,
+      limit: 50,
+    },
+    {
+      skip: !canLoadMembers || !community?.id,
+      refetchOnMountOrArgChange: true,
+    },
+  );
 
-  const [joinCommunity] = useJoinCommunityMutation();
+  const members = membersResponse?.data ?? [];
 
-  const coverUrl = toAbsoluteFileUrl(community?.coverImage);
-  const avatarUrl = toAbsoluteFileUrl(community?.avatarImage);
-
-  const isOwner = access?.role === "ADMIN" || community?.memberRole === "ADMIN";
-  const isJoined =
-    Boolean(access?.isJoined) ||
-    Boolean(community?.isJoined) ||
-    community?.memberRole === "ADMIN" ||
-    community?.memberRole === "MODERATOR" ||
-    community?.memberRole === "MEMBER";
-
-  const canViewContent =
-    access?.canViewContent ?? community?.canViewContent ?? false;
-
+  /**
+   * Latest posts API uses cursor/infinite scroll.
+   *
+   * Response:
+   * {
+   *   data: CommunityPost[],
+   *   meta: { limit, nextCursor, hasMore }
+   * }
+   */
   const {
-    data: posts = [],
+    data: postsResponse,
     isLoading: postsLoading,
     error: postsError,
     refetch: refetchPosts,
   } = useGetCommunityPostsQuery(
-    { communityId: community?.id ?? "" },
+    {
+      communityId: community?.id ?? "",
+      limit: 20,
+      sortBy: "newest",
+    },
     {
       skip: !session?.user || !community?.id || !canViewContent,
       refetchOnMountOrArgChange: true,
-    }
+    },
   );
+
+  const posts = postsResponse?.data ?? [];
+
+  const [joinCommunity] = useJoinCommunityMutation();
+  const [likePost] = useLikePostMutation();
+  const [unlikePost] = useUnlikePostMutation();
+  const [sharePost] = useSharePostMutation();
+
+  const coverUrl = toAbsoluteFileUrl(community?.coverImage);
+  const avatarUrl = toAbsoluteFileUrl(community?.avatarImage);
 
   const showJoinButton = !!community && !isOwner && !isJoined;
 
-  const memberCount = canLoadMembers ? members.length : "--";
-  const totalPostCount =
-    canViewContent && !postsLoading && !postsError ? String(posts.length) : "--";
+  const memberCount = community?.memberCount ?? members.length ?? 0;
+  const totalPostCount = community?.postCount ?? posts.length ?? 0;
 
   const roleLabel = useMemo(() => {
     if (isOwner) return "Owner";
-    if (access?.role === "MODERATOR" || community?.memberRole === "MODERATOR") {
-      return "Moderator";
-    }
+    if (isModerator) return "Moderator";
     if (isJoined) return "Joined";
     return null;
-  }, [access?.role, community?.memberRole, isJoined, isOwner]);
+  }, [isOwner, isModerator, isJoined]);
 
   const handleJoin = async () => {
     if (!community?.id) return;
 
     try {
       setIsJoining(true);
-      await joinCommunity(community.id).unwrap();
-      refetchPosts();
+
+      /**
+       * Latest communityApi supports:
+       * joinCommunity({ communityId, message? })
+       */
+      await joinCommunity({ communityId: community.id }).unwrap();
+
+      await Promise.allSettled([
+        refetchCommunity(),
+        refetchAccess(),
+        refetchPosts(),
+      ]);
     } catch (error) {
       console.log("Join community failed:", error);
     } finally {
       setIsJoining(false);
     }
   };
+
+  const handleLikePost = useCallback(
+    async (post: {
+      id: string;
+      communityId: string;
+      isLikedByMe?: boolean;
+    }) => {
+      try {
+        if (post.isLikedByMe) {
+          await unlikePost({
+            communityId: post.communityId,
+            postId: post.id,
+          }).unwrap();
+        } else {
+          await likePost({
+            communityId: post.communityId,
+            postId: post.id,
+          }).unwrap();
+        }
+      } catch (error) {
+        console.log("Like/unlike failed:", error);
+      }
+    },
+    [likePost, unlikePost],
+  );
+
+  const handleSharePost = useCallback(
+    async (post: { id: string; communityId: string }) => {
+      try {
+        await sharePost({
+          communityId: post.communityId,
+          postId: post.id,
+          body: {
+            platform: "copy_link",
+          },
+        }).unwrap();
+      } catch (error) {
+        console.log("Share post failed:", error);
+      }
+    },
+    [sharePost],
+  );
 
   const openViewer = useCallback((media: CommunityPostMedia[], index: number) => {
     setViewer({
@@ -151,7 +257,10 @@ export default function CommunityDetailScreen() {
 
   if (isPending || communityLoading || accessLoading) {
     return (
-      <View style={{ flex: 1 }} className="items-center justify-center bg-background">
+      <View
+        style={{ flex: 1 }}
+        className="items-center justify-center bg-background"
+      >
         <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
@@ -192,7 +301,11 @@ export default function CommunityDetailScreen() {
 
   return (
     <>
-      <SafeAreaView style={{ flex: 1 }} className="bg-background" edges={["top"]}>
+      <SafeAreaView
+        style={{ flex: 1 }}
+        className="bg-background"
+        edges={["top"]}
+      >
         <ScrollView
           className="bg-background"
           contentContainerStyle={{ paddingBottom: 120 }}
@@ -277,7 +390,8 @@ export default function CommunityDetailScreen() {
                       fontFamily: "Poppins_500Medium",
                     }}
                   >
-                    {community.category?.name ?? "Unknown"} • {community.visibility}
+                    {community.category?.name ?? "Unknown"} •{" "}
+                    {community.visibility}
                   </Text>
 
                   {!!community.description ? (
@@ -336,7 +450,7 @@ export default function CommunityDetailScreen() {
               </View>
 
               <View className="mt-5 flex-row items-center gap-3">
-                <StatCard label="Posts" value={totalPostCount} />
+                <StatCard label="Posts" value={String(totalPostCount)} />
                 <StatCard label="Members" value={String(memberCount)} />
               </View>
             </View>
@@ -361,15 +475,19 @@ export default function CommunityDetailScreen() {
                     }}
                   >
                     <Tabs.Indicator />
+
                     <Tabs.Trigger value="posts">
                       <Tabs.Label>Posts</Tabs.Label>
                     </Tabs.Trigger>
+
                     <Tabs.Trigger value="about">
                       <Tabs.Label>About</Tabs.Label>
                     </Tabs.Trigger>
+
                     <Tabs.Trigger value="guidelines">
                       <Tabs.Label>Guidelines</Tabs.Label>
                     </Tabs.Trigger>
+
                     <Tabs.Trigger value="members">
                       <Tabs.Label>Members</Tabs.Label>
                     </Tabs.Trigger>
@@ -392,7 +510,10 @@ export default function CommunityDetailScreen() {
                         </Text>
                       ) : postsLoading ? (
                         <View className="py-8">
-                          <ActivityIndicator size="small" color={colors.accent} />
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accent}
+                          />
                         </View>
                       ) : postsError ? (
                         <Text
@@ -423,15 +544,18 @@ export default function CommunityDetailScreen() {
                               key={post.id}
                               post={post}
                               disableMediaPlayback={viewer.visible}
-                              onPressLike={(item) => {
-                                console.log("Like pressed:", item.id);
-                              }}
+                              onPressLike={handleLikePost}
                               onPressComment={(item) => {
+                                /**
+                                 * Do not use router.push("/post/[postId]/comments")
+                                 * until you create:
+                                 * app/post/[postId]/comments.tsx
+                                 *
+                                 * Otherwise Expo typed routes will throw error.
+                                 */
                                 console.log("Comment pressed:", item.id);
                               }}
-                              onPressShare={(item) => {
-                                console.log("Share pressed:", item.id);
-                              }}
+                              onPressShare={handleSharePost}
                               onPressAuthor={(authorId) => {
                                 console.log("Open author:", authorId);
                               }}
@@ -451,24 +575,28 @@ export default function CommunityDetailScreen() {
                         value={community.name}
                         colors={colors}
                       />
+
                       <InfoRow
                         icon="grid-outline"
                         label="Category"
                         value={community.category?.name ?? "-"}
                         colors={colors}
                       />
+
                       <InfoRow
                         icon="lock-closed-outline"
                         label="Visibility"
                         value={community.visibility}
                         colors={colors}
                       />
+
                       <InfoRow
                         icon="shield-checkmark-outline"
                         label="Your Role"
                         value={roleLabel ?? "Visitor"}
                         colors={colors}
                       />
+
                       <InfoRow
                         icon="document-text-outline"
                         label="Description"
@@ -512,7 +640,10 @@ export default function CommunityDetailScreen() {
                       ) : canLoadMembers ? (
                         membersLoading ? (
                           <View className="py-6">
-                            <ActivityIndicator size="small" color={colors.accent} />
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.accent}
+                            />
                           </View>
                         ) : membersError ? (
                           <Text
@@ -522,7 +653,7 @@ export default function CommunityDetailScreen() {
                               fontFamily: "Poppins_500Medium",
                             }}
                           >
-                            Failed to load members
+                            Failed to load members.
                           </Text>
                         ) : members.length === 0 ? (
                           <Text
@@ -538,7 +669,9 @@ export default function CommunityDetailScreen() {
                         ) : (
                           <View style={{ rowGap: 12 }}>
                             {members.map((member) => {
-                              const memberAvatar = toAbsoluteFileUrl(member.user.image);
+                              const memberAvatar = toAbsoluteFileUrl(
+                                member.user.image,
+                              );
 
                               return (
                                 <View
@@ -550,7 +683,10 @@ export default function CommunityDetailScreen() {
                                     {memberAvatar ? (
                                       <Image
                                         source={{ uri: memberAvatar }}
-                                        style={{ width: "100%", height: "100%" }}
+                                        style={{
+                                          width: "100%",
+                                          height: "100%",
+                                        }}
                                         resizeMode="cover"
                                       />
                                     ) : (
@@ -599,10 +735,8 @@ export default function CommunityDetailScreen() {
                             fontFamily: "Poppins_400Regular",
                           }}
                         >
-                          Your current backend only allows the members endpoint for
-                          admin or users with member-management permission. If you want
-                          every joined user to see members, add a public members list or
-                          at least a members count field in the community detail API.
+                          Members can only be viewed by community admins or
+                          moderators with member-management permission.
                         </Text>
                       )}
                     </View>
@@ -624,13 +758,7 @@ export default function CommunityDetailScreen() {
   );
 }
 
-function StatCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-1 rounded-[22px] border border-border bg-surface px-4 py-4">
       <Text
@@ -642,6 +770,7 @@ function StatCard({
       >
         {value}
       </Text>
+
       <Text
         className="mt-1 text-muted"
         style={{

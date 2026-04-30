@@ -4,7 +4,6 @@ import {
   Image,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -18,49 +17,47 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { signOut, useSession } from "@/api/better-auth-client";
-import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
+import {
+  useGetMyCommunitiesQuery,
+  type CommunityItem,
+} from "@/store/api/communityApi";
 import {
   useGetMyProfileQuery,
   useUpdateMyProfileMutation,
 } from "@/store/api/profileApi";
 import {
-  type CommunityPost,
-  type CommunityPostMedia,
-  useDeleteCommunityPostMutation,
+  useDeletePostMutation,
   useGetMyPostsQuery,
+  useLikePostMutation,
+  useSharePostMutation,
+  useUnlikePostMutation,
 } from "@/store/api/postApi";
+import type { CommunityPost, CommunityPostMedia } from "@/types/post";
 import {
   useUploadProfileAvatarMutation,
   useUploadProfileCoverMutation,
 } from "@/store/api/uploadApi";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
+import CommunityCard from "@/components/common/communityCard";
+import {
+  createProfileStyles,
+  type ProfileColors,
+  type ProfileStyles,
+} from "@/constants/styles/profile.styles";
 
 type ImageTarget = "avatar" | "cover";
 
-type CommunityPreview = {
-  id: string;
-  slug: string;
-  name: string;
-  visibility: string;
-  description?: string | null;
-  coverImage?: string | null;
-  avatarImage?: string | null;
-  memberRole?: string | null;
-  category?: {
-    name?: string | null;
-  } | null;
-};
-
 export default function ProfileScreen() {
   const { colors } = useAppTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const styles = useMemo(() => createProfileStyles(colors), [colors]);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [tab, setTab] = useState("posts");
   const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(
-    null
+    null,
   );
+
   const [viewer, setViewer] = useState<{
     visible: boolean;
     media: CommunityPostMedia[];
@@ -82,23 +79,41 @@ export default function ProfileScreen() {
   });
 
   const {
-    data: myCommunities = [],
+    data: myCommunitiesResponse,
     isLoading: myCommunitiesLoading,
     error: myCommunitiesError,
-  } = useGetMyCommunitiesQuery(undefined, {
-    skip: !session?.user,
-  });
+  } = useGetMyCommunitiesQuery(
+    {
+      page: 1,
+      limit: 50,
+    },
+    {
+      skip: !session?.user,
+    },
+  );
+
+  const myCommunities = (myCommunitiesResponse?.data ?? []) as CommunityItem[];
 
   const {
-    data: myPosts = [],
+    data: myPostsResponse,
     isLoading: myPostsLoading,
     error: myPostsError,
-  } = useGetMyPostsQuery(undefined, {
-    skip: !session?.user,
-  });
+  } = useGetMyPostsQuery(
+    {
+      limit: 20,
+      sortBy: "newest",
+    },
+    {
+      skip: !session?.user,
+    },
+  );
 
-  const [deleteCommunityPost, { isLoading: isDeletingPost }] =
-    useDeleteCommunityPostMutation();
+  const myPosts = myPostsResponse?.data ?? [];
+
+  const [deletePost, { isLoading: isDeletingPost }] = useDeletePostMutation();
+  const [likePost] = useLikePostMutation();
+  const [unlikePost] = useUnlikePostMutation();
+  const [sharePost] = useSharePostMutation();
 
   const [updateMyProfile] = useUpdateMyProfileMutation();
   const [uploadProfileAvatar] = useUploadProfileAvatarMutation();
@@ -108,14 +123,18 @@ export default function ProfileScreen() {
 
   const fullName = useMemo(() => {
     if (user?.name?.trim()) return user.name.trim();
+
     const joined = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim();
+
     return joined || "User";
   }, [user]);
 
   const initials = useMemo(() => {
     const parts = fullName.split(" ").filter(Boolean);
+
     if (parts.length === 0) return "U";
     if (parts.length === 1) return parts[0][0]?.toUpperCase() ?? "U";
+
     return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
   }, [fullName]);
 
@@ -124,13 +143,15 @@ export default function ProfileScreen() {
 
   const ownedCommunities = useMemo(() => {
     return myCommunities.filter(
-      (community) => community.memberRole === "ADMIN"
+      (community) =>
+        community.myRole === "ADMIN" && community.myMemberStatus === "ACTIVE",
     );
   }, [myCommunities]);
 
   const joinedCommunities = useMemo(() => {
     return myCommunities.filter(
-      (community) => community.memberRole !== "ADMIN"
+      (community) =>
+        community.myRole !== "ADMIN" && community.myMemberStatus === "ACTIVE",
     );
   }, [myCommunities]);
 
@@ -147,11 +168,11 @@ export default function ProfileScreen() {
   };
 
   const handleCreateCommunity = () => {
-    router.push("/create");
+    router.push("/pages/createCommunity");
   };
 
   const handleEditProfile = () => {
-    router.push("/editprofile");
+    router.push("/pages/editprofile");
   };
 
   const openViewer = useCallback((media: CommunityPostMedia[], index: number) => {
@@ -172,7 +193,7 @@ export default function ProfileScreen() {
   const handleDeletePost = useCallback(
     async (post: CommunityPost) => {
       try {
-        await deleteCommunityPost({
+        await deletePost({
           communityId: post.communityId,
           postId: post.id,
         }).unwrap();
@@ -181,12 +202,50 @@ export default function ProfileScreen() {
         throw error;
       }
     },
-    [deleteCommunityPost]
+    [deletePost],
+  );
+
+  const handleLikePost = useCallback(
+    async (post: CommunityPost) => {
+      try {
+        if (post.isLikedByMe) {
+          await unlikePost({
+            communityId: post.communityId,
+            postId: post.id,
+          }).unwrap();
+        } else {
+          await likePost({
+            communityId: post.communityId,
+            postId: post.id,
+          }).unwrap();
+        }
+      } catch (error) {
+        console.log("Like/unlike failed:", error);
+      }
+    },
+    [likePost, unlikePost],
+  );
+
+  const handleSharePost = useCallback(
+    async (post: CommunityPost) => {
+      try {
+        await sharePost({
+          communityId: post.communityId,
+          postId: post.id,
+          body: {
+            platform: "copy_link",
+          },
+        }).unwrap();
+      } catch (error) {
+        console.log("Share post failed:", error);
+      }
+    },
+    [sharePost],
   );
 
   const uploadPickedAsset = async (
     asset: ImagePicker.ImagePickerAsset,
-    target: ImageTarget
+    target: ImageTarget,
   ) => {
     setUploadingTarget(target);
 
@@ -226,6 +285,7 @@ export default function ProfileScreen() {
     });
 
     if (result.canceled || !result.assets?.[0]) return;
+
     await uploadPickedAsset(result.assets[0], target);
   };
 
@@ -241,6 +301,7 @@ export default function ProfileScreen() {
     });
 
     if (result.canceled || !result.assets?.[0]) return;
+
     await uploadPickedAsset(result.assets[0], target);
   };
 
@@ -300,6 +361,7 @@ export default function ProfileScreen() {
                     <Text style={styles.coverSmallText}>
                       {user?.businessType || "Profile"}
                     </Text>
+
                     <Text style={styles.coverBigText}>
                       {user?.businessName || fullName}
                     </Text>
@@ -408,7 +470,6 @@ export default function ProfileScreen() {
               <View style={styles.profileInfoRow}>
                 <View style={styles.profileInfoLeft}>
                   <Text style={styles.profileName}>{fullName}</Text>
-
                   <Text style={styles.profileEmail}>{user?.email}</Text>
 
                   {!!user?.businessType && (
@@ -482,15 +543,19 @@ export default function ProfileScreen() {
                     contentContainerStyle={styles.tabsListContent}
                   >
                     <Tabs.Indicator />
+
                     <Tabs.Trigger value="posts">
                       <Tabs.Label>Posts</Tabs.Label>
                     </Tabs.Trigger>
+
                     <Tabs.Trigger value="about">
                       <Tabs.Label>About</Tabs.Label>
                     </Tabs.Trigger>
+
                     <Tabs.Trigger value="communities">
                       <Tabs.Label>Communities</Tabs.Label>
                     </Tabs.Trigger>
+
                     <Tabs.Trigger value="joinedCommunities">
                       <Tabs.Label>Joined</Tabs.Label>
                     </Tabs.Trigger>
@@ -525,15 +590,14 @@ export default function ProfileScreen() {
                               canDelete
                               isDeleting={isDeletingPost}
                               onDelete={handleDeletePost}
-                              onPressLike={(item) => {
-                                console.log("Like pressed:", item.id);
-                              }}
+                              onPressLike={handleLikePost}
                               onPressComment={(item) => {
-                                console.log("Comment pressed:", item.id);
+                                console.log("Open comments:", {
+                                  postId: item.id,
+                                  communityId: item.communityId,
+                                });
                               }}
-                              onPressShare={(item) => {
-                                console.log("Share pressed:", item.id);
-                              }}
+                              onPressShare={handleSharePost}
                               onPressAuthor={(authorId) => {
                                 console.log("Open author:", authorId);
                               }}
@@ -557,6 +621,7 @@ export default function ProfileScreen() {
                           colors={colors}
                           styles={styles}
                         />
+
                         <InfoRow
                           icon="mail-outline"
                           label="Email"
@@ -564,6 +629,7 @@ export default function ProfileScreen() {
                           colors={colors}
                           styles={styles}
                         />
+
                         <InfoRow
                           icon="briefcase-outline"
                           label="Business Type"
@@ -571,6 +637,7 @@ export default function ProfileScreen() {
                           colors={colors}
                           styles={styles}
                         />
+
                         <InfoRow
                           icon="location-outline"
                           label="Address"
@@ -587,7 +654,9 @@ export default function ProfileScreen() {
                       <Text style={styles.sectionTitle}>Communities</Text>
 
                       {myCommunitiesLoading ? (
-                        <Text style={styles.sectionText}>Loading communities...</Text>
+                        <Text style={styles.sectionText}>
+                          Loading communities...
+                        </Text>
                       ) : myCommunitiesError ? (
                         <Text style={styles.errorText}>
                           Failed to load communities
@@ -597,24 +666,23 @@ export default function ProfileScreen() {
                           <Text style={styles.sectionText}>
                             You do not own any communities yet.
                           </Text>
+
                           <Text style={styles.sectionHint}>
-                            Use the menu at the top right to create a new community.
+                            Use the menu at the top right to create a new
+                            community.
                           </Text>
                         </>
                       ) : (
                         <View style={styles.communityList}>
-                          {ownedCommunities.map((community) => (
-                            <CommunityPreviewCard
-                              key={community.id}
-                              community={community}
-                              badgeText="Owner"
-                              onPress={() =>
-                                router.push(`/community-dashboard/${community.slug}`)
-                              }
-                              colors={colors}
-                              styles={styles}
-                            />
-                          ))}
+                        {ownedCommunities.map((community) => (
+  <CommunityCard
+    key={community.id}
+    community={community}
+    variant="profile"
+    badgeText="Owner"
+    onPress={() => router.push(`/user/community-dashboard`)}
+  />
+))}
                         </View>
                       )}
                     </View>
@@ -639,15 +707,18 @@ export default function ProfileScreen() {
                       ) : (
                         <View style={styles.communityList}>
                           {joinedCommunities.map((community) => (
-                            <CommunityPreviewCard
+                            <CommunityCard
                               key={community.id}
                               community={community}
-                              badgeText={community.memberRole ?? "Joined"}
-                              onPress={() =>
-                                router.push(`/community/${community.slug}`)
+                              variant="profile"
+                              badgeText={
+                                community.myRole === "MODERATOR"
+                                  ? "Moderator"
+                                  : "Joined"
                               }
-                              colors={colors}
-                              styles={styles}
+                              onPress={() =>
+                                router.push(`/user/community/${community.slug}`)
+                              }
                             />
                           ))}
                         </View>
@@ -671,82 +742,6 @@ export default function ProfileScreen() {
   );
 }
 
-function CommunityPreviewCard({
-  community,
-  badgeText,
-  onPress,
-  colors,
-  styles,
-}: {
-  community: CommunityPreview;
-  badgeText: string;
-  onPress: () => void;
-  colors: ReturnType<typeof useAppTheme>["colors"];
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return (
-    <Pressable onPress={onPress} style={styles.communityCard}>
-      {!!community.coverImage ? (
-        <Image
-          source={{ uri: toAbsoluteFileUrl(community.coverImage)! }}
-          style={styles.communityCover}
-          resizeMode="cover"
-        />
-      ) : (
-        <LinearGradient
-          colors={[colors.accent, colors.surfaceTertiary, colors.segment]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.communityCover}
-        />
-      )}
-
-      <View style={styles.communityBody}>
-        <View style={styles.communityRow}>
-          <View style={styles.communityAvatarWrap}>
-            {!!community.avatarImage ? (
-              <Image
-                source={{ uri: toAbsoluteFileUrl(community.avatarImage)! }}
-                style={styles.communityAvatar}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.communityAvatarFallback}>
-                <Ionicons
-                  name="people-outline"
-                  size={22}
-                  color={colors.accent}
-                />
-              </View>
-            )}
-          </View>
-
-          <View style={styles.communityTextArea}>
-            <View style={styles.communityHeaderRow}>
-              <View style={styles.communityTitleArea}>
-                <Text style={styles.communityName}>{community.name}</Text>
-                <Text style={styles.communityMeta}>
-                  {community.category?.name} • {community.visibility}
-                </Text>
-              </View>
-
-              <View style={styles.communityBadge}>
-                <Text style={styles.communityBadgeText}>{badgeText}</Text>
-              </View>
-            </View>
-
-            {!!community.description && (
-              <Text style={styles.communityDescription} numberOfLines={2}>
-                {community.description}
-              </Text>
-            )}
-          </View>
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
 function InfoRow({
   icon,
   label,
@@ -757,8 +752,8 @@ function InfoRow({
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
-  colors: ReturnType<typeof useAppTheme>["colors"];
-  styles: ReturnType<typeof createStyles>;
+  colors: ProfileColors;
+  styles: ProfileStyles;
 }) {
   return (
     <View style={styles.infoRow}>
@@ -772,359 +767,4 @@ function InfoRow({
       </View>
     </View>
   );
-}
-
-function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
-  return StyleSheet.create({
-    root: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    scroll: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    scrollContent: {
-      flexGrow: 1,
-      paddingBottom: 120,
-      backgroundColor: colors.background,
-    },
-    page: {
-      backgroundColor: colors.background,
-    },
-
-    loadingWrap: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.background,
-    },
-
-    coverSection: {
-      position: "relative",
-    },
-    coverImage: {
-      width: "100%",
-      height: 230,
-      borderBottomLeftRadius: 30,
-      borderBottomRightRadius: 30,
-    },
-    coverFallback: {
-      height: 230,
-      borderBottomLeftRadius: 30,
-      borderBottomRightRadius: 30,
-      overflow: "hidden",
-    },
-    coverFallbackContent: {
-      flex: 1,
-      justifyContent: "flex-end",
-      paddingHorizontal: 20,
-      paddingBottom: 20,
-      paddingTop: 24,
-    },
-    coverSmallText: {
-      color: "rgba(255,255,255,0.9)",
-      fontSize: 13,
-      fontFamily: "Poppins_500Medium",
-    },
-    coverBigText: {
-      color: "#ffffff",
-      fontSize: 28,
-      lineHeight: 36,
-      fontFamily: "Poppins_700Bold",
-      marginTop: 6,
-    },
-    coverActionWrap: {
-      position: "absolute",
-      right: 20,
-      top: 20,
-    },
-    coverActionButton: {
-      height: 42,
-      width: 42,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.2)",
-      backgroundColor: "rgba(255,255,255,0.15)",
-    },
-
-    avatarFloatingWrap: {
-      position: "absolute",
-      left: 20,
-      bottom: -54,
-      width: 116,
-      height: 116,
-    },
-    avatarOuter: {
-      width: 116,
-      height: 116,
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      borderRadius: 999,
-      borderWidth: 4,
-      borderColor: colors.background,
-      backgroundColor: colors.surface,
-    },
-    avatarImage: {
-      width: "100%",
-      height: "100%",
-    },
-    avatarFallback: {
-      width: "100%",
-      height: "100%",
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.segment,
-    },
-    avatarFallbackText: {
-      color: colors.accent,
-      fontSize: 36,
-      fontFamily: "Poppins_700Bold",
-    },
-    avatarActionWrap: {
-      position: "absolute",
-      right: 4,
-      bottom: 4,
-    },
-    avatarActionButton: {
-      width: 34,
-      height: 34,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-
-    profileInfoSection: {
-      paddingHorizontal: 20,
-      paddingTop: 68,
-    },
-    profileInfoRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-    },
-    profileInfoLeft: {
-      width: "78%",
-    },
-    profileInfoRight: {
-      width: "18%",
-      alignItems: "flex-end",
-    },
-    profileName: {
-      color: colors.foreground,
-      fontSize: 30,
-      lineHeight: 38,
-      fontFamily: "Poppins_700Bold",
-    },
-    profileEmail: {
-      marginTop: 4,
-      color: colors.muted,
-      fontSize: 15,
-      lineHeight: 22,
-      fontFamily: "Poppins_400Regular",
-    },
-    profileBusinessType: {
-      marginTop: 8,
-      color: colors.muted,
-      fontSize: 14,
-      lineHeight: 20,
-      fontFamily: "Poppins_500Medium",
-    },
-
-    tabsSection: {
-      marginTop: 24,
-    },
-    tabsListContent: {
-      flexDirection: "row",
-      gap: 20,
-      paddingLeft: 20,
-      paddingRight: 24,
-    },
-    tabsBody: {
-      paddingTop: 20,
-      backgroundColor: colors.background,
-    },
-
-    tabPanel: {
-      backgroundColor: colors.background,
-    },
-    paddedPanel: {
-      paddingHorizontal: 20,
-      backgroundColor: colors.background,
-    },
-    postsList: {
-      marginTop: 8,
-    },
-    stateWrap: {
-      paddingVertical: 32,
-    },
-    emptyState: {
-      paddingHorizontal: 20,
-      paddingVertical: 16,
-    },
-    sectionTitle: {
-      color: colors.foreground,
-      fontSize: 20,
-      fontFamily: "Poppins_700Bold",
-    },
-    sectionText: {
-      marginTop: 8,
-      color: colors.muted,
-      fontSize: 14,
-      lineHeight: 22,
-      fontFamily: "Poppins_400Regular",
-    },
-    sectionHint: {
-      marginTop: 16,
-      color: colors.muted,
-      fontSize: 13,
-      lineHeight: 20,
-      fontFamily: "Poppins_500Medium",
-    },
-    errorText: {
-      marginTop: 8,
-      color: colors.danger,
-      fontSize: 14,
-      fontFamily: "Poppins_500Medium",
-    },
-
-    infoList: {
-      marginTop: 16,
-      rowGap: 12,
-    },
-    infoRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      borderRadius: 18,
-      backgroundColor: colors.surface,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-    },
-    infoIconWrap: {
-      marginRight: 12,
-      width: 34,
-      height: 34,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 999,
-      backgroundColor: colors.segment,
-    },
-    infoTextWrap: {
-      width: "84%",
-    },
-    infoLabel: {
-      color: colors.muted,
-      fontSize: 12,
-      fontFamily: "Poppins_500Medium",
-    },
-    infoValue: {
-      marginTop: 4,
-      color: colors.foreground,
-      fontSize: 15,
-      lineHeight: 22,
-      fontFamily: "Poppins_600SemiBold",
-    },
-
-    communityList: {
-      marginTop: 16,
-      rowGap: 12,
-    },
-    communityCard: {
-      overflow: "hidden",
-      borderRadius: 22,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-    communityCover: {
-      width: "100%",
-      height: 110,
-    },
-    communityBody: {
-      padding: 16,
-    },
-    communityRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-    },
-    communityAvatarWrap: {
-      width: 52,
-      height: 52,
-      overflow: "hidden",
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.segment,
-    },
-    communityAvatar: {
-      width: "100%",
-      height: "100%",
-    },
-    communityAvatarFallback: {
-      width: "100%",
-      height: "100%",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    communityTextArea: {
-      width: "82%",
-      marginLeft: 12,
-    },
-    communityHeaderRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-    },
-    communityTitleArea: {
-      width: "72%",
-    },
-    communityName: {
-      color: colors.foreground,
-      fontSize: 16,
-      lineHeight: 22,
-      fontFamily: "Poppins_700Bold",
-    },
-    communityMeta: {
-      marginTop: 4,
-      color: colors.muted,
-      fontSize: 13,
-      lineHeight: 18,
-      fontFamily: "Poppins_500Medium",
-    },
-    communityBadge: {
-      borderRadius: 999,
-      backgroundColor: colors.segment,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-    },
-    communityBadgeText: {
-      color: colors.segmentForeground,
-      fontSize: 12,
-      fontFamily: "Poppins_600SemiBold",
-    },
-    communityDescription: {
-      marginTop: 8,
-      color: colors.muted,
-      fontSize: 13,
-      lineHeight: 20,
-      fontFamily: "Poppins_400Regular",
-    },
-
-    menuButton: {
-      width: 46,
-      height: 46,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-  });
 }

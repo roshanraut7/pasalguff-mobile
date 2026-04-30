@@ -1,26 +1,39 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { router } from "expo-router";
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   LayoutChangeEvent,
+  ListRenderItem,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
   RefreshControl,
   ScrollView,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { toAbsoluteFileUrl } from "@/lib/file-url";
 import {
   useGetCategoriesQuery,
   useGetExploreCommunitiesQuery,
   useJoinCommunityMutation,
+  useLeaveCommunityMutation,
 } from "@/store/api/communityApi";
+import type { CommunityItem } from "@/store/api/communityApi";
+import CommunityCard from "@/components/common/communityCard";
+
+const COMMUNITY_PAGE_LIMIT = 20;
 
 export default function ExploreScreen() {
   const categoryScrollRef = useRef<ScrollView>(null);
@@ -28,9 +41,24 @@ export default function ExploreScreen() {
   const { colors } = useAppTheme();
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
-  const [joiningCommunityId, setJoiningCommunityId] = useState<string | null>(null);
+  const [actionCommunityId, setActionCommunityId] = useState<string | null>(
+    null,
+  );
   const [categoryContainerWidth, setCategoryContainerWidth] = useState(0);
   const [categoryContentWidth, setCategoryContentWidth] = useState(0);
+
+  /**
+   * Page-based infinite loading for community list.
+   *
+   * Backend response:
+   * {
+   *   data: CommunityItem[],
+   *   meta: { total, page, limit, totalPages }
+   * }
+   */
+  const [page, setPage] = useState(1);
+  const [communities, setCommunities] = useState<CommunityItem[]>([]);
+  const [hasMore, setHasMore] = useState(true);
 
   const {
     data: categories = [],
@@ -43,41 +71,86 @@ export default function ExploreScreen() {
   });
 
   const {
-    data: communities = [],
+    data: communitiesResponse,
     isLoading: communitiesLoading,
     isFetching: communitiesFetching,
     error: communitiesError,
     refetch: refetchCommunities,
-  } = useGetExploreCommunitiesQuery(undefined, {
-    refetchOnMountOrArgChange: true,
-  });
+  } = useGetExploreCommunitiesQuery(
+    {
+      page,
+      limit: COMMUNITY_PAGE_LIMIT,
+      ...(selectedCategoryId !== "all"
+        ? { categoryId: selectedCategoryId }
+        : {}),
+      sortBy: "newest",
+    },
+    {
+      refetchOnMountOrArgChange: true,
+    },
+  );
 
   const [joinCommunity] = useJoinCommunityMutation();
+  const [leaveCommunity] = useLeaveCommunityMutation();
 
   const categoryPills = useMemo(() => {
     return [{ id: "all", name: "All", slug: "all" }, ...categories];
   }, [categories]);
 
-  const filteredCommunities = useMemo(() => {
-    if (selectedCategoryId === "all") {
-      return communities;
-    }
+  /**
+   * IMPORTANT:
+   * When category changes, reset loaded communities.
+   * Otherwise old category data will remain visible.
+   */
+  useEffect(() => {
+    setPage(1);
+    setCommunities([]);
+    setHasMore(true);
+  }, [selectedCategoryId]);
 
-    return communities.filter(
-      (community) => community.category?.id === selectedCategoryId
-    );
-  }, [communities, selectedCategoryId]);
+  /**
+   * Append newly fetched page data.
+   *
+   * page 1 = replace list
+   * page 2+ = append unique records
+   */
+  useEffect(() => {
+    if (!communitiesResponse) return;
+
+    const nextItems = communitiesResponse.data ?? [];
+    const meta = communitiesResponse.meta;
+
+    setCommunities((prev) => {
+      if (page === 1) {
+        return nextItems;
+      }
+
+      const existingIds = new Set(prev.map((item) => item.id));
+      const uniqueNextItems = nextItems.filter(
+        (item) => !existingIds.has(item.id),
+      );
+
+      return [...prev, ...uniqueNextItems];
+    });
+
+    setHasMore(meta.page < meta.totalPages);
+  }, [communitiesResponse, page]);
+
+  const isInitialLoading = communitiesLoading && page === 1;
 
   const isRefreshing =
     !categoriesLoading &&
     !communitiesLoading &&
+    page === 1 &&
     (categoriesFetching || communitiesFetching);
+
+  const isLoadingMore = communitiesFetching && page > 1;
 
   const showCategoryNextButton =
     categoryContentWidth > categoryContainerWidth + 8;
 
   const handleCategoryScroll = (
-    event: NativeSyntheticEvent<NativeScrollEvent>
+    event: NativeSyntheticEvent<NativeScrollEvent>,
   ) => {
     currentScrollX.current = event.nativeEvent.contentOffset.x;
   };
@@ -94,43 +167,148 @@ export default function ExploreScreen() {
   };
 
   const handleRefresh = useCallback(async () => {
-    await Promise.all([refetchCategories(), refetchCommunities()]);
-  }, [refetchCategories, refetchCommunities]);
+    setHasMore(true);
 
-  const handleJoin = useCallback(
-    async (communityId: string) => {
-      try {
-        setJoiningCommunityId(communityId);
-        await joinCommunity(communityId).unwrap();
-      } catch (error) {
-        console.log("Join community failed:", error);
-      } finally {
-        setJoiningCommunityId(null);
-      }
+    if (page !== 1) {
+      setPage(1);
+      await refetchCategories();
+      return;
+    }
+
+    await Promise.all([refetchCategories(), refetchCommunities()]);
+  }, [page, refetchCategories, refetchCommunities]);
+
+  const handleLoadMore = useCallback(() => {
+    if (communitiesFetching || !hasMore || communities.length === 0) return;
+    setPage((prev) => prev + 1);
+  }, [communitiesFetching, hasMore, communities.length]);
+
+  /**
+   * Correct owner check.
+   *
+   * Do not rely on myRole only.
+   * It must also be ACTIVE membership.
+   */
+  const isCommunityOwner = useCallback((community: CommunityItem) => {
+    return community.myRole === "ADMIN" && community.myMemberStatus === "ACTIVE";
+  }, []);
+
+  /**
+   * Correct joined check.
+   *
+   * Important:
+   * After leaving, backend may still return:
+   * myRole: "MEMBER"
+   * myMemberStatus: "LEFT"
+   *
+   * So do NOT treat myRole === MEMBER as joined.
+   */
+  const isCommunityJoined = useCallback((community: CommunityItem) => {
+    return community.isJoined === true || community.myMemberStatus === "ACTIVE";
+  }, []);
+
+  /**
+   * Optimistic update helper.
+   *
+   * This makes Join/Joined button change immediately,
+   * instead of waiting for refetch.
+   */
+  const updateCommunityInLocalState = useCallback(
+    (communityId: string, patch: Partial<CommunityItem>) => {
+      setCommunities((prev) =>
+        prev.map((community) =>
+          community.id === communityId
+            ? {
+                ...community,
+                ...patch,
+              }
+            : community,
+        ),
+      );
     },
-    [joinCommunity]
+    [],
   );
 
-  return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerStyle={{ paddingBottom: 140 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={isRefreshing}
-          onRefresh={handleRefresh}
-          tintColor={colors.accent}
-          colors={[colors.accent]}
-          progressBackgroundColor={colors.surface}
-        />
+  /**
+   * Toggle join/unjoin.
+   *
+   * Not joined -> join API
+   * Joined -> leave API
+   * Owner -> disabled
+   */
+  const handleToggleJoin = useCallback(
+    async (community: CommunityItem) => {
+      const isOwner = isCommunityOwner(community);
+      const isJoined = isCommunityJoined(community);
+
+      if (isOwner || actionCommunityId) return;
+
+      try {
+        setActionCommunityId(community.id);
+
+        if (isJoined) {
+          updateCommunityInLocalState(community.id, {
+            isJoined: false,
+            myMemberStatus: "LEFT",
+          });
+
+          await leaveCommunity(community.id).unwrap();
+        } else {
+          updateCommunityInLocalState(community.id, {
+            isJoined: true,
+            myRole: community.myRole ?? "MEMBER",
+            myMemberStatus: "ACTIVE",
+          });
+
+          await joinCommunity({ communityId: community.id }).unwrap();
+        }
+
+        await refetchCommunities();
+      } catch (error) {
+        console.log("Community join/leave failed:", error);
+
+        /**
+         * Rollback optimistic UI if API fails.
+         */
+        updateCommunityInLocalState(community.id, {
+          isJoined: community.isJoined,
+          myRole: community.myRole,
+          myMemberStatus: community.myMemberStatus,
+        });
+      } finally {
+        setActionCommunityId(null);
       }
-    >
-      <View className="px-4 pt-4">
+    },
+    [
+      actionCommunityId,
+      isCommunityJoined,
+      isCommunityOwner,
+      joinCommunity,
+      leaveCommunity,
+      refetchCommunities,
+      updateCommunityInLocalState,
+    ],
+  );
+
+ const renderCommunity: ListRenderItem<CommunityItem> = ({ item }) => {
+  return (
+    <CommunityCard
+      community={item}
+      showJoinButton
+      isActionLoading={actionCommunityId === item.id}
+      onPress={(community) => router.push(`/user/community/${community.slug}`)}
+      onPressJoinToggle={handleToggleJoin}
+    />
+  );
+};
+
+  const renderHeader = () => {
+    return (
+      <View style={{ paddingTop: 16, paddingBottom: 12 }}>
         <View>
           <Text
-            className="text-foreground"
             style={{
+              color: colors.foreground,
               fontSize: 26,
               fontFamily: "Poppins_700Bold",
             }}
@@ -139,8 +317,9 @@ export default function ExploreScreen() {
           </Text>
 
           <Text
-            className="mt-1 text-muted"
             style={{
+              marginTop: 4,
+              color: colors.muted,
               fontSize: 14,
               lineHeight: 22,
               fontFamily: "Poppins_400Regular",
@@ -150,10 +329,17 @@ export default function ExploreScreen() {
           </Text>
         </View>
 
-        <View className="mt-5 flex-row items-center gap-2">
-          <View className="flex-1" onLayout={handleCategoryContainerLayout}>
+        <View
+          style={{
+            marginTop: 20,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <View style={{ flex: 1 }} onLayout={handleCategoryContainerLayout}>
             {categoriesLoading ? (
-              <View className="py-3">
+              <View style={{ paddingVertical: 12 }}>
                 <ActivityIndicator size="small" color={colors.accent} />
               </View>
             ) : categoriesError ? (
@@ -184,14 +370,24 @@ export default function ExploreScreen() {
                   const isActive = selectedCategoryId === category.id;
 
                   return (
-                    <Pressable
+                    <TouchableOpacity
                       key={category.id}
-                      onPress={() => setSelectedCategoryId(category.id)}
-                      className={`rounded-full border px-4 py-2.5 ${
-                        isActive
-                          ? "border-accent bg-accent"
-                          : "border-border bg-surface"
-                      }`}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        if (selectedCategoryId !== category.id) {
+                          setSelectedCategoryId(category.id);
+                        }
+                      }}
+                      style={{
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: isActive ? colors.accent : colors.border,
+                        backgroundColor: isActive
+                          ? colors.accent
+                          : colors.surface,
+                        paddingHorizontal: 16,
+                        paddingVertical: 10,
+                      }}
                     >
                       <Text
                         numberOfLines={1}
@@ -205,7 +401,7 @@ export default function ExploreScreen() {
                       >
                         {category.name}
                       </Text>
-                    </Pressable>
+                    </TouchableOpacity>
                   );
                 })}
               </ScrollView>
@@ -213,23 +409,33 @@ export default function ExploreScreen() {
           </View>
 
           {showCategoryNextButton ? (
-            <Pressable
+            <TouchableOpacity
+              activeOpacity={0.85}
               onPress={handleSlideRight}
-              className="h-[38px] w-[38px] items-center justify-center rounded-full border border-border bg-surface"
+              style={{
+                height: 38,
+                width: 38,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surface,
+              }}
             >
               <Ionicons
                 name="chevron-forward"
                 size={18}
                 color={colors.accent}
               />
-            </Pressable>
+            </TouchableOpacity>
           ) : null}
         </View>
 
-        <View className="mt-6">
+        <View style={{ marginTop: 24 }}>
           <Text
-            className="text-foreground"
             style={{
+              color: colors.foreground,
               fontSize: 20,
               fontFamily: "Poppins_700Bold",
             }}
@@ -238,210 +444,130 @@ export default function ExploreScreen() {
           </Text>
 
           <Text
-            className="mt-1 text-muted"
             style={{
+              marginTop: 4,
+              color: colors.muted,
               fontSize: 13,
               lineHeight: 20,
               fontFamily: "Poppins_400Regular",
             }}
           >
             {selectedCategoryId === "all"
-              ? "All active communities are shown here for now."
+              ? "All active communities are shown here."
               : "Communities for the selected category are shown here."}
           </Text>
         </View>
-
-        <View className="mt-4 gap-4">
-          {communitiesLoading ? (
-            <View className="py-8">
-              <ActivityIndicator size="large" color={colors.accent} />
-            </View>
-          ) : communitiesError ? (
-            <Text
-              style={{
-                color: colors.danger,
-                fontSize: 14,
-                fontFamily: "Poppins_500Medium",
-              }}
-            >
-              Failed to load communities
-            </Text>
-          ) : filteredCommunities.length === 0 ? (
-            <View className="rounded-[24px] border border-border bg-surface px-4 py-5">
-              <Text
-                className="text-foreground"
-                style={{
-                  fontSize: 16,
-                  fontFamily: "Poppins_600SemiBold",
-                }}
-              >
-                No communities found
-              </Text>
-
-              <Text
-                className="mt-2 text-muted"
-                style={{
-                  fontSize: 14,
-                  lineHeight: 22,
-                  fontFamily: "Poppins_400Regular",
-                }}
-              >
-                There are no communities in this category yet.
-              </Text>
-            </View>
-          ) : (
-            filteredCommunities.map((community) => {
-              const coverUrl = toAbsoluteFileUrl(community.coverImage);
-              const avatarUrl = toAbsoluteFileUrl(community.avatarImage);
-
-              const isOwner = community.memberRole === "ADMIN";
-              const isJoined =
-                Boolean(community.isJoined) ||
-                community.memberRole === "ADMIN" ||
-                community.memberRole === "MODERATOR" ||
-                community.memberRole === "MEMBER";
-
-              const showJoinButton = !isOwner && !isJoined;
-              const joiningThisCommunity = joiningCommunityId === community.id;
-
-              return (
-                <Pressable
-                  key={community.id}
-                  onPress={() => router.push(`/community/${community.slug}`)}
-                  className="overflow-hidden rounded-[24px] border border-border bg-surface"
-                >
-                  {coverUrl ? (
-                    <Image
-                      source={{ uri: coverUrl }}
-                      style={{ width: "100%", height: 132 }}
-                      resizeMode="cover"
-                    />
-                  ) : null}
-
-                  <View className="p-4">
-                    <View className="flex-row items-start gap-3">
-                      <View className="h-[58px] w-[58px] overflow-hidden rounded-full border border-border bg-segment">
-                        {avatarUrl ? (
-                          <Image
-                            source={{ uri: avatarUrl }}
-                            style={{ width: "100%", height: "100%" }}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View className="h-full w-full items-center justify-center">
-                            <Ionicons
-                              name="people-outline"
-                              size={24}
-                              color={colors.segmentForeground}
-                            />
-                          </View>
-                        )}
-                      </View>
-
-                      <View className="flex-1">
-                        <View className="flex-row items-start justify-between gap-3">
-                          <View className="flex-1 pr-2">
-                            <Text
-                              numberOfLines={2}
-                              className="text-foreground"
-                              style={{
-                                fontSize: 18,
-                                lineHeight: 24,
-                                fontFamily: "Poppins_700Bold",
-                              }}
-                            >
-                              {community.name}
-                            </Text>
-
-                            <Text
-                              numberOfLines={1}
-                              className="mt-1 text-muted"
-                              style={{
-                                fontSize: 13,
-                                lineHeight: 18,
-                                fontFamily: "Poppins_500Medium",
-                              }}
-                            >
-                              {community.category?.name ?? "Unknown"} •{" "}
-                              {community.visibility}
-                            </Text>
-                          </View>
-
-                          {isOwner ? (
-                            <View className="rounded-full bg-segment px-3 py-2">
-                              <Text
-                                style={{
-                                  color: colors.segmentForeground,
-                                  fontSize: 12,
-                                  fontFamily: "Poppins_600SemiBold",
-                                }}
-                              >
-                                Owner
-                              </Text>
-                            </View>
-                          ) : isJoined ? (
-                            <View className="rounded-full bg-segment px-3 py-2">
-                              <Text
-                                style={{
-                                  color: colors.segmentForeground,
-                                  fontSize: 12,
-                                  fontFamily: "Poppins_600SemiBold",
-                                }}
-                              >
-                                Joined
-                              </Text>
-                            </View>
-                          ) : showJoinButton ? (
-                            <Pressable
-                              onPress={(event) => {
-                                event.stopPropagation();
-                                handleJoin(community.id);
-                              }}
-                              disabled={joiningThisCommunity}
-                              className="rounded-full bg-accent px-4 py-2"
-                            >
-                              {joiningThisCommunity ? (
-                                <ActivityIndicator
-                                  size="small"
-                                  color={colors.accentForeground}
-                                />
-                              ) : (
-                                <Text
-                                  style={{
-                                    color: colors.accentForeground,
-                                    fontSize: 12,
-                                    fontFamily: "Poppins_600SemiBold",
-                                  }}
-                                >
-                                  Join
-                                </Text>
-                              )}
-                            </Pressable>
-                          ) : null}
-                        </View>
-
-                        {!!community.description ? (
-                          <Text
-                            numberOfLines={2}
-                            className="mt-2 text-muted"
-                            style={{
-                              fontSize: 13,
-                              lineHeight: 20,
-                              fontFamily: "Poppins_400Regular",
-                            }}
-                          >
-                            {community.description}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-                </Pressable>
-              );
-            })
-          )}
-        </View>
       </View>
-    </ScrollView>
+    );
+  };
+
+  const renderEmpty = () => {
+    if (isInitialLoading) {
+      return (
+        <View style={{ paddingVertical: 40 }}>
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      );
+    }
+
+    if (communitiesError) {
+      return (
+        <View
+          style={{
+            marginTop: 8,
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surface,
+            paddingHorizontal: 16,
+            paddingVertical: 20,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.danger,
+              fontSize: 14,
+              fontFamily: "Poppins_500Medium",
+            }}
+          >
+            Failed to load communities
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View
+        style={{
+          marginTop: 8,
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+          paddingHorizontal: 16,
+          paddingVertical: 20,
+        }}
+      >
+        <Text
+          style={{
+            color: colors.foreground,
+            fontSize: 16,
+            fontFamily: "Poppins_600SemiBold",
+          }}
+        >
+          No communities found
+        </Text>
+
+        <Text
+          style={{
+            marginTop: 8,
+            color: colors.muted,
+            fontSize: 14,
+            lineHeight: 22,
+            fontFamily: "Poppins_400Regular",
+          }}
+        >
+          There are no communities in this category yet.
+        </Text>
+      </View>
+    );
+  };
+
+  const renderFooter = () => {
+    if (!isLoadingMore) return null;
+
+    return (
+      <View style={{ paddingVertical: 20 }}>
+        <ActivityIndicator size="small" color={colors.accent} />
+      </View>
+    );
+  };
+
+  return (
+    <FlatList
+      style={{ flex: 1, backgroundColor: colors.background }}
+      data={communities}
+      keyExtractor={(item) => item.id}
+      renderItem={renderCommunity}
+      ListHeaderComponent={renderHeader}
+      ListEmptyComponent={renderEmpty}
+      ListFooterComponent={renderFooter}
+      contentContainerStyle={{
+        paddingHorizontal: 18,
+        paddingBottom: 140,
+      }}
+      showsVerticalScrollIndicator={false}
+      onEndReached={handleLoadMore}
+      onEndReachedThreshold={0.5}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+          progressBackgroundColor={colors.surface}
+        />
+      }
+    />
   );
 }

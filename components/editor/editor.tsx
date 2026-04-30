@@ -46,7 +46,7 @@ export function AppRichTextEditor({
   onChangeHtml,
   label = "Post content",
   helperText,
-  editorHeight = 240,
+  editorHeight = 260,
   showToolbar = false,
 }: AppRichTextEditorProps) {
   const { colors } = useAppTheme();
@@ -69,24 +69,33 @@ export function AppRichTextEditor({
         },
       ]}
     >
-      <View style={styles.header}>
-        {!!label && (
-          <Text style={[styles.label, { color: palette.text }]}>{label}</Text>
-        )}
+      {!!label || !!helperText ? (
+        <View
+          style={[
+            styles.header,
+            {
+              borderBottomColor: palette.border,
+              backgroundColor: palette.card,
+            },
+          ]}
+        >
+          {!!label ? (
+            <Text style={[styles.label, { color: palette.text }]}>{label}</Text>
+          ) : null}
 
-        {!!helperText && (
-          <Text style={[styles.helper, { color: palette.muted }]}>
-            {helperText}
-          </Text>
-        )}
-      </View>
+          {!!helperText ? (
+            <Text style={[styles.helper, { color: palette.muted }]}>
+              {helperText}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
-      {showToolbar && (
+      {showToolbar ? (
         <View
           style={[
             styles.toolbarWrap,
             {
-              borderTopColor: palette.border,
               borderBottomColor: palette.border,
               backgroundColor: palette.surface,
             },
@@ -94,18 +103,18 @@ export function AppRichTextEditor({
         >
           <Toolbar editor={editor} />
         </View>
-      )}
+      ) : null}
 
       <View
         style={[
           styles.editorArea,
           {
-            height: editorHeight,
+            minHeight: editorHeight,
             backgroundColor: palette.card,
           },
         ]}
       >
-        <RichText editor={editor} />
+        <RichText editor={editor} style={styles.richText} />
       </View>
 
       <HtmlWatcher editor={editor} onChangeHtml={onChangeHtml} />
@@ -154,13 +163,20 @@ export function useCreateEditor() {
       muted: colors.muted,
       link: colors.link,
     }),
-    [colors]
+    [colors],
   );
 
   const editor = useEditorBridge({
     autofocus: false,
     avoidIosKeyboard: true,
-    dynamicHeight: false,
+
+    /**
+     * Important fix:
+     * dynamicHeight true lets the editor grow with content.
+     * This reduces the inner editor scrolling problem.
+     */
+    dynamicHeight: true,
+
     editable: true,
     initialContent: "<p></p>",
     theme: {
@@ -185,10 +201,16 @@ export function useCreateEditor() {
 
   const injectedCss = useMemo(
     () => `
-      html, body {
+      html,
+      body {
         background: ${palette.card} !important;
         margin: 0 !important;
         padding: 0 !important;
+        overflow-y: hidden !important;
+      }
+
+      body {
+        min-height: auto !important;
       }
 
       .ProseMirror {
@@ -197,7 +219,9 @@ export function useCreateEditor() {
         caret-color: ${palette.text} !important;
         padding: 0 !important;
         margin: 0 !important;
-        min-height: 100% !important;
+        min-height: auto !important;
+        outline: none !important;
+        overflow: visible !important;
       }
 
       .ProseMirror,
@@ -220,6 +244,11 @@ export function useCreateEditor() {
         margin-right: 0 !important;
       }
 
+      .ProseMirror p {
+        margin-top: 0 !important;
+        margin-bottom: 8px !important;
+      }
+
       .ProseMirror a {
         color: ${palette.link} !important;
       }
@@ -229,7 +258,7 @@ export function useCreateEditor() {
         color: ${palette.muted} !important;
       }
     `,
-    [palette.card, palette.text, palette.muted, palette.link]
+    [palette.card, palette.text, palette.muted, palette.link],
   );
 
   useEffect(() => {
@@ -246,31 +275,46 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: "hidden",
   },
+
   header: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 10,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
+
   label: {
-    fontSize: 18,
-    fontFamily: "Poppins_600SemiBold",
+    fontSize: 20,
+    fontFamily: "Poppins_700Bold",
   },
+
   helper: {
     marginTop: 6,
     fontSize: 13,
     lineHeight: 20,
     fontFamily: "Poppins_400Regular",
   },
+
   toolbarWrap: {
-    borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingVertical: 6,
   },
+
+  /**
+   * Important fix:
+   * No padding here.
+   * This removes the inside spacing around the Description editor body.
+   */
   editorArea: {
     width: "100%",
-    minHeight: 0,
-    overflow: "hidden",
+    padding: 0,
+    overflow: "visible",
   },
+
+  richText: {
+    flex: 1,
+  },
+
   toolbarStandalone: {
     marginTop: 8,
     borderWidth: 1,
