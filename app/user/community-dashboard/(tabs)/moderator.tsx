@@ -1,6 +1,7 @@
 // app/user/community-dashboard/(tabs)/moderator.tsx
 
 import React, { useMemo, useState } from "react";
+import { router } from "expo-router";
 import {
   Alert,
   Pressable,
@@ -199,10 +200,21 @@ export default function ModeratorScreen() {
             />
 
             <GridAction
-              icon="analytics-outline"
-              label="Activity"
-              onPress={() => handleModeratorAction("activity")}
-            />
+  icon="analytics-outline"
+  label="Activity"
+  onPress={() => {
+    if (!selectedModerator) return;
+
+    closeActionSheet();
+
+    router.push({
+      pathname: "/pages/moderator-activity",
+      params: {
+        moderatorId: selectedModerator.id,
+      },
+    });
+  }}
+/>
 
             {selectedModerator?.status === "ACTIVE" ? (
               <GridAction
