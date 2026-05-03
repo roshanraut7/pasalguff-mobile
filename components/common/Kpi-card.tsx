@@ -1,5 +1,11 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import {
+  StyleProp,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme } from "@/hooks/useAppTheme";
 
@@ -7,12 +13,14 @@ type AdminKpiCardProps = {
   title: string;
   value: string | number;
   icon: keyof typeof Ionicons.glyphMap;
+  style?: StyleProp<ViewStyle>;
 };
 
 export default function AdminKpiCard({
   title,
   value,
   icon,
+  style,
 }: AdminKpiCardProps) {
   const { colors } = useAppTheme();
 
@@ -20,6 +28,7 @@ export default function AdminKpiCard({
     <View
       style={[
         styles.card,
+        style,
         {
           backgroundColor: colors.surface,
           borderColor: colors.border,
@@ -52,6 +61,7 @@ const styles = StyleSheet.create({
     minHeight: 128,
     justifyContent: "space-between",
   },
+
   iconWrap: {
     width: 38,
     height: 38,
@@ -59,10 +69,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   value: {
     fontSize: 26,
     fontFamily: "Poppins_700Bold",
   },
+
   title: {
     fontSize: 13,
     lineHeight: 18,

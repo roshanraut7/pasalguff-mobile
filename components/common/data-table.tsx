@@ -413,26 +413,27 @@ export default function DataTable<T>({
         ]}
       >
         <View style={styles.searchWrap}>
-          <Searchbar
-            value={searchValue}
-            onChangeText={onSearchChange}
-            placeholder={searchPlaceholder}
-            inputStyle={[
-              styles.searchInput,
-              {
-                color: colors.foreground,
-              },
-            ]}
-            style={[
-              styles.searchbar,
-              {
-                backgroundColor: colors.surface,
-              },
-            ]}
-            placeholderTextColor={colors.muted}
-            iconColor={colors.muted}
-            elevation={0}
-          />
+         <Searchbar
+  value={searchValue}
+  onChangeText={onSearchChange}
+  placeholder={searchPlaceholder}
+  inputStyle={[
+    styles.searchInput,
+    {
+      color: colors.foreground,
+    },
+  ]}
+  style={[
+    styles.searchbar,
+    {
+      backgroundColor: colors.surfaceSecondary,
+      borderColor: colors.border,
+    },
+  ]}
+  placeholderTextColor={colors.muted}
+  iconColor={colors.muted}
+  elevation={0}
+/>
         </View>
 
         {filters.length ? (
@@ -636,11 +637,12 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       borderRadius: 0,
       margin: 0,
     },
-    searchInput: {
-      fontSize: 14,
-      fontFamily: "Poppins_400Regular",
-      minHeight: 0,
-    },
+   searchInput: {
+  fontSize: 14,
+  fontFamily: "Poppins_400Regular",
+  minHeight: 0,
+  paddingVertical: 0,
+},
     filterRow: {
       flexDirection: "row",
       alignItems: "center",

@@ -11,20 +11,6 @@ export type PaginatedResponse<T> = {
   filters?: Record<string, unknown>;
 };
 
-export type CategoryItem = {
-  id: string;
-  name: string;
-  slug: string;
-  description?: string | null;
-  status?: "ACTIVE" | "INACTIVE";
-};
-
-export type CreateCategoryPayload = {
-  name: string;
-  description?: string;
-  status?: "ACTIVE" | "INACTIVE";
-};
-
 export type CommunityRole = "ADMIN" | "MODERATOR" | "MEMBER";
 export type CommunityVisibility = "PUBLIC" | "PRIVATE";
 export type CommunityStatus = "ACTIVE" | "INACTIVE";
@@ -221,27 +207,6 @@ export type CommunityIdTargetUserPayload = {
 
 export const communityApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    /**
-     * Categories
-     */
-    getCategories: builder.query<CategoryItem[], void>({
-      query: () => ({
-        url: "/categories",
-        method: "GET",
-      }),
-      providesTags: [{ type: "Category", id: "LIST" }],
-      keepUnusedDataFor: 300,
-    }),
-
-    createCategory: builder.mutation<CategoryItem, CreateCategoryPayload>({
-      query: (body) => ({
-        url: "/categories",
-        method: "POST",
-        body,
-      }),
-      invalidatesTags: [{ type: "Category", id: "LIST" }],
-    }),
-
     /**
      * Explore communities
      *
@@ -575,7 +540,10 @@ export const communityApi = baseApi.injectEndpoints({
       ],
     }),
 
-    removeModerator: builder.mutation<CommunityMemberItem, CommunityIdTargetUserPayload>({
+    removeModerator: builder.mutation<
+      CommunityMemberItem,
+      CommunityIdTargetUserPayload
+    >({
       query: ({ communityId, targetUserId }) => ({
         url: `/communities/${communityId}/moderators/${targetUserId}`,
         method: "DELETE",
@@ -663,9 +631,6 @@ export const communityApi = baseApi.injectEndpoints({
 });
 
 export const {
-  useGetCategoriesQuery,
-  useCreateCategoryMutation,
-
   useGetExploreCommunitiesQuery,
   useGetMyCommunitiesQuery,
   useGetCommunityBySlugQuery,

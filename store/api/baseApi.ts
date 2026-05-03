@@ -79,12 +79,14 @@ export const baseApi = createApi({
     "CommunityJoinRequests",
 
     "Profile",
+    "AdminCommunities",
 
     /**
      * Post feed / post detail / my posts.
      */
     "Post",
     "DraftPost",
+     "AdminUsers",
 
     /**
      * New engagement tags.
