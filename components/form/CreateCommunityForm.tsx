@@ -1,5 +1,13 @@
-import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  Keyboard,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { router } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,8 +19,10 @@ import {
   Input,
   Label,
   Menu,
+  SearchField,
   TextField,
 } from "heroui-native";
+
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import {
@@ -20,10 +30,11 @@ import {
   type CreateCommunityFormInput,
   type CreateCommunityFormValues,
 } from "@/schema/create-community.schema";
+import { useCreateCommunityMutation } from "@/store/api/communityApi";
 import {
-  useCreateCommunityMutation,
   useGetCategoriesQuery,
-} from "@/store/api/communityApi";
+  type CategoryRow,
+} from "@/store/api/category.api";
 import {
   useUploadCommunityAvatarMutation,
   useUploadCommunityCoverMutation,
@@ -31,16 +42,66 @@ import {
 
 type ImageTarget = "avatar" | "cover";
 
-export default function CreateCommunityForm() {
-    const { colors } = useAppTheme();
+type CreateCommunityFormProps = {
+  submitLabel?: string;
+  onSuccess?: () => void;
+};
+
+export default function CreateCommunityForm({
+  submitLabel = "Create Community",
+  onSuccess,
+}: CreateCommunityFormProps) {
+  const { colors } = useAppTheme();
+
   const [serverError, setServerError] = useState("");
-  const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(null);
+  const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(
+    null,
+  );
+
+  const [categorySearch, setCategorySearch] = useState("");
+  const [debouncedCategorySearch, setDebouncedCategorySearch] = useState("");
+  const [selectedCategorySnapshot, setSelectedCategorySnapshot] =
+    useState<CategoryRow | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedCategorySearch(categorySearch.trim());
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [categorySearch]);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () => {
+      setKeyboardVisible(true);
+    });
+
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const {
-    data: categories = [],
+    data: categoriesResponse,
     isLoading: categoriesLoading,
+    isFetching: categoriesFetching,
     error: categoriesError,
-  } = useGetCategoriesQuery();
+  } = useGetCategoriesQuery({
+    page: 1,
+    limit: 50,
+    search: debouncedCategorySearch || undefined,
+    status: "ACTIVE",
+    sortBy: "name",
+    sortDirection: "asc",
+  });
+
+  const categories = categoriesResponse?.data ?? [];
 
   const [createCommunity, { isLoading: isCreating }] =
     useCreateCommunityMutation();
@@ -68,16 +129,38 @@ export default function CreateCommunityForm() {
 
   const selectedCategoryId = watch("categoryId");
   const selectedVisibility = watch("visibility");
+
   const avatarPreview = toAbsoluteFileUrl(watch("avatarImage"));
   const coverPreview = toAbsoluteFileUrl(watch("coverImage"));
 
   const isUploadingAvatar = uploadingTarget === "avatar";
   const isUploadingCover = uploadingTarget === "cover";
 
-  const selectedCategory = useMemo(
-    () => categories.find((item) => item.id === selectedCategoryId) ?? null,
-    [categories, selectedCategoryId],
-  );
+  const selectedCategory = useMemo(() => {
+    if (!selectedCategoryId) return null;
+
+    const categoryFromCurrentList =
+      categories.find((category) => category.id === selectedCategoryId) ?? null;
+
+    if (categoryFromCurrentList) return categoryFromCurrentList;
+
+    if (selectedCategorySnapshot?.id === selectedCategoryId) {
+      return selectedCategorySnapshot;
+    }
+
+    return null;
+  }, [categories, selectedCategoryId, selectedCategorySnapshot]);
+
+  const handleSelectCategory = (category: CategoryRow) => {
+    setValue("categoryId", category.id, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+
+    setSelectedCategorySnapshot(category);
+    setCategorySearch("");
+    setDebouncedCategorySearch("");
+  };
 
   const uploadPickedAsset = async (
     asset: ImagePicker.ImagePickerAsset,
@@ -118,6 +201,7 @@ export default function CreateCommunityForm() {
 
   const pickFromCamera = async (target: ImageTarget) => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
+
     if (!permission.granted) {
       setServerError("Camera permission is required");
       return;
@@ -131,11 +215,13 @@ export default function CreateCommunityForm() {
     });
 
     if (result.canceled || !result.assets?.[0]) return;
+
     await uploadPickedAsset(result.assets[0], target);
   };
 
   const pickFromGallery = async (target: ImageTarget) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
     if (!permission.granted) {
       setServerError("Media library permission is required");
       return;
@@ -149,6 +235,7 @@ export default function CreateCommunityForm() {
     });
 
     if (result.canceled || !result.assets?.[0]) return;
+
     await uploadPickedAsset(result.assets[0], target);
   };
 
@@ -158,6 +245,7 @@ export default function CreateCommunityForm() {
         shouldDirty: true,
         shouldValidate: true,
       });
+
       return;
     }
 
@@ -179,6 +267,11 @@ export default function CreateCommunityForm() {
         coverImage: values.coverImage,
         visibility: values.visibility,
       }).unwrap();
+
+      if (onSuccess) {
+        onSuccess();
+        return;
+      }
 
       router.back();
     } catch (error: any) {
@@ -238,6 +331,7 @@ export default function CreateCommunityForm() {
 
               <Menu.Portal>
                 <Menu.Overlay />
+
                 <Menu.Content
                   presentation="popover"
                   placement="bottom"
@@ -307,6 +401,7 @@ export default function CreateCommunityForm() {
 
                 <Menu.Portal>
                   <Menu.Overlay />
+
                   <Menu.Content
                     presentation="popover"
                     placement="bottom"
@@ -345,12 +440,14 @@ export default function CreateCommunityForm() {
           render={({ field: { onChange, value } }) => (
             <TextField isRequired isInvalid={!!errors.name}>
               <Label>Community Name</Label>
+
               <Input
                 value={value}
                 onChangeText={onChange}
                 placeholder="Enter community name"
                 className="border-field-border bg-field-background"
               />
+
               {errors.name?.message ? (
                 <FieldError>{errors.name.message}</FieldError>
               ) : null}
@@ -364,6 +461,7 @@ export default function CreateCommunityForm() {
           render={({ field: { onChange, value } }) => (
             <TextField isInvalid={!!errors.description}>
               <Label>Description</Label>
+
               <Input
                 value={value ?? ""}
                 onChangeText={onChange}
@@ -373,6 +471,7 @@ export default function CreateCommunityForm() {
                 className="border-field-border bg-field-background"
                 style={{ minHeight: 110, textAlignVertical: "top" }}
               />
+
               {errors.description?.message ? (
                 <FieldError>{errors.description.message}</FieldError>
               ) : null}
@@ -380,215 +479,262 @@ export default function CreateCommunityForm() {
           )}
         />
 
-        <View>
-          <Label>Category</Label>
-
-          <Menu>
-            <Menu.Trigger asChild>
-              <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
-                <Text
-                   style={{
-      color: selectedCategory ? colors.foreground : colors.placeholder,
-      fontSize: 15,
-      fontFamily: "Poppins_400Regular",
-    }}
-                >
-                  {categoriesLoading
-                    ? "Loading categories..."
-                    : selectedCategory?.name || "Select a category"}
-                </Text>
-
-                <Ionicons
-                  name="chevron-down-outline"
-                  size={18}
-                  color={colors.muted}
-                />
-              </Pressable>
-            </Menu.Trigger>
-
-            <Menu.Portal>
-              <Menu.Overlay />
-           <Menu.Content
-  presentation="popover"
-  placement="bottom"
-  align="center"
-  width={260}
-  className="rounded-2xl border border-border bg-surface"
->
-  {categoriesLoading ? (
-    <Menu.Item isDisabled>
-      <Menu.ItemTitle
-        style={{
-          color: colors.muted,
-          fontFamily: "Poppins_500Medium",
-        }}
-      >
-        Loading categories...
-      </Menu.ItemTitle>
-    </Menu.Item>
-  ) : categoriesError ? (
-    <Menu.Item isDisabled>
-      <Menu.ItemTitle
-        style={{
-          color: colors.danger,
-          fontFamily: "Poppins_500Medium",
-        }}
-      >
-        Failed to load categories
-      </Menu.ItemTitle>
-    </Menu.Item>
-  ) : categories.length === 0 ? (
-    <Menu.Item isDisabled>
-      <Menu.ItemTitle
-        style={{
-          color: colors.muted,
-          fontFamily: "Poppins_500Medium",
-        }}
-      >
-        No categories available
-      </Menu.ItemTitle>
-    </Menu.Item>
-  ) : (
-    categories.map((category) => {
-      const isSelected = selectedCategoryId === category.id;
-
-      return (
-        <Menu.Item
-          key={category.id}
-          onPress={() =>
-            setValue("categoryId", category.id, {
-              shouldDirty: true,
-              shouldValidate: true,
-            })
-          }
-          className={isSelected ? "bg-segment" : ""}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              width: "100%",
-            }}
-          >
-            <Menu.ItemTitle
-              style={{
-                color: colors.foreground,
-                fontFamily: "Poppins_500Medium",
-              }}
-            >
-              {category.name}
-            </Menu.ItemTitle>
-
-            {isSelected ? (
-              <Ionicons
-                name="checkmark"
-                size={16}
-                color={colors.accent}
-              />
-            ) : null}
-          </View>
-        </Menu.Item>
-      );
-    })
-  )}
-</Menu.Content>
-            </Menu.Portal>
-          </Menu>
-
-          {errors.categoryId?.message ? (
-            <FieldError>{errors.categoryId.message}</FieldError>
-          ) : null}
-
-          {categoriesError ? (
-            <Text
-              style={{
-                color: colors.danger,
-                fontSize: 13,
-                fontFamily: "Poppins_500Medium",
-                marginTop: 8,
-              }}
-            >
-              Failed to load categories
-            </Text>
-          ) : null}
-        </View>
-
         <Controller
           control={control}
           name="categoryId"
-          render={() => <View />}
+          render={() => (
+            <View>
+              <Label>Category</Label>
+
+              <Menu>
+                <Menu.Trigger asChild>
+                  <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
+                    <Text
+                      style={{
+                        color: selectedCategory
+                          ? colors.foreground
+                          : colors.placeholder,
+                        fontSize: 15,
+                        fontFamily: "Poppins_400Regular",
+                      }}
+                    >
+                      {categoriesLoading
+                        ? "Loading categories..."
+                        : selectedCategory?.name || "Select a category"}
+                    </Text>
+
+                    <Ionicons
+                      name="chevron-down-outline"
+                      size={18}
+                      color={colors.muted}
+                    />
+                  </Pressable>
+                </Menu.Trigger>
+
+                <Menu.Portal>
+                  <Menu.Overlay />
+
+                  <Menu.Content
+                    presentation="popover"
+                    placement={keyboardVisible ? "top" : "bottom"}
+                    align="center"
+                    width={300}
+                    className="rounded-3xl border border-border bg-surface p-3"
+                  >
+                    <View className="mb-2">
+                      <SearchField
+                        value={categorySearch}
+                        onChange={setCategorySearch}
+                      >
+                        <SearchField.Group className="">
+                          <SearchField.SearchIcon  />
+
+                          <SearchField.Input
+                            placeholder="Search category..."
+                            className="flex-1"
+                          />
+
+                          <SearchField.ClearButton />
+                        </SearchField.Group>
+                      </SearchField>
+                    </View>
+
+                    {categoriesLoading || categoriesFetching ? (
+                      <Menu.Item isDisabled>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accent}
+                          />
+
+                          <Menu.ItemTitle
+                            style={{
+                              color: colors.muted,
+                              fontFamily: "Poppins_500Medium",
+                            }}
+                          >
+                            Searching categories...
+                          </Menu.ItemTitle>
+                        </View>
+                      </Menu.Item>
+                    ) : categoriesError ? (
+                      <Menu.Item isDisabled>
+                        <Menu.ItemTitle
+                          style={{
+                            color: colors.danger,
+                            fontFamily: "Poppins_500Medium",
+                          }}
+                        >
+                          Failed to load categories
+                        </Menu.ItemTitle>
+                      </Menu.Item>
+                    ) : categories.length === 0 ? (
+                      <Menu.Item isDisabled>
+                        <Menu.ItemTitle
+                          style={{
+                            color: colors.muted,
+                            fontFamily: "Poppins_500Medium",
+                          }}
+                        >
+                          No categories found
+                        </Menu.ItemTitle>
+                      </Menu.Item>
+                    ) : (
+                      <ScrollView
+                        style={{ maxHeight: keyboardVisible ? 220 : 360 }}
+                        nestedScrollEnabled
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
+                      >
+                        {categories.map((category) => {
+                          const isSelected =
+                            selectedCategoryId === category.id;
+
+                          return (
+                            <Menu.Item
+                              key={category.id}
+                              onPress={() => handleSelectCategory(category)}
+                              className={isSelected ? "bg-segment" : ""}
+                            >
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  width: "100%",
+                                }}
+                              >
+                                <Menu.ItemTitle
+                                  style={{
+                                    color: colors.foreground,
+                                    fontFamily: "Poppins_600SemiBold",
+                                  }}
+                                >
+                                  {category.name}
+                                </Menu.ItemTitle>
+
+                                {isSelected ? (
+                                  <Ionicons
+                                    name="checkmark"
+                                    size={16}
+                                    color={colors.accent}
+                                  />
+                                ) : null}
+                              </View>
+                            </Menu.Item>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+                  </Menu.Content>
+                </Menu.Portal>
+              </Menu>
+
+              {errors.categoryId?.message ? (
+                <FieldError>{errors.categoryId.message}</FieldError>
+              ) : null}
+
+              {categoriesError ? (
+                <Text
+                  style={{
+                    color: colors.danger,
+                    fontSize: 13,
+                    fontFamily: "Poppins_500Medium",
+                    marginTop: 8,
+                  }}
+                >
+                  Failed to load categories
+                </Text>
+              ) : null}
+            </View>
+          )}
         />
 
-        <View>
-          <Label>Visibility</Label>
+        <Controller
+          control={control}
+          name="visibility"
+          render={() => (
+            <View>
+              <Label>Visibility</Label>
 
-          <Menu>
-            <Menu.Trigger asChild>
-              <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
-                <View className="flex-row items-center gap-2">
-                  <Ionicons
-                    name={
-                      selectedVisibility === "PRIVATE"
-                        ? "lock-closed-outline"
-                        : "globe-outline"
-                    }
-                    size={18}
-                    color={colors.accent}
-                  />
-                  <Text
-                    style={{
-                      color: colors.muted,
-                      fontSize: 15,
-                      fontFamily: "Poppins_500Medium",
-                    }}
+              <Menu>
+                <Menu.Trigger asChild>
+                  <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons
+                        name={
+                          selectedVisibility === "PRIVATE"
+                            ? "lock-closed-outline"
+                            : "globe-outline"
+                        }
+                        size={18}
+                        color={colors.accent}
+                      />
+
+                      <Text
+                        style={{
+                          color: colors.foreground,
+                          fontSize: 15,
+                          fontFamily: "Poppins_500Medium",
+                        }}
+                      >
+                        {selectedVisibility === "PRIVATE"
+                          ? "Private"
+                          : "Public"}
+                      </Text>
+                    </View>
+
+                    <Ionicons
+                      name="chevron-down-outline"
+                      size={18}
+                      color={colors.muted}
+                    />
+                  </Pressable>
+                </Menu.Trigger>
+
+                <Menu.Portal>
+                  <Menu.Overlay />
+
+                  <Menu.Content
+                    presentation="popover"
+                    placement="bottom"
+                    align="start"
+                    width={220}
+                    className="rounded-2xl border border-border bg-surface"
                   >
-                    {selectedVisibility === "PRIVATE" ? "Private" : "Public"}
-                  </Text>
-                </View>
+                    <Menu.Item
+                      onPress={() =>
+                        setValue("visibility", "PUBLIC", {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                    >
+                      <Menu.ItemTitle>Public</Menu.ItemTitle>
+                    </Menu.Item>
 
-                <Ionicons
-                  name="chevron-down-outline"
-                  size={18}
-                  color={colors.muted}
-                />
-              </Pressable>
-            </Menu.Trigger>
-
-            <Menu.Portal>
-              <Menu.Overlay />
-              <Menu.Content
-                presentation="popover"
-                placement="bottom"
-                align="start"
-                width={220}
-                className="rounded-2xl border border-border bg-surface"
-              >
-                <Menu.Item
-                  onPress={() =>
-                    setValue("visibility", "PUBLIC", {
-                      shouldValidate: true,
-                      shouldDirty: true,
-                    })
-                  }
-                >
-                  <Menu.ItemTitle>Public</Menu.ItemTitle>
-                </Menu.Item>
-
-                <Menu.Item
-                  onPress={() =>
-                    setValue("visibility", "PRIVATE", {
-                      shouldValidate: true,
-                      shouldDirty: true,
-                    })
-                  }
-                >
-                  <Menu.ItemTitle>Private</Menu.ItemTitle>
-                </Menu.Item>
-              </Menu.Content>
-            </Menu.Portal>
-          </Menu>
-        </View>
+                    <Menu.Item
+                      onPress={() =>
+                        setValue("visibility", "PRIVATE", {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                    >
+                      <Menu.ItemTitle>Private</Menu.ItemTitle>
+                    </Menu.Item>
+                  </Menu.Content>
+                </Menu.Portal>
+              </Menu>
+            </View>
+          )}
+        />
 
         {serverError ? (
           <Text
@@ -613,7 +759,7 @@ export default function CreateCommunityForm() {
           className="mt-2 rounded-full bg-accent"
         >
           <Button.Label className="text-accent-foreground">
-            {isCreating ? "Creating..." : "Create Community"}
+            {isCreating ? "Creating..." : submitLabel}
           </Button.Label>
         </Button>
       </View>

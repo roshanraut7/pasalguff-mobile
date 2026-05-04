@@ -17,6 +17,19 @@ import CreateCommunityForm from "@/components/form/CreateCommunityForm";
 export default function CreateCommunityPage() {
   const { colors } = useAppTheme();
 
+  const handleCreateSuccess = () => {
+    /**
+     * This page is opened from ProfileScreen.
+     * After community creation, go back to profile page.
+     *
+     * If your profile file is:
+     * app/(tabs)/profile.tsx
+     *
+     * then "/profile" is correct.
+     */
+    router.replace("/profile");
+  };
+
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
@@ -71,7 +84,10 @@ export default function CreateCommunityPage() {
             </View>
 
             <View className="rounded-[30px] border border-border bg-surface px-5 py-6">
-              <CreateCommunityForm />
+              <CreateCommunityForm
+                submitLabel="Create Community"
+                onSuccess={handleCreateSuccess}
+              />
             </View>
           </View>
         </ScrollView>

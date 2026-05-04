@@ -75,6 +75,7 @@ function AppContent() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="admin" />
               <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+              
             </Stack>
             <StatusBar style={statusBarStyle} />
           </ThemeProvider>

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const optionalUrlField = z
-    .union([z.string().url("Enter a valid image URL"), z.literal("")])
+    .union([z.url("Enter a valid image URL"), z.literal("")])
     .transform((value) => (value === "" ? undefined : value));
 
 const optionalTextField = z

@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Tabs } from "heroui-native";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import DataTable from "@/components/common/data-table";
@@ -31,7 +32,7 @@ import {
 
 import CreateCategoryForm from "@/components/form/CreateCategoryForm";
 
-type AdminTab = "communities" | "categories";
+type AdminTab = "communities" | "createdCommunities" | "categories";
 
 type CommunitySortBy =
   | "createdAt"
@@ -48,6 +49,8 @@ type CategorySortBy =
   | "status";
 
 type SortDirection = "asc" | "desc";
+
+const CREATE_COMMUNITY_ROUTE = "/pages/admin-create-community";
 
 export default function AdminCommunityScreen() {
   const { colors } = useAppTheme();
@@ -68,7 +71,6 @@ export default function AdminCommunityScreen() {
   const categoryFilters = useMemo(() => createCategoryFilters(), []);
 
   const [activeTab, setActiveTab] = useState<AdminTab>("communities");
-
   const [isCreateCategoryOpen, setIsCreateCategoryOpen] = useState(false);
 
   const [communityPage, setCommunityPage] = useState(0);
@@ -115,6 +117,52 @@ export default function AdminCommunityScreen() {
 
   const communities = adminCommunitiesResponse?.data ?? [];
   const communityMeta = adminCommunitiesResponse?.meta;
+
+  const [createdCommunityPage, setCreatedCommunityPage] = useState(0);
+  const [createdCommunityPageSize, setCreatedCommunityPageSize] = useState(10);
+  const [createdCommunitySearch, setCreatedCommunitySearch] = useState("");
+  const [createdCommunitySortBy, setCreatedCommunitySortBy] =
+    useState<CommunitySortBy>("createdAt");
+  const [createdCommunitySortDirection, setCreatedCommunitySortDirection] =
+    useState<SortDirection>("desc");
+
+  const [createdCommunityActiveFilters, setCreatedCommunityActiveFilters] =
+    useState<Record<string, string>>({
+      communityFilter: "ALL",
+    });
+
+  const createdCommunityStatusFilter: AdminCommunityStatus | undefined =
+    createdCommunityActiveFilters.communityFilter === "ACTIVE" ||
+    createdCommunityActiveFilters.communityFilter === "INACTIVE"
+      ? createdCommunityActiveFilters.communityFilter
+      : undefined;
+
+  const createdCommunityVisibilityFilter:
+    | AdminCommunityVisibility
+    | undefined =
+    createdCommunityActiveFilters.communityFilter === "PUBLIC" ||
+    createdCommunityActiveFilters.communityFilter === "PRIVATE"
+      ? createdCommunityActiveFilters.communityFilter
+      : undefined;
+
+  const {
+    data: createdCommunitiesResponse,
+    isLoading: isCreatedCommunityLoading,
+    isFetching: isCreatedCommunityFetching,
+    isError: isCreatedCommunityError,
+    refetch: refetchCreatedCommunities,
+  } = useGetAdminCommunitiesQuery({
+    page: createdCommunityPage + 1,
+    limit: createdCommunityPageSize,
+    search: createdCommunitySearch.trim() || undefined,
+    status: createdCommunityStatusFilter,
+    visibility: createdCommunityVisibilityFilter,
+    sortBy: createdCommunitySortBy,
+    sortDirection: createdCommunitySortDirection,
+  });
+
+  const createdCommunities = createdCommunitiesResponse?.data ?? [];
+  const createdCommunityMeta = createdCommunitiesResponse?.meta;
 
   const [categoryPage, setCategoryPage] = useState(0);
   const [categoryPageSize, setCategoryPageSize] = useState(10);
@@ -167,6 +215,10 @@ export default function AdminCommunityScreen() {
     totalCategories: categoryMeta?.total ?? 0,
   };
 
+  // const goToCreateCommunityPage = () => {
+  //   router.push(CREATE_COMMUNITY_ROUTE as never);
+  // };
+
   const handleCommunitySearchChange = (value: string) => {
     setCommunitySearch(value);
     setCommunityPage(0);
@@ -195,9 +247,7 @@ export default function AdminCommunityScreen() {
       "visibility",
     ];
 
-    if (!allowedSortKeys.includes(key as CommunitySortBy)) {
-      return;
-    }
+    if (!allowedSortKeys.includes(key as CommunitySortBy)) return;
 
     const nextSortBy = key as CommunitySortBy;
 
@@ -211,6 +261,50 @@ export default function AdminCommunityScreen() {
     }
 
     setCommunityPage(0);
+  };
+
+  const handleCreatedCommunitySearchChange = (value: string) => {
+    setCreatedCommunitySearch(value);
+    setCreatedCommunityPage(0);
+  };
+
+  const handleCreatedCommunityPageSizeChange = (nextPageSize: number) => {
+    setCreatedCommunityPageSize(nextPageSize);
+    setCreatedCommunityPage(0);
+  };
+
+  const handleCreatedCommunityFilterChange = (key: string, value: string) => {
+    setCreatedCommunityActiveFilters((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
+
+    setCreatedCommunityPage(0);
+  };
+
+  const handleCreatedCommunitySortChange = (key: string) => {
+    const allowedSortKeys: CommunitySortBy[] = [
+      "createdAt",
+      "updatedAt",
+      "name",
+      "status",
+      "visibility",
+    ];
+
+    if (!allowedSortKeys.includes(key as CommunitySortBy)) return;
+
+    const nextSortBy = key as CommunitySortBy;
+
+    if (createdCommunitySortBy === nextSortBy) {
+      setCreatedCommunitySortDirection((previous) =>
+        previous === "asc" ? "desc" : "asc",
+      );
+    } else {
+      setCreatedCommunitySortBy(nextSortBy);
+      setCreatedCommunitySortDirection("asc");
+    }
+
+    setCreatedCommunityPage(0);
   };
 
   const handleCategorySearchChange = (value: string) => {
@@ -241,9 +335,7 @@ export default function AdminCommunityScreen() {
       "status",
     ];
 
-    if (!allowedSortKeys.includes(key as CategorySortBy)) {
-      return;
-    }
+    if (!allowedSortKeys.includes(key as CategorySortBy)) return;
 
     const nextSortBy = key as CategorySortBy;
 
@@ -259,6 +351,12 @@ export default function AdminCommunityScreen() {
     setCategoryPage(0);
   };
 
+  const handleCreateCategoryClose = () => {
+    setIsCreateCategoryOpen(false);
+    setCategoryPage(0);
+    refetchCategories();
+  };
+
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <ScrollView
@@ -266,11 +364,28 @@ export default function AdminCommunityScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Communities</Text>
+        <View style={styles.pageHeader}>
+          <View style={styles.pageHeaderTextWrap}>
+            <Text style={styles.title}>Communities</Text>
 
-        <Text style={styles.subtitle}>
-          Manage communities, categories, visibility and moderation actions
-        </Text>
+            <Text style={styles.subtitle}>
+              Manage communities, categories, visibility and moderation actions
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() => router.push(`/pages/admin-create-community`)}
+            style={styles.headerCreateButton}
+          >
+            <Ionicons
+              name="add"
+              size={18}
+              color={colors.accentForeground}
+            />
+
+            <Text style={styles.createButtonText}>Create</Text>
+          </Pressable>
+        </View>
 
         <ScrollView
           horizontal
@@ -326,17 +441,28 @@ export default function AdminCommunityScreen() {
           onValueChange={(value) => setActiveTab(value as AdminTab)}
           variant="secondary"
         >
-          <Tabs.List>
-            <Tabs.Indicator />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabsScrollContent}
+            style={styles.tabsScroll}
+          >
+            <Tabs.List>
+              <Tabs.Indicator />
 
-            <Tabs.Trigger value="communities">
-              <Tabs.Label>Communities</Tabs.Label>
-            </Tabs.Trigger>
+              <Tabs.Trigger value="communities">
+                <Tabs.Label>Communities</Tabs.Label>
+              </Tabs.Trigger>
 
-            <Tabs.Trigger value="categories">
-              <Tabs.Label>Categories</Tabs.Label>
-            </Tabs.Trigger>
-          </Tabs.List>
+              <Tabs.Trigger value="createdCommunities">
+                <Tabs.Label>Community Created</Tabs.Label>
+              </Tabs.Trigger>
+
+              <Tabs.Trigger value="categories">
+                <Tabs.Label>Categories</Tabs.Label>
+              </Tabs.Trigger>
+            </Tabs.List>
+          </ScrollView>
 
           <Tabs.Content value="communities">
             <View style={styles.tabContent}>
@@ -381,41 +507,78 @@ export default function AdminCommunityScreen() {
             </View>
           </Tabs.Content>
 
+          <Tabs.Content value="createdCommunities">
+            <View style={styles.tabContent}>
+              <View style={styles.tabHeader}>
+                <View style={styles.tabHeaderTextWrap}>
+                  <Text style={styles.tabHeaderTitle}>Community Created</Text>
+
+                  <Text style={styles.tabHeaderSubtitle}>
+                    Manage communities created by this admin
+                  </Text>
+                </View>
+              </View>
+
+              {isCreatedCommunityError ? (
+                <Text
+                  style={styles.errorText}
+                  onPress={refetchCreatedCommunities}
+                >
+                  Failed to load created communities. Tap to retry.
+                </Text>
+              ) : null}
+
+              {isCreatedCommunityFetching && !isCreatedCommunityLoading ? (
+                <Text style={styles.fetchingText}>
+                  Updating created communities...
+                </Text>
+              ) : null}
+
+              <View style={styles.tableWrap}>
+                <DataTable
+                  rows={createdCommunities}
+                  columns={communityColumns}
+                  rowKey={(row) => row.id}
+                  searchValue={createdCommunitySearch}
+                  onSearchChange={handleCreatedCommunitySearchChange}
+                  searchPlaceholder="Search created communities"
+                  filters={communityFilters}
+                  activeFilters={createdCommunityActiveFilters}
+                  onFilterChange={handleCreatedCommunityFilterChange}
+                  sortBy={createdCommunitySortBy}
+                  sortDirection={createdCommunitySortDirection}
+                  onSortChange={handleCreatedCommunitySortChange}
+                  emptyTitle="No created communities found"
+                  emptySubtitle="Create a community or try another search."
+                  isLoading={isCreatedCommunityLoading}
+                  pagination={{
+                    page: createdCommunityPage,
+                    pageSize: createdCommunityPageSize,
+                    totalItems: createdCommunityMeta?.total ?? 0,
+                    totalPages: createdCommunityMeta?.totalPages ?? 1,
+                    onPageChange: setCreatedCommunityPage,
+                    onPageSizeChange: handleCreatedCommunityPageSizeChange,
+                    pageSizeOptions: [5, 10, 20],
+                  }}
+                />
+              </View>
+            </View>
+          </Tabs.Content>
+
           <Tabs.Content value="categories">
             <View style={styles.tabContent}>
               <View style={styles.tabHeader}>
                 <View style={styles.tabHeaderTextWrap}>
-                  <Text
-                    style={[
-                      styles.tabHeaderTitle,
-                      {
-                        color: colors.foreground,
-                      },
-                    ]}
-                  >
-                    Categories
-                  </Text>
+                  <Text style={styles.tabHeaderTitle}>Categories</Text>
 
-                  <Text
-                    style={[
-                      styles.tabHeaderSubtitle,
-                      {
-                        color: colors.muted,
-                      },
-                    ]}
-                  >
+                  <Text style={styles.tabHeaderSubtitle}>
                     Create and manage community categories
                   </Text>
                 </View>
 
                 <Pressable
                   onPress={() => setIsCreateCategoryOpen(true)}
-                  style={[
-                    styles.createButton,
-                    {
-                      backgroundColor: colors.accent,
-                    },
-                  ]}
+                  style={styles.createButton}
                 >
                   <Ionicons
                     name="add"
@@ -423,16 +586,7 @@ export default function AdminCommunityScreen() {
                     color={colors.accentForeground}
                   />
 
-                  <Text
-                    style={[
-                      styles.createButtonText,
-                      {
-                        color: colors.accentForeground,
-                      },
-                    ]}
-                  >
-                    Create
-                  </Text>
+                  <Text style={styles.createButtonText}>Create</Text>
                 </Pressable>
               </View>
 
@@ -481,7 +635,7 @@ export default function AdminCommunityScreen() {
 
       <CreateCategoryForm
         visible={isCreateCategoryOpen}
-        onClose={() => setIsCreateCategoryOpen(false)}
+        onClose={handleCreateCategoryClose}
       />
     </SafeAreaView>
   );
@@ -500,6 +654,18 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       paddingBottom: 120,
     },
 
+    pageHeader: {
+      marginBottom: 18,
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      columnGap: 12,
+    },
+
+    pageHeaderTextWrap: {
+      flex: 1,
+    },
+
     title: {
       fontSize: 30,
       lineHeight: 38,
@@ -509,11 +675,22 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
 
     subtitle: {
       marginTop: 6,
-      marginBottom: 18,
       fontSize: 14,
       lineHeight: 21,
       fontFamily: "Poppins_400Regular",
       color: colors.muted,
+    },
+
+    headerCreateButton: {
+      marginTop: 4,
+      height: 42,
+      paddingHorizontal: 14,
+      borderRadius: 999,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      columnGap: 6,
+      backgroundColor: colors.accent,
     },
 
     kpiScroll: {
@@ -529,6 +706,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     kpiCard: {
       width: 180,
       minHeight: 128,
+    },
+
+    tabsScroll: {
+      marginHorizontal: -18,
+    },
+
+    tabsScrollContent: {
+      paddingHorizontal: 18,
     },
 
     tabContent: {
@@ -551,6 +736,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontSize: 18,
       lineHeight: 25,
       fontFamily: "Poppins_700Bold",
+      color: colors.foreground,
     },
 
     tabHeaderSubtitle: {
@@ -558,6 +744,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontSize: 12,
       lineHeight: 17,
       fontFamily: "Poppins_400Regular",
+      color: colors.muted,
     },
 
     createButton: {
@@ -568,12 +755,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       alignItems: "center",
       justifyContent: "center",
       columnGap: 6,
+      backgroundColor: colors.accent,
     },
 
     createButtonText: {
       fontSize: 13,
       lineHeight: 18,
       fontFamily: "Poppins_600SemiBold",
+      color: colors.accentForeground,
     },
 
     errorText: {

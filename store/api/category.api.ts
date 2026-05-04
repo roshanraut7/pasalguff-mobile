@@ -61,13 +61,13 @@ export type UpdateCategoryStatusBody = {
 
 export const categoryApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getCategories: builder.query<GetCategoriesResponse, GetCategoriesQuery>({
+    getCategories: builder.query<GetCategoriesResponse, GetCategoriesQuery | void>({
       query: (params) => ({
         url: "/categories",
         method: "GET",
-        params,
+        params: params ?? undefined,
       }),
-      providesTags: ["Category"],
+      providesTags: [{ type: "Category", id: "LIST" }],
     }),
 
     createCategory: builder.mutation<CategoryRow, CreateCategoryBody>({
@@ -76,7 +76,7 @@ export const categoryApi = baseApi.injectEndpoints({
         method: "POST",
         body,
       }),
-      invalidatesTags: ["Category"],
+      invalidatesTags: [{ type: "Category", id: "LIST" }],
     }),
 
     updateCategory: builder.mutation<
@@ -88,7 +88,7 @@ export const categoryApi = baseApi.injectEndpoints({
         method: "PATCH",
         body,
       }),
-      invalidatesTags: ["Category"],
+      invalidatesTags: [{ type: "Category", id: "LIST" }],
     }),
 
     updateCategoryStatus: builder.mutation<
@@ -100,7 +100,7 @@ export const categoryApi = baseApi.injectEndpoints({
         method: "PATCH",
         body,
       }),
-      invalidatesTags: ["Category"],
+      invalidatesTags: [{ type: "Category", id: "LIST" }],
     }),
   }),
 });

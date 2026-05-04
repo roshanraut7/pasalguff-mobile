@@ -100,7 +100,6 @@ export default function NotificationsScreen() {
             </Text>
           </View>
         </View>
-0
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}

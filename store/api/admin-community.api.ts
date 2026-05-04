@@ -90,11 +90,11 @@ export const adminCommunityApi = baseApi.injectEndpoints({
       GetAdminCommunitiesQuery
     >({
       query: (params) => ({
-        url: "/admin/communities",
+        url: "/communities/admin/my",
         method: "GET",
         params,
       }),
-      providesTags: ["AdminCommunities"],
+      providesTags: [{ type: "AdminCommunities", id: "LIST" }],
     }),
   }),
 });

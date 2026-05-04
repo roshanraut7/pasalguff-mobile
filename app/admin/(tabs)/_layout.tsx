@@ -1,6 +1,6 @@
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Tabs, router, type Href } from "expo-router";
+import { Stack, Tabs, router, type Href } from "expo-router";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -240,6 +240,7 @@ function AdminCustomTabBar({ state, navigation }: BottomTabBarProps) {
 
 export default function AdminTabsLayout() {
   return (
+    
     <Tabs
       tabBar={(props) => <AdminCustomTabBar {...props} />}
       screenOptions={{
