@@ -9,12 +9,10 @@ import { router } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   LayoutChangeEvent,
   ListRenderItem,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -24,51 +22,84 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useGetCategoriesQuery } from "@/store/api/category.api";
 import {
-  useGetCategoriesQuery,
   useGetExploreCommunitiesQuery,
   useJoinCommunityMutation,
   useLeaveCommunityMutation,
 } from "@/store/api/communityApi";
-import type { CommunityItem } from "@/store/api/communityApi";
+
+import type { CategoryRow } from "@/store/api/category.api";
+import type { CommunityItem } from "@/types/community";
 import CommunityCard from "@/components/common/communityCard";
 
 const COMMUNITY_PAGE_LIMIT = 20;
+const CATEGORY_PAGE_LIMIT = 50;
+
+type CategoryPillItem = Pick<CategoryRow, "id" | "name" | "slug">;
+
+const ALL_CATEGORY: CategoryPillItem = {
+  id: "all",
+  name: "All",
+  slug: "all",
+};
 
 export default function ExploreScreen() {
   const categoryScrollRef = useRef<ScrollView>(null);
   const currentScrollX = useRef(0);
+
   const { colors } = useAppTheme();
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
   const [actionCommunityId, setActionCommunityId] = useState<string | null>(
     null,
   );
+
   const [categoryContainerWidth, setCategoryContainerWidth] = useState(0);
   const [categoryContentWidth, setCategoryContentWidth] = useState(0);
 
   /**
-   * Page-based infinite loading for community list.
-   *
-   * Backend response:
-   * {
-   *   data: CommunityItem[],
-   *   meta: { total, page, limit, totalPages }
-   * }
+   * Community pagination state.
    */
   const [page, setPage] = useState(1);
   const [communities, setCommunities] = useState<CommunityItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
 
+  /**
+   * Category pagination state.
+   *
+   * Backend max limit is 50, so we load categories page by page.
+   */
+  const [categoryPage, setCategoryPage] = useState(1);
+  const [categoryItems, setCategoryItems] = useState<CategoryRow[]>([]);
+  const [hasMoreCategories, setHasMoreCategories] = useState(true);
+
+  /**
+   * Pull refresh state.
+   *
+   * Do not use isFetching directly for RefreshControl, because normal API fetching
+   * can show the white pull-refresh spinner unexpectedly.
+   */
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+
   const {
-    data: categories = [],
+    data: categoriesResponse,
     isLoading: categoriesLoading,
     isFetching: categoriesFetching,
     error: categoriesError,
     refetch: refetchCategories,
-  } = useGetCategoriesQuery(undefined, {
-    refetchOnMountOrArgChange: true,
-  });
+  } = useGetCategoriesQuery(
+    {
+      page: categoryPage,
+      limit: CATEGORY_PAGE_LIMIT,
+      status: "ACTIVE",
+      sortBy: "sortOrder",
+      sortDirection: "asc",
+    },
+    {
+      refetchOnMountOrArgChange: true,
+    },
+  );
 
   const {
     data: communitiesResponse,
@@ -93,14 +124,38 @@ export default function ExploreScreen() {
   const [joinCommunity] = useJoinCommunityMutation();
   const [leaveCommunity] = useLeaveCommunityMutation();
 
-  const categoryPills = useMemo(() => {
-    return [{ id: "all", name: "All", slug: "all" }, ...categories];
-  }, [categories]);
+  /**
+   * Append paginated categories.
+   */
+  useEffect(() => {
+    if (!categoriesResponse) return;
+
+    const nextItems = categoriesResponse.data ?? [];
+    const meta = categoriesResponse.meta;
+
+    setCategoryItems((prev) => {
+      if (categoryPage === 1) {
+        return nextItems;
+      }
+
+      const existingIds = new Set(prev.map((item) => item.id));
+
+      const uniqueNextItems = nextItems.filter(
+        (item) => !existingIds.has(item.id),
+      );
+
+      return [...prev, ...uniqueNextItems];
+    });
+
+    setHasMoreCategories(meta.page < meta.totalPages);
+  }, [categoriesResponse, categoryPage]);
+
+  const categoryPills = useMemo<CategoryPillItem[]>(() => {
+    return [ALL_CATEGORY, ...categoryItems];
+  }, [categoryItems]);
 
   /**
-   * IMPORTANT:
-   * When category changes, reset loaded communities.
-   * Otherwise old category data will remain visible.
+   * Reset community pagination when selected category changes.
    */
   useEffect(() => {
     setPage(1);
@@ -109,10 +164,7 @@ export default function ExploreScreen() {
   }, [selectedCategoryId]);
 
   /**
-   * Append newly fetched page data.
-   *
-   * page 1 = replace list
-   * page 2+ = append unique records
+   * Append paginated communities.
    */
   useEffect(() => {
     if (!communitiesResponse) return;
@@ -126,6 +178,7 @@ export default function ExploreScreen() {
       }
 
       const existingIds = new Set(prev.map((item) => item.id));
+
       const uniqueNextItems = nextItems.filter(
         (item) => !existingIds.has(item.id),
       );
@@ -137,13 +190,6 @@ export default function ExploreScreen() {
   }, [communitiesResponse, page]);
 
   const isInitialLoading = communitiesLoading && page === 1;
-
-  const isRefreshing =
-    !categoriesLoading &&
-    !communitiesLoading &&
-    page === 1 &&
-    (categoriesFetching || communitiesFetching);
-
   const isLoadingMore = communitiesFetching && page > 1;
 
   const showCategoryNextButton =
@@ -166,53 +212,50 @@ export default function ExploreScreen() {
     });
   };
 
+  const handleLoadMoreCategories = () => {
+    if (categoriesFetching || !hasMoreCategories) return;
+
+    setCategoryPage((prev) => prev + 1);
+  };
+
   const handleRefresh = useCallback(async () => {
-    setHasMore(true);
+    try {
+      setIsPullRefreshing(true);
 
-    if (page !== 1) {
+      /**
+       * Reset categories.
+       */
+      setCategoryPage(1);
+      setCategoryItems([]);
+      setHasMoreCategories(true);
+
+      /**
+       * Reset communities.
+       */
       setPage(1);
-      await refetchCategories();
-      return;
-    }
+      setCommunities([]);
+      setHasMore(true);
 
-    await Promise.all([refetchCategories(), refetchCommunities()]);
-  }, [page, refetchCategories, refetchCommunities]);
+      await Promise.all([refetchCategories(), refetchCommunities()]);
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [refetchCategories, refetchCommunities]);
 
   const handleLoadMore = useCallback(() => {
     if (communitiesFetching || !hasMore || communities.length === 0) return;
+
     setPage((prev) => prev + 1);
   }, [communitiesFetching, hasMore, communities.length]);
 
-  /**
-   * Correct owner check.
-   *
-   * Do not rely on myRole only.
-   * It must also be ACTIVE membership.
-   */
   const isCommunityOwner = useCallback((community: CommunityItem) => {
     return community.myRole === "ADMIN" && community.myMemberStatus === "ACTIVE";
   }, []);
 
-  /**
-   * Correct joined check.
-   *
-   * Important:
-   * After leaving, backend may still return:
-   * myRole: "MEMBER"
-   * myMemberStatus: "LEFT"
-   *
-   * So do NOT treat myRole === MEMBER as joined.
-   */
   const isCommunityJoined = useCallback((community: CommunityItem) => {
     return community.isJoined === true || community.myMemberStatus === "ACTIVE";
   }, []);
 
-  /**
-   * Optimistic update helper.
-   *
-   * This makes Join/Joined button change immediately,
-   * instead of waiting for refetch.
-   */
   const updateCommunityInLocalState = useCallback(
     (communityId: string, patch: Partial<CommunityItem>) => {
       setCommunities((prev) =>
@@ -229,13 +272,6 @@ export default function ExploreScreen() {
     [],
   );
 
-  /**
-   * Toggle join/unjoin.
-   *
-   * Not joined -> join API
-   * Joined -> leave API
-   * Owner -> disabled
-   */
   const handleToggleJoin = useCallback(
     async (community: CommunityItem) => {
       const isOwner = isCommunityOwner(community);
@@ -267,9 +303,6 @@ export default function ExploreScreen() {
       } catch (error) {
         console.log("Community join/leave failed:", error);
 
-        /**
-         * Rollback optimistic UI if API fails.
-         */
         updateCommunityInLocalState(community.id, {
           isJoined: community.isJoined,
           myRole: community.myRole,
@@ -290,17 +323,17 @@ export default function ExploreScreen() {
     ],
   );
 
- const renderCommunity: ListRenderItem<CommunityItem> = ({ item }) => {
-  return (
-    <CommunityCard
-      community={item}
-      showJoinButton
-      isActionLoading={actionCommunityId === item.id}
-      onPress={(community) => router.push(`/user/community/${community.slug}`)}
-      onPressJoinToggle={handleToggleJoin}
-    />
-  );
-};
+  const renderCommunity: ListRenderItem<CommunityItem> = ({ item }) => {
+    return (
+      <CommunityCard
+        community={item}
+        showJoinButton
+        isActionLoading={actionCommunityId === item.id}
+        onPress={(community) => router.push(`/user/community/${community.slug}`)}
+        onPressJoinToggle={handleToggleJoin}
+      />
+    );
+  };
 
   const renderHeader = () => {
     return (
@@ -338,7 +371,7 @@ export default function ExploreScreen() {
           }}
         >
           <View style={{ flex: 1 }} onLayout={handleCategoryContainerLayout}>
-            {categoriesLoading ? (
+            {categoriesLoading && categoryPage === 1 ? (
               <View style={{ paddingVertical: 12 }}>
                 <ActivityIndicator size="small" color={colors.accent} />
               </View>
@@ -404,6 +437,34 @@ export default function ExploreScreen() {
                     </TouchableOpacity>
                   );
                 })}
+
+                {hasMoreCategories ? (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    disabled={categoriesFetching}
+                    onPress={handleLoadMoreCategories}
+                    style={{
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceSecondary,
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      opacity: categoriesFetching ? 0.7 : 1,
+                    }}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        color: colors.accent,
+                        fontSize: 13,
+                        fontFamily: "Poppins_600SemiBold",
+                      }}
+                    >
+                      {categoriesFetching ? "Loading..." : "More"}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </ScrollView>
             )}
           </View>
@@ -561,7 +622,7 @@ export default function ExploreScreen() {
       onEndReachedThreshold={0.5}
       refreshControl={
         <RefreshControl
-          refreshing={isRefreshing}
+          refreshing={isPullRefreshing}
           onRefresh={handleRefresh}
           tintColor={colors.accent}
           colors={[colors.accent]}

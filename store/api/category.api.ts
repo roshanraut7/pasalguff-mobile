@@ -27,7 +27,6 @@ export type GetCategoriesQuery = {
 
 export type GetCategoriesResponse = {
   data: CategoryRow[];
-
   meta: {
     total: number;
     page: number;
@@ -36,7 +35,6 @@ export type GetCategoriesResponse = {
     hasNextPage: boolean;
     hasPreviousPage: boolean;
   };
-
   filters: {
     search: string | null;
     status: CategoryStatus | null;
@@ -60,14 +58,38 @@ export type UpdateCategoryStatusBody = {
 };
 
 export const categoryApi = baseApi.injectEndpoints({
+  overrideExisting: true,
+
   endpoints: (builder) => ({
-    getCategories: builder.query<GetCategoriesResponse, GetCategoriesQuery | void>({
+    getCategories: builder.query<
+      GetCategoriesResponse,
+      GetCategoriesQuery | void
+    >({
       query: (params) => ({
         url: "/categories",
         method: "GET",
-        params: params ?? undefined,
+        params: {
+          page: params?.page ?? 1,
+          limit: params?.limit ?? 100,
+          ...(params?.search ? { search: params.search } : {}),
+          ...(params?.status ? { status: params.status } : {}),
+          ...(params?.sortBy ? { sortBy: params.sortBy } : {}),
+          ...(params?.sortDirection
+            ? { sortDirection: params.sortDirection }
+            : {}),
+        },
       }),
-      providesTags: [{ type: "Category", id: "LIST" }],
+
+      providesTags: (result) =>
+        result?.data
+          ? [
+              { type: "Category" as const, id: "LIST" },
+              ...result.data.map((category) => ({
+                type: "Category" as const,
+                id: category.id,
+              })),
+            ]
+          : [{ type: "Category" as const, id: "LIST" }],
     }),
 
     createCategory: builder.mutation<CategoryRow, CreateCategoryBody>({
@@ -76,7 +98,8 @@ export const categoryApi = baseApi.injectEndpoints({
         method: "POST",
         body,
       }),
-      invalidatesTags: [{ type: "Category", id: "LIST" }],
+
+      invalidatesTags: [{ type: "Category" as const, id: "LIST" }],
     }),
 
     updateCategory: builder.mutation<
@@ -88,7 +111,12 @@ export const categoryApi = baseApi.injectEndpoints({
         method: "PATCH",
         body,
       }),
-      invalidatesTags: [{ type: "Category", id: "LIST" }],
+
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "Category" as const, id },
+        { type: "Category" as const, id: "LIST" },
+        { type: "Community" as const, id: "LIST" },
+      ],
     }),
 
     updateCategoryStatus: builder.mutation<
@@ -100,7 +128,12 @@ export const categoryApi = baseApi.injectEndpoints({
         method: "PATCH",
         body,
       }),
-      invalidatesTags: [{ type: "Category", id: "LIST" }],
+
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "Category" as const, id },
+        { type: "Category" as const, id: "LIST" },
+        { type: "Community" as const, id: "LIST" },
+      ],
     }),
   }),
 });

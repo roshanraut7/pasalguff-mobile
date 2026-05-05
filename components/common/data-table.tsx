@@ -65,6 +65,13 @@ export type DataTableProps<T> = {
   emptyTitle?: string;
   emptySubtitle?: string;
   isLoading?: boolean;
+
+  /**
+   * Background loading for search/filter/sort/page/refetch.
+   * This keeps the current table visible instead of showing a big loader.
+   */
+  isFetching?: boolean;
+
   pagination?: DataTablePaginationProps;
 };
 
@@ -124,7 +131,7 @@ export function useDataTableState<T>({
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<string | undefined>(initialSort?.key);
   const [sortDirection, setSortDirection] = useState<SortDirection>(
-    initialSort?.direction ?? "asc"
+    initialSort?.direction ?? "asc",
   );
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(initialPageSize);
@@ -133,7 +140,7 @@ export function useDataTableState<T>({
     filters.reduce<Record<string, string>>((acc, filter) => {
       acc[filter.key] = filter.defaultValue ?? "ALL";
       return acc;
-    }, {})
+    }, {}),
   );
 
   const handleFilterChange = (key: string, value: string) => {
@@ -147,7 +154,7 @@ export function useDataTableState<T>({
     setSortBy((prevSortBy) => {
       if (prevSortBy === key) {
         setSortDirection((prevDirection) =>
-          prevDirection === "asc" ? "desc" : "asc"
+          prevDirection === "asc" ? "desc" : "asc",
         );
         return prevSortBy;
       }
@@ -171,7 +178,7 @@ export function useDataTableState<T>({
             : String(getRowValue(row, column.key) ?? "");
 
           return value.toLowerCase().includes(trimmedSearch);
-        })
+        }),
       );
     }
 
@@ -183,13 +190,13 @@ export function useDataTableState<T>({
 
           if (activeValue === "ALL") return true;
           return filter.predicate(row, activeValue);
-        })
+        }),
       );
     }
 
     if (sortBy) {
       const activeColumn = columns.find(
-        (column) => column.key === sortBy && column.sortable
+        (column) => column.key === sortBy && column.sortable,
       );
 
       if (activeColumn) {
@@ -273,7 +280,8 @@ function FilterDropdown<T>({
   const [visible, setVisible] = useState(false);
 
   const selectedLabel =
-    filter.options.find((option) => option.value === value)?.label ?? filter.label;
+    filter.options.find((option) => option.value === value)?.label ??
+    filter.label;
 
   return (
     <Menu
@@ -291,9 +299,11 @@ function FilterDropdown<T>({
           ]}
         >
           <Ionicons name="filter-outline" size={16} color={colors.muted} />
+
           <Text style={[styles.filterSelectText, { color: colors.foreground }]}>
             {selectedLabel}
           </Text>
+
           <Ionicons name="chevron-down" size={16} color={colors.muted} />
         </Pressable>
       }
@@ -347,6 +357,7 @@ function PageSizeDropdown({
           <Text style={[styles.pageSizeText, { color: colors.foreground }]}>
             {value}
           </Text>
+
           <Ionicons name="chevron-down" size={16} color={colors.muted} />
         </Pressable>
       }
@@ -385,10 +396,13 @@ export default function DataTable<T>({
   emptyTitle = "No data found",
   emptySubtitle = "Try another search or filter.",
   isLoading = false,
+  isFetching = false,
   pagination,
 }: DataTableProps<T>) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const showInitialLoading = isLoading && rows.length === 0;
 
   const paginationLabel = useMemo(() => {
     if (!pagination || pagination.totalItems === 0) return "0-0 of 0";
@@ -396,7 +410,7 @@ export default function DataTable<T>({
     const from = pagination.page * pagination.pageSize + 1;
     const to = Math.min(
       (pagination.page + 1) * pagination.pageSize,
-      pagination.totalItems
+      pagination.totalItems,
     );
 
     return `${from}-${to} of ${pagination.totalItems}`;
@@ -413,27 +427,50 @@ export default function DataTable<T>({
         ]}
       >
         <View style={styles.searchWrap}>
-         <Searchbar
-  value={searchValue}
-  onChangeText={onSearchChange}
-  placeholder={searchPlaceholder}
-  inputStyle={[
-    styles.searchInput,
-    {
-      color: colors.foreground,
-    },
-  ]}
-  style={[
-    styles.searchbar,
-    {
-      backgroundColor: colors.surfaceSecondary,
-      borderColor: colors.border,
-    },
-  ]}
-  placeholderTextColor={colors.muted}
-  iconColor={colors.muted}
-  elevation={0}
-/>
+          <Searchbar
+            value={searchValue}
+            onChangeText={onSearchChange}
+            placeholder={searchPlaceholder}
+            inputStyle={[
+              styles.searchInput,
+              {
+                color: colors.foreground,
+              },
+            ]}
+            style={[
+              styles.searchbar,
+              {
+                backgroundColor: colors.surfaceSecondary,
+                borderColor: colors.border,
+              },
+            ]}
+            placeholderTextColor={colors.muted}
+            iconColor={colors.muted}
+            elevation={0}
+
+            /**
+             * Important:
+             * Do not use React Native Paper's default Searchbar loading spinner here.
+             * That spinner can look like a white circle depending on theme/platform.
+             * We use our own small themed ActivityIndicator overlay instead.
+             */
+            loading={false}
+          />
+
+          {isFetching && !showInitialLoading ? (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.searchLoadingPill,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          ) : null}
         </View>
 
         {filters.length ? (
@@ -503,9 +540,23 @@ export default function DataTable<T>({
             })}
           </View>
 
-          {isLoading ? (
+          {showInitialLoading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color={colors.accent} />
+              <View
+                style={[
+                  styles.initialLoadingPill,
+                  {
+                    backgroundColor: colors.surfaceSecondary,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <ActivityIndicator size="small" color={colors.accent} />
+
+                <Text style={[styles.initialLoadingText, { color: colors.muted }]}>
+                  Loading data...
+                </Text>
+              </View>
             </View>
           ) : rows.length ? (
             rows.map((row, index) => (
@@ -538,6 +589,7 @@ export default function DataTable<T>({
               <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
                 {emptyTitle}
               </Text>
+
               <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
                 {emptySubtitle}
               </Text>
@@ -624,30 +676,50 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     tableRoot: {
       flex: 1,
     },
+
     controlsRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
       borderBottomWidth: 1,
     },
+
     searchWrap: {
       flex: 1,
+      position: "relative",
     },
+
     searchbar: {
       borderRadius: 0,
       margin: 0,
     },
-   searchInput: {
-  fontSize: 14,
-  fontFamily: "Poppins_400Regular",
-  minHeight: 0,
-  paddingVertical: 0,
-},
+
+    searchInput: {
+      fontSize: 14,
+      fontFamily: "Poppins_400Regular",
+      minHeight: 0,
+      paddingVertical: 0,
+      paddingRight: 42,
+    },
+
+    searchLoadingPill: {
+      position: "absolute",
+      right: 10,
+      top: 7,
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
     filterRow: {
       flexDirection: "row",
       alignItems: "center",
       paddingRight: 12,
     },
+
     filterSelectButton: {
       minHeight: 42,
       borderWidth: 1,
@@ -658,52 +730,78 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       justifyContent: "center",
       gap: 8,
     },
+
     filterSelectText: {
       fontSize: 13,
       fontFamily: "Poppins_500Medium",
     },
+
     headerRow: {
       flexDirection: "row",
       minHeight: 56,
       borderBottomWidth: 1,
     },
+
     bodyRow: {
       flexDirection: "row",
       minHeight: 78,
       borderBottomWidth: 1,
     },
+
     headerCell: {
       paddingHorizontal: 14,
       paddingVertical: 14,
     },
+
     bodyCell: {
       paddingHorizontal: 14,
       paddingVertical: 14,
     },
+
     headerCellInner: {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
     },
+
     headerText: {
       fontSize: 12,
       fontFamily: "Poppins_600SemiBold",
     },
+
     loadingWrap: {
       minHeight: 240,
       alignItems: "center",
       justifyContent: "center",
     },
+
+    initialLoadingPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+
+    initialLoadingText: {
+      fontSize: 13,
+      fontFamily: "Poppins_500Medium",
+    },
+
     emptyWrap: {
       minHeight: 220,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 24,
     },
+
     emptyTitle: {
       fontSize: 18,
       fontFamily: "Poppins_600SemiBold",
     },
+
     emptySubtitle: {
       marginTop: 6,
       fontSize: 13,
@@ -711,6 +809,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontFamily: "Poppins_400Regular",
       textAlign: "center",
     },
+
     paginationRow: {
       minHeight: 62,
       borderTopWidth: StyleSheet.hairlineWidth,
@@ -721,20 +820,24 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       paddingVertical: 10,
       gap: 12,
     },
+
     paginationLeft: {
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
     },
+
     paginationRight: {
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
     },
+
     paginationMetaText: {
       fontSize: 13,
       fontFamily: "Poppins_400Regular",
     },
+
     pageSizeButton: {
       minWidth: 58,
       minHeight: 38,
@@ -746,15 +849,18 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       justifyContent: "center",
       gap: 6,
     },
+
     pageSizeText: {
       fontSize: 14,
       fontFamily: "Poppins_600SemiBold",
     },
+
     paginationActions: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
     },
+
     pageButton: {
       width: 34,
       height: 34,

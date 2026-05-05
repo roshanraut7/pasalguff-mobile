@@ -1,222 +1,35 @@
 import { baseApi } from "./baseApi";
 
-export type PaginatedResponse<T> = {
-  data: T[];
-  meta: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
-  filters?: Record<string, unknown>;
-};
-
-export type CommunityRole = "ADMIN" | "MODERATOR" | "MEMBER";
-export type CommunityVisibility = "PUBLIC" | "PRIVATE";
-export type CommunityStatus = "ACTIVE" | "INACTIVE";
-export type CommunityMemberStatus = "ACTIVE" | "LEFT" | "BANNED";
-
-export type CommunityPermissions = {
-  canEditCommunity: boolean;
-  canManageMembers: boolean;
-  canManagePosts: boolean;
-  canManageComments: boolean;
-  canManageReports: boolean;
-};
-
-export type CommunityItem = {
-  id: string;
-  name: string;
-  slug: string;
-  description?: string | null;
-  avatarImage?: string | null;
-  coverImage?: string | null;
-  visibility: CommunityVisibility;
-  status: CommunityStatus;
-  categoryId?: string;
-  adminId?: string;
-  createdAt?: string;
-  updatedAt?: string;
-
-  category?: {
-    id: string;
-    name: string;
-    slug: string;
-  } | null;
-
-  postCount: number;
-  memberCount: number;
-
-  isJoined: boolean;
-  myRole: CommunityRole | null;
-  myMemberStatus: CommunityMemberStatus | null;
-
-  canEditCommunity: boolean;
-  canManageMembers: boolean;
-  canManagePosts: boolean;
-  canManageComments: boolean;
-  canManageReports: boolean;
-};
-
-export type CommunityAccessItem = {
-  communityId: string;
-  slug: string;
-  visibility: CommunityVisibility;
-  isMember: boolean;
-  role: CommunityRole | null;
-  memberStatus: CommunityMemberStatus | null;
-  canView: boolean;
-  canPost: boolean;
-  canManage: boolean;
-  permissions: CommunityPermissions;
-};
-
-export type CommunityMemberItem = {
-  id: string;
-  role: CommunityRole;
-  status: CommunityMemberStatus;
-  joinedAt: string;
-  updatedAt: string;
-  canEditCommunity: boolean;
-  canManageMembers: boolean;
-  canManagePosts: boolean;
-  canManageComments: boolean;
-  canManageReports: boolean;
-  user: {
-    id: string;
-    email?: string;
-    name: string;
-    firstName?: string;
-    lastName?: string;
-    image?: string | null;
-    businessName?: string;
-  };
-};
-
-export type CommunityJoinRequestItem = {
-  id: string;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
-  message?: string | null;
-  createdAt: string;
-  updatedAt?: string;
-  reviewedAt?: string | null;
-  reviewedById?: string | null;
-  user?: {
-    id: string;
-    email?: string;
-    name: string;
-    firstName?: string;
-    lastName?: string;
-    image?: string | null;
-    businessName?: string;
-  };
-};
-
-export type CreateCommunityPayload = {
-  name: string;
-  categoryId: string;
-  description?: string;
-  avatarImage?: string;
-  coverImage?: string;
-  visibility?: CommunityVisibility;
-};
-
-export type UpdateCommunityPayload = {
-  communityId: string;
-  name?: string;
-  categoryId?: string;
-  description?: string;
-  avatarImage?: string;
-  coverImage?: string;
-  visibility?: CommunityVisibility;
-};
-
-export type CommunityListQuery = {
-  page?: number;
-  limit?: number;
-  search?: string;
-  categoryId?: string;
-  visibility?: CommunityVisibility;
-  sortBy?: "newest" | "oldest" | "name_asc" | "name_desc";
-};
-
-export type MemberListQuery = {
-  communityId: string;
-  page?: number;
-  limit?: number;
-  search?: string;
-  role?: CommunityRole;
-  status?: CommunityMemberStatus;
-};
-
-export type JoinRequestListQuery = {
-  communityId: string;
-  page?: number;
-  limit?: number;
-  status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
-};
-
-export type JoinCommunityPayload =
-  | string
-  | {
-      communityId: string;
-      message?: string;
-    };
-
-export type AssignCommunityModeratorPayload = {
-  communityId: string;
-  targetUserId: string;
-  canEditCommunity?: boolean;
-  canManageMembers?: boolean;
-  canManagePosts?: boolean;
-  canManageComments?: boolean;
-  canManageReports?: boolean;
-};
-
-export type UpdateModeratorPermissionsPayload = {
-  communityId: string;
-  targetUserId: string;
-  canEditCommunity?: boolean;
-  canManageMembers?: boolean;
-  canManagePosts?: boolean;
-  canManageComments?: boolean;
-  canManageReports?: boolean;
-};
-
-export type TransferCommunityAdminPayload = {
-  communityId: string;
-  newAdminUserId: string;
-};
-
-export type ReviewCommunityJoinRequestPayload = {
-  communityId: string;
-  requestId: string;
-  action: "APPROVE" | "REJECT";
-};
-
-export type BanCommunityMemberPayload = {
-  communityId: string;
-  targetUserId: string;
-  reason?: string;
-};
-
-export type CommunityIdTargetUserPayload = {
-  communityId: string;
-  targetUserId: string;
-};
+import type {
+  AssignCommunityModeratorPayload,
+  BanCommunityMemberPayload,
+  CommunityAccessItem,
+  CommunityIdTargetUserPayload,
+  CommunityItem,
+  CommunityJoinRequestItem,
+  CommunityListQuery,
+  CommunityMemberItem,
+  CommunityStatus,
+  CommunityStatusResponse,
+  CreateCommunityPayload,
+  JoinCommunityPayload,
+  JoinRequestListQuery,
+  MemberListQuery,
+  PaginatedResponse,
+  ReviewCommunityJoinRequestPayload,
+  TransferCommunityAdminPayload,
+  UpdateCommunityPayload,
+  UpdateModeratorPermissionsPayload,
+} from "@/types/community";
 
 export const communityApi = baseApi.injectEndpoints({
+  overrideExisting: false,
+
   endpoints: (builder) => ({
-    /**
-     * Explore communities
-     *
-     * Backend response:
-     * {
-     *   data: CommunityItem[],
-     *   meta: { total, page, limit, totalPages },
-     *   filters: {...}
-     * }
-     */
+    /* =========================================================
+       COMMUNITY LISTS
+       ========================================================= */
+
     getExploreCommunities: builder.query<
       PaginatedResponse<CommunityItem>,
       CommunityListQuery | void
@@ -236,22 +49,16 @@ export const communityApi = baseApi.injectEndpoints({
       providesTags: (result) =>
         result?.data
           ? [
-              { type: "Community", id: "LIST" },
+              { type: "Community" as const, id: "LIST" },
               ...result.data.map((community) => ({
                 type: "Community" as const,
                 id: community.id,
               })),
             ]
-          : [{ type: "Community", id: "LIST" }],
+          : [{ type: "Community" as const, id: "LIST" }],
       keepUnusedDataFor: 60,
     }),
 
-    /**
-     * My joined communities.
-     *
-     * Includes communities where current user is ACTIVE member.
-     * Admin-created communities also appear here with myRole = ADMIN.
-     */
     getMyCommunities: builder.query<
       PaginatedResponse<CommunityItem>,
       CommunityListQuery | void
@@ -271,18 +78,19 @@ export const communityApi = baseApi.injectEndpoints({
       providesTags: (result) =>
         result?.data
           ? [
-              { type: "MyCommunity", id: "LIST" },
+              { type: "MyCommunity" as const, id: "LIST" },
               ...result.data.map((community) => ({
                 type: "Community" as const,
                 id: community.id,
               })),
             ]
-          : [{ type: "MyCommunity", id: "LIST" }],
+          : [{ type: "MyCommunity" as const, id: "LIST" }],
     }),
 
-    /**
-     * Community by slug.
-     */
+    /* =========================================================
+       COMMUNITY DETAILS / ACCESS
+       ========================================================= */
+
     getCommunityBySlug: builder.query<CommunityItem, string>({
       query: (slug) => ({
         url: `/communities/${slug}`,
@@ -290,23 +98,17 @@ export const communityApi = baseApi.injectEndpoints({
       }),
       providesTags: (result) =>
         result
-          ? [{ type: "Community", id: result.id }]
-          : [{ type: "Community", id: "DETAIL" }],
+          ? [{ type: "Community" as const, id: result.id }]
+          : [{ type: "Community" as const, id: "DETAIL" }],
     }),
 
-    /**
-     * Community details by ID.
-     *
-     * Useful when frontend already has communityId from post, notification,
-     * joined communities, moderation screens, etc.
-     */
     getCommunityDetailsById: builder.query<CommunityItem, string>({
       query: (communityId) => ({
         url: `/communities/${communityId}/details`,
         method: "GET",
       }),
       providesTags: (_result, _error, communityId) => [
-        { type: "Community", id: communityId },
+        { type: "Community" as const, id: communityId },
       ],
     }),
 
@@ -316,13 +118,14 @@ export const communityApi = baseApi.injectEndpoints({
         method: "GET",
       }),
       providesTags: (_result, _error, communityId) => [
-        { type: "CommunityAccess", id: communityId },
+        { type: "CommunityAccess" as const, id: communityId },
       ],
     }),
 
-    /**
-     * Community create/update/status
-     */
+    /* =========================================================
+       COMMUNITY CREATE / UPDATE / STATUS
+       ========================================================= */
+
     createCommunity: builder.mutation<CommunityItem, CreateCommunityPayload>({
       query: (body) => ({
         url: "/communities",
@@ -330,8 +133,8 @@ export const communityApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: [
-        { type: "Community", id: "LIST" },
-        { type: "MyCommunity", id: "LIST" },
+        { type: "Community" as const, id: "LIST" },
+        { type: "MyCommunity" as const, id: "LIST" },
       ],
     }),
 
@@ -342,15 +145,15 @@ export const communityApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "Community", id: communityId },
-        { type: "Community", id: "LIST" },
-        { type: "MyCommunity", id: "LIST" },
-        { type: "CommunityAccess", id: communityId },
+        { type: "Community" as const, id: communityId },
+        { type: "Community" as const, id: "LIST" },
+        { type: "MyCommunity" as const, id: "LIST" },
+        { type: "CommunityAccess" as const, id: communityId },
       ],
     }),
 
     updateCommunityStatus: builder.mutation<
-      { message: string; community: CommunityItem },
+      CommunityStatusResponse,
       { communityId: string; status: CommunityStatus }
     >({
       query: ({ communityId, status }) => ({
@@ -359,16 +162,17 @@ export const communityApi = baseApi.injectEndpoints({
         body: { status },
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "Community", id: communityId },
-        { type: "Community", id: "LIST" },
-        { type: "MyCommunity", id: "LIST" },
-        { type: "CommunityAccess", id: communityId },
+        { type: "Community" as const, id: communityId },
+        { type: "Community" as const, id: "LIST" },
+        { type: "MyCommunity" as const, id: "LIST" },
+        { type: "CommunityAccess" as const, id: communityId },
       ],
     }),
 
-    /**
-     * Membership
-     */
+    /* =========================================================
+       JOIN / LEAVE COMMUNITY
+       ========================================================= */
+
     joinCommunity: builder.mutation<unknown, JoinCommunityPayload>({
       query: (arg) => {
         const payload = typeof arg === "string" ? { communityId: arg } : arg;
@@ -383,12 +187,12 @@ export const communityApi = baseApi.injectEndpoints({
         const communityId = typeof arg === "string" ? arg : arg.communityId;
 
         return [
-          { type: "Community", id: "LIST" },
-          { type: "Community", id: communityId },
-          { type: "MyCommunity", id: "LIST" },
-          { type: "CommunityAccess", id: communityId },
-          { type: "CommunityMembers", id: communityId },
-          { type: "CommunityJoinRequests", id: communityId },
+          { type: "Community" as const, id: "LIST" },
+          { type: "Community" as const, id: communityId },
+          { type: "MyCommunity" as const, id: "LIST" },
+          { type: "CommunityAccess" as const, id: communityId },
+          { type: "CommunityMembers" as const, id: communityId },
+          { type: "CommunityJoinRequests" as const, id: communityId },
         ];
       },
     }),
@@ -399,25 +203,26 @@ export const communityApi = baseApi.injectEndpoints({
         method: "POST",
       }),
       invalidatesTags: (_result, _error, communityId) => [
-        { type: "Community", id: "LIST" },
-        { type: "Community", id: communityId },
-        { type: "MyCommunity", id: "LIST" },
-        { type: "CommunityAccess", id: communityId },
-        { type: "CommunityMembers", id: communityId },
-        { type: "CommunityJoinRequests", id: communityId },
+        { type: "Community" as const, id: "LIST" },
+        { type: "Community" as const, id: communityId },
+        { type: "MyCommunity" as const, id: "LIST" },
+        { type: "CommunityAccess" as const, id: communityId },
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityJoinRequests" as const, id: communityId },
       ],
     }),
 
-    /**
-     * Current user's private join request status.
-     */
+    /* =========================================================
+       JOIN REQUESTS
+       ========================================================= */
+
     getMyJoinRequest: builder.query<CommunityJoinRequestItem, string>({
       query: (communityId) => ({
         url: `/communities/${communityId}/join-requests/me`,
         method: "GET",
       }),
       providesTags: (_result, _error, communityId) => [
-        { type: "CommunityJoinRequests", id: `${communityId}-ME` },
+        { type: "CommunityJoinRequests" as const, id: `${communityId}-ME` },
       ],
     }),
 
@@ -427,17 +232,55 @@ export const communityApi = baseApi.injectEndpoints({
         method: "PATCH",
       }),
       invalidatesTags: (_result, _error, communityId) => [
-        { type: "Community", id: communityId },
-        { type: "Community", id: "LIST" },
-        { type: "CommunityAccess", id: communityId },
-        { type: "CommunityJoinRequests", id: communityId },
-        { type: "CommunityJoinRequests", id: `${communityId}-ME` },
+        { type: "Community" as const, id: communityId },
+        { type: "Community" as const, id: "LIST" },
+        { type: "CommunityAccess" as const, id: communityId },
+        { type: "CommunityJoinRequests" as const, id: communityId },
+        { type: "CommunityJoinRequests" as const, id: `${communityId}-ME` },
       ],
     }),
 
-    /**
-     * Members with pagination/search/filter.
-     */
+    getCommunityJoinRequests: builder.query<
+      PaginatedResponse<CommunityJoinRequestItem>,
+      JoinRequestListQuery
+    >({
+      query: ({ communityId, page = 1, limit = 20, status }) => ({
+        url: `/communities/${communityId}/join-requests`,
+        method: "GET",
+        params: {
+          page,
+          limit,
+          ...(status ? { status } : {}),
+        },
+      }),
+      providesTags: (_result, _error, { communityId }) => [
+        { type: "CommunityJoinRequests" as const, id: communityId },
+      ],
+    }),
+
+    reviewCommunityJoinRequest: builder.mutation<
+      unknown,
+      ReviewCommunityJoinRequestPayload
+    >({
+      query: ({ communityId, requestId, action }) => ({
+        url: `/communities/${communityId}/join-requests/${requestId}`,
+        method: "PATCH",
+        body: { action },
+      }),
+      invalidatesTags: (_result, _error, { communityId }) => [
+        { type: "CommunityJoinRequests" as const, id: communityId },
+        { type: "CommunityJoinRequests" as const, id: `${communityId}-ME` },
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "Community" as const, id: communityId },
+        { type: "Community" as const, id: "LIST" },
+        { type: "MyCommunity" as const, id: "LIST" },
+      ],
+    }),
+
+    /* =========================================================
+       MEMBERS
+       ========================================================= */
+
     getCommunityMembers: builder.query<
       PaginatedResponse<CommunityMemberItem>,
       MemberListQuery
@@ -454,58 +297,61 @@ export const communityApi = baseApi.injectEndpoints({
         },
       }),
       providesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers", id: communityId },
+        { type: "CommunityMembers" as const, id: communityId },
       ],
     }),
 
-    /**
-     * Private join requests with pagination/status filter.
-     */
-    getCommunityJoinRequests: builder.query<
-      PaginatedResponse<CommunityJoinRequestItem>,
-      JoinRequestListQuery
+    removeCommunityMember: builder.mutation<
+      CommunityMemberItem,
+      CommunityIdTargetUserPayload
     >({
-      query: ({ communityId, page = 1, limit = 20, status }) => ({
-        url: `/communities/${communityId}/join-requests`,
-        method: "GET",
-        params: {
-          page,
-          limit,
-          ...(status ? { status } : {}),
-        },
-      }),
-      providesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityJoinRequests", id: communityId },
-      ],
-    }),
-
-    reviewCommunityJoinRequest: builder.mutation<
-      unknown,
-      ReviewCommunityJoinRequestPayload
-    >({
-      query: ({ communityId, requestId, action }) => ({
-        url: `/communities/${communityId}/join-requests/${requestId}`,
-        method: "PATCH",
-        body: { action },
+      query: ({ communityId, targetUserId }) => ({
+        url: `/communities/${communityId}/members/${targetUserId}`,
+        method: "DELETE",
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityJoinRequests", id: communityId },
-        { type: "CommunityJoinRequests", id: `${communityId}-ME` },
-        { type: "CommunityMembers", id: communityId },
-        { type: "Community", id: communityId },
-        { type: "Community", id: "LIST" },
-        { type: "MyCommunity", id: "LIST" },
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "Community" as const, id: communityId },
+        { type: "Community" as const, id: "LIST" },
+        { type: "MyCommunity" as const, id: "LIST" },
       ],
     }),
 
-    /**
-     * Moderator management.
-     *
-     * These match the latest backend routes:
-     * POST   /communities/:communityId/moderators
-     * PATCH  /communities/:communityId/moderators/:targetUserId/permissions
-     * DELETE /communities/:communityId/moderators/:targetUserId
-     */
+    banCommunityMember: builder.mutation<unknown, BanCommunityMemberPayload>({
+      query: ({ communityId, targetUserId, reason }) => ({
+        url: `/communities/${communityId}/members/${targetUserId}/ban`,
+        method: "PATCH",
+        body: reason ? { reason } : {},
+      }),
+      invalidatesTags: (_result, _error, { communityId }) => [
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityJoinRequests" as const, id: communityId },
+        { type: "Community" as const, id: communityId },
+        { type: "Community" as const, id: "LIST" },
+        { type: "MyCommunity" as const, id: "LIST" },
+      ],
+    }),
+
+    unbanCommunityMember: builder.mutation<
+      CommunityMemberItem,
+      CommunityIdTargetUserPayload
+    >({
+      query: ({ communityId, targetUserId }) => ({
+        url: `/communities/${communityId}/members/${targetUserId}/unban`,
+        method: "PATCH",
+      }),
+      invalidatesTags: (_result, _error, { communityId }) => [
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "Community" as const, id: communityId },
+        { type: "Community" as const, id: "LIST" },
+        { type: "MyCommunity" as const, id: "LIST" },
+      ],
+    }),
+
+    /* =========================================================
+       MODERATORS
+       ========================================================= */
+
     assignCommunityModerator: builder.mutation<
       CommunityMemberItem,
       AssignCommunityModeratorPayload
@@ -519,9 +365,9 @@ export const communityApi = baseApi.injectEndpoints({
         },
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers", id: communityId },
-        { type: "CommunityAccess", id: communityId },
-        { type: "MyCommunity", id: "LIST" },
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityAccess" as const, id: communityId },
+        { type: "MyCommunity" as const, id: "LIST" },
       ],
     }),
 
@@ -535,8 +381,8 @@ export const communityApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers", id: communityId },
-        { type: "CommunityAccess", id: communityId },
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityAccess" as const, id: communityId },
       ],
     }),
 
@@ -549,64 +395,15 @@ export const communityApi = baseApi.injectEndpoints({
         method: "DELETE",
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers", id: communityId },
-        { type: "CommunityAccess", id: communityId },
-        { type: "MyCommunity", id: "LIST" },
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityAccess" as const, id: communityId },
+        { type: "MyCommunity" as const, id: "LIST" },
       ],
     }),
 
-    /**
-     * Remove/kick member.
-     *
-     * This is different from ban.
-     * Remove = status becomes LEFT and user can join again.
-     */
-    removeCommunityMember: builder.mutation<
-      CommunityMemberItem,
-      CommunityIdTargetUserPayload
-    >({
-      query: ({ communityId, targetUserId }) => ({
-        url: `/communities/${communityId}/members/${targetUserId}`,
-        method: "DELETE",
-      }),
-      invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers", id: communityId },
-        { type: "Community", id: communityId },
-        { type: "Community", id: "LIST" },
-        { type: "MyCommunity", id: "LIST" },
-      ],
-    }),
-
-    banCommunityMember: builder.mutation<unknown, BanCommunityMemberPayload>({
-      query: ({ communityId, targetUserId, reason }) => ({
-        url: `/communities/${communityId}/members/${targetUserId}/ban`,
-        method: "PATCH",
-        body: reason ? { reason } : {},
-      }),
-      invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers", id: communityId },
-        { type: "CommunityJoinRequests", id: communityId },
-        { type: "Community", id: communityId },
-        { type: "Community", id: "LIST" },
-        { type: "MyCommunity", id: "LIST" },
-      ],
-    }),
-
-    unbanCommunityMember: builder.mutation<
-      CommunityMemberItem,
-      CommunityIdTargetUserPayload
-    >({
-      query: ({ communityId, targetUserId }) => ({
-        url: `/communities/${communityId}/members/${targetUserId}/unban`,
-        method: "PATCH",
-      }),
-      invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers", id: communityId },
-        { type: "Community", id: communityId },
-        { type: "Community", id: "LIST" },
-        { type: "MyCommunity", id: "LIST" },
-      ],
-    }),
+    /* =========================================================
+       ADMIN TRANSFER
+       ========================================================= */
 
     transferCommunityAdmin: builder.mutation<
       unknown,
@@ -618,16 +415,14 @@ export const communityApi = baseApi.injectEndpoints({
         body: { newAdminUserId },
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "Community", id: "LIST" },
-        { type: "Community", id: communityId },
-        { type: "CommunityMembers", id: communityId },
-        { type: "CommunityAccess", id: communityId },
-        { type: "MyCommunity", id: "LIST" },
+        { type: "Community" as const, id: "LIST" },
+        { type: "Community" as const, id: communityId },
+        { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityAccess" as const, id: communityId },
+        { type: "MyCommunity" as const, id: "LIST" },
       ],
     }),
   }),
-
-  overrideExisting: false,
 });
 
 export const {
@@ -653,9 +448,10 @@ export const {
   useAssignCommunityModeratorMutation,
   useUpdateModeratorPermissionsMutation,
   useRemoveModeratorMutation,
-  useRemoveCommunityMemberMutation,
 
+  useRemoveCommunityMemberMutation,
   useBanCommunityMemberMutation,
   useUnbanCommunityMemberMutation,
+
   useTransferCommunityAdminMutation,
 } = communityApi;
