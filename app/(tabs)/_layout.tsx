@@ -80,6 +80,7 @@ export default function TabLayout() {
             userName={headerName}
             avatarUrl={headerAvatar}
             onAvatarPress={() => router.push("/(tabs)/profile")}
+            onFriendsPress={() => router.push("/user/friends")}
             onNotificationPress={() => {}}
           />
         ),

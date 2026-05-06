@@ -281,25 +281,24 @@ export const communityApi = baseApi.injectEndpoints({
        MEMBERS
        ========================================================= */
 
-    getCommunityMembers: builder.query<
-      PaginatedResponse<CommunityMemberItem>,
-      MemberListQuery
-    >({
-      query: ({ communityId, page = 1, limit = 20, search, role, status }) => ({
-        url: `/communities/${communityId}/members`,
-        method: "GET",
-        params: {
-          page,
-          limit,
-          ...(search ? { search } : {}),
-          ...(role ? { role } : {}),
-          ...(status ? { status } : {}),
-        },
-      }),
-      providesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers" as const, id: communityId },
-      ],
-    }),
+  getCommunityMembers: builder.query<
+  PaginatedResponse<CommunityMemberItem>,
+  MemberListQuery
+>({
+  query: ({ communityId, page = 1, limit = 20, search, status }) => ({
+    url: `/communities/${communityId}/members`,
+    method: "GET",
+    params: {
+      page,
+      limit,
+      ...(search ? { search } : {}),
+      ...(status ? { status } : {}),
+    },
+  }),
+  providesTags: (_result, _error, { communityId }) => [
+    { type: "CommunityMembers" as const, id: communityId },
+  ],
+}),
 
     removeCommunityMember: builder.mutation<
       CommunityMemberItem,

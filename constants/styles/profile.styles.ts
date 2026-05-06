@@ -43,25 +43,7 @@ export function createProfileStyles(colors: ProfileColors) {
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
       overflow: "hidden",
-    },
-    coverFallbackContent: {
-      flex: 1,
-      justifyContent: "flex-end",
-      paddingHorizontal: 20,
-      paddingBottom: 20,
-      paddingTop: 24,
-    },
-    coverSmallText: {
-      color: "rgba(255,255,255,0.9)",
-      fontSize: 13,
-      fontFamily: "Poppins_500Medium",
-    },
-    coverBigText: {
-      color: "#ffffff",
-      fontSize: 28,
-      lineHeight: 36,
-      fontFamily: "Poppins_700Bold",
-      marginTop: 6,
+      backgroundColor: colors.surfaceSecondary,
     },
     coverActionWrap: {
       position: "absolute",
@@ -76,7 +58,7 @@ export function createProfileStyles(colors: ProfileColors) {
       borderRadius: 999,
       borderWidth: 1,
       borderColor: "rgba(255,255,255,0.2)",
-      backgroundColor: "rgba(255,255,255,0.15)",
+      backgroundColor: "rgba(0,0,0,0.25)",
     },
 
     avatarFloatingWrap: {

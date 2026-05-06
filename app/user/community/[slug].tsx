@@ -1,7 +1,9 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   ScrollView,
   Text,
@@ -27,7 +29,8 @@ import {
   useSharePostMutation,
   useUnlikePostMutation,
 } from "@/store/api/postApi";
-import type { CommunityPostMedia } from "@/types/post";
+import type { CommunityPostMediaType } from "@/types/post";
+import type { CommunityMemberItem } from "@/types/community";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
 
@@ -38,9 +41,16 @@ export default function CommunityDetailScreen() {
 
   const [tab, setTab] = useState("posts");
   const [isJoining, setIsJoining] = useState(false);
+
+  const [postCursor, setPostCursor] = useState<string | undefined>(undefined);
+  const [postItems, setPostItems] = useState<any[]>([]);
+
+  const [memberPage, setMemberPage] = useState(1);
+  const [memberItems, setMemberItems] = useState<CommunityMemberItem[]>([]);
+
   const [viewer, setViewer] = useState<{
     visible: boolean;
-    media: CommunityPostMedia[];
+    media: CommunityPostMediaType[];
     index: number;
   }>({
     visible: false,
@@ -67,11 +77,6 @@ export default function CommunityDetailScreen() {
     refetchOnMountOrArgChange: true,
   });
 
-  /**
-   * Latest backend fields:
-   * community.myRole, community.isJoined
-   * access.role, access.canView, access.permissions
-   */
   const isOwner = access?.role === "ADMIN" || community?.myRole === "ADMIN";
 
   const isModerator =
@@ -89,34 +94,22 @@ export default function CommunityDetailScreen() {
     community?.visibility === "PUBLIC" ||
     Boolean(isJoined);
 
-  const canLoadMembers =
-    !!session?.user &&
-    !!community?.id &&
-    (access?.role === "ADMIN" || Boolean(access?.permissions?.canManageMembers));
+  const canManageMembers =
+    isOwner || Boolean(access?.permissions?.canManageMembers);
 
-  /**
-   * Latest members API expects an object:
-   * {
-   *   communityId,
-   *   page,
-   *   limit,
-   * }
-   *
-   * Latest response:
-   * {
-   *   data: CommunityMemberItem[],
-   *   meta: {...}
-   * }
-   */
+  const canLoadMembers =
+    !!session?.user && !!community?.id && Boolean(isJoined);
+
   const {
     data: membersResponse,
     isLoading: membersLoading,
+    isFetching: membersFetching,
     error: membersError,
   } = useGetCommunityMembersQuery(
     {
       communityId: community?.id ?? "",
-      page: 1,
-      limit: 50,
+      page: memberPage,
+      limit: 20,
     },
     {
       skip: !canLoadMembers || !community?.id,
@@ -124,26 +117,17 @@ export default function CommunityDetailScreen() {
     },
   );
 
-  const members = membersResponse?.data ?? [];
-
-  /**
-   * Latest posts API uses cursor/infinite scroll.
-   *
-   * Response:
-   * {
-   *   data: CommunityPost[],
-   *   meta: { limit, nextCursor, hasMore }
-   * }
-   */
   const {
     data: postsResponse,
     isLoading: postsLoading,
+    isFetching: postsFetching,
     error: postsError,
     refetch: refetchPosts,
   } = useGetCommunityPostsQuery(
     {
       communityId: community?.id ?? "",
-      limit: 20,
+      limit: 10,
+      cursor: postCursor,
       sortBy: "newest",
     },
     {
@@ -151,8 +135,6 @@ export default function CommunityDetailScreen() {
       refetchOnMountOrArgChange: true,
     },
   );
-
-  const posts = postsResponse?.data ?? [];
 
   const [joinCommunity] = useJoinCommunityMutation();
   const [likePost] = useLikePostMutation();
@@ -164,8 +146,10 @@ export default function CommunityDetailScreen() {
 
   const showJoinButton = !!community && !isOwner && !isJoined;
 
-  const memberCount = community?.memberCount ?? members.length ?? 0;
-  const totalPostCount = community?.postCount ?? posts.length ?? 0;
+  const memberCount =
+    community?.memberCount ?? membersResponse?.meta?.total ?? memberItems.length;
+
+  const totalPostCount = community?.postCount ?? postItems.length;
 
   const roleLabel = useMemo(() => {
     if (isOwner) return "Owner";
@@ -174,17 +158,60 @@ export default function CommunityDetailScreen() {
     return null;
   }, [isOwner, isModerator, isJoined]);
 
+  useEffect(() => {
+    setPostCursor(undefined);
+    setPostItems([]);
+
+    setMemberPage(1);
+    setMemberItems([]);
+  }, [community?.id]);
+
+  useEffect(() => {
+    if (!postsResponse) return;
+
+    const incomingPosts = postsResponse.data ?? [];
+
+    setPostItems((prev) => {
+      if (!postCursor) {
+        return incomingPosts;
+      }
+
+      const existingIds = new Set(prev.map((item) => item.id));
+      const newItems = incomingPosts.filter((item) => !existingIds.has(item.id));
+
+      return [...prev, ...newItems];
+    });
+  }, [postsResponse, postCursor]);
+
+  useEffect(() => {
+    if (!membersResponse) return;
+
+    const incomingMembers = membersResponse.data ?? [];
+
+    setMemberItems((prev) => {
+      if (memberPage === 1) {
+        return incomingMembers;
+      }
+
+      const existingIds = new Set(prev.map((item) => item.id));
+      const newItems = incomingMembers.filter(
+        (item) => !existingIds.has(item.id),
+      );
+
+      return [...prev, ...newItems];
+    });
+  }, [membersResponse, memberPage]);
+
   const handleJoin = async () => {
     if (!community?.id) return;
 
     try {
       setIsJoining(true);
 
-      /**
-       * Latest communityApi supports:
-       * joinCommunity({ communityId, message? })
-       */
       await joinCommunity({ communityId: community.id }).unwrap();
+
+      setMemberPage(1);
+      setMemberItems([]);
 
       await Promise.allSettled([
         refetchCommunity(),
@@ -240,13 +267,16 @@ export default function CommunityDetailScreen() {
     [sharePost],
   );
 
-  const openViewer = useCallback((media: CommunityPostMedia[], index: number) => {
-    setViewer({
-      visible: true,
-      media,
-      index,
-    });
-  }, []);
+  const openViewer = useCallback(
+    (media: CommunityPostMediaType[], index: number) => {
+      setViewer({
+        visible: true,
+        media,
+        index,
+      });
+    },
+    [],
+  );
 
   const closeViewer = useCallback(() => {
     setViewer((prev) => ({
@@ -254,6 +284,61 @@ export default function CommunityDetailScreen() {
       visible: false,
     }));
   }, []);
+
+  const loadMorePosts = useCallback(() => {
+    if (tab !== "posts") return;
+    if (postsLoading || postsFetching) return;
+    if (!postsResponse?.meta?.hasMore) return;
+    if (!postsResponse?.meta?.nextCursor) return;
+
+    setPostCursor(postsResponse.meta.nextCursor ?? undefined);
+  }, [
+    tab,
+    postsLoading,
+    postsFetching,
+    postsResponse?.meta?.hasMore,
+    postsResponse?.meta?.nextCursor,
+  ]);
+
+  const loadMoreMembers = useCallback(() => {
+    if (tab !== "members") return;
+    if (membersLoading || membersFetching) return;
+
+    const currentPage = membersResponse?.meta?.page ?? memberPage;
+    const totalPages = membersResponse?.meta?.totalPages ?? 1;
+
+    if (currentPage >= totalPages) return;
+
+    setMemberPage((prev) => prev + 1);
+  }, [
+    tab,
+    membersLoading,
+    membersFetching,
+    membersResponse?.meta?.page,
+    membersResponse?.meta?.totalPages,
+    memberPage,
+  ]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { layoutMeasurement, contentOffset, contentSize } =
+        event.nativeEvent;
+
+      const isCloseToBottom =
+        layoutMeasurement.height + contentOffset.y >= contentSize.height - 220;
+
+      if (!isCloseToBottom) return;
+
+      if (tab === "posts") {
+        loadMorePosts();
+      }
+
+      if (tab === "members") {
+        loadMoreMembers();
+      }
+    },
+    [tab, loadMorePosts, loadMoreMembers],
+  );
 
   if (isPending || communityLoading || accessLoading) {
     return (
@@ -310,6 +395,8 @@ export default function CommunityDetailScreen() {
           className="bg-background"
           contentContainerStyle={{ paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
         >
           <View className="bg-background">
             <View className="relative">
@@ -397,7 +484,6 @@ export default function CommunityDetailScreen() {
                   {!!community.description ? (
                     <Text
                       className="mt-3 text-muted"
-                      numberOfLines={3}
                       style={{
                         fontSize: 14,
                         lineHeight: 22,
@@ -449,9 +535,20 @@ export default function CommunityDetailScreen() {
                 </View>
               </View>
 
-              <View className="mt-5 flex-row items-center gap-3">
-                <StatCard label="Posts" value={String(totalPostCount)} />
-                <StatCard label="Members" value={String(memberCount)} />
+              <View className="mt-5 flex-row items-center" style={{ gap: 22 }}>
+                <InlineStat
+                  icon="document-text-outline"
+                  value={String(totalPostCount)}
+                  label="Posts"
+                  colors={colors}
+                />
+
+                <InlineStat
+                  icon="people-outline"
+                  value={String(memberCount)}
+                  label="Members"
+                  colors={colors}
+                />
               </View>
             </View>
 
@@ -508,7 +605,7 @@ export default function CommunityDetailScreen() {
                         >
                           Join this private community to view posts.
                         </Text>
-                      ) : postsLoading ? (
+                      ) : postsLoading && postItems.length === 0 ? (
                         <View className="py-8">
                           <ActivityIndicator
                             size="small"
@@ -526,7 +623,7 @@ export default function CommunityDetailScreen() {
                         >
                           Failed to load posts.
                         </Text>
-                      ) : posts.length === 0 ? (
+                      ) : postItems.length === 0 ? (
                         <Text
                           className="mt-2 px-5 text-muted"
                           style={{
@@ -539,20 +636,13 @@ export default function CommunityDetailScreen() {
                         </Text>
                       ) : (
                         <View className="mt-2">
-                          {posts.map((post) => (
+                          {postItems.map((post) => (
                             <CommunityPostCard
                               key={post.id}
                               post={post}
                               disableMediaPlayback={viewer.visible}
                               onPressLike={handleLikePost}
                               onPressComment={(item) => {
-                                /**
-                                 * Do not use router.push("/post/[postId]/comments")
-                                 * until you create:
-                                 * app/post/[postId]/comments.tsx
-                                 *
-                                 * Otherwise Expo typed routes will throw error.
-                                 */
                                 console.log("Comment pressed:", item.id);
                               }}
                               onPressShare={handleSharePost}
@@ -562,6 +652,29 @@ export default function CommunityDetailScreen() {
                               onPressMedia={openViewer}
                             />
                           ))}
+
+                          {postsFetching && postItems.length > 0 ? (
+                            <View className="py-5">
+                              <ActivityIndicator
+                                size="small"
+                                color={colors.accent}
+                              />
+                            </View>
+                          ) : null}
+
+                          {postsResponse &&
+                          postItems.length > 0 &&
+                          !postsResponse.meta.hasMore ? (
+                            <Text
+                              className="py-4 text-center text-muted"
+                              style={{
+                                fontSize: 12,
+                                fontFamily: "Poppins_400Regular",
+                              }}
+                            >
+                              No more posts.
+                            </Text>
+                          ) : null}
                         </View>
                       )}
                     </View>
@@ -625,7 +738,7 @@ export default function CommunityDetailScreen() {
 
                   <Tabs.Content value="members">
                     <View className="bg-background px-5 pt-2">
-                      {!isJoined && community.visibility === "PRIVATE" ? (
+                      {!isJoined ? (
                         <Text
                           className="text-muted"
                           style={{
@@ -634,110 +747,77 @@ export default function CommunityDetailScreen() {
                             fontFamily: "Poppins_400Regular",
                           }}
                         >
-                          Join this private community to access member-related
-                          information.
+                          Join this community to view members.
                         </Text>
-                      ) : canLoadMembers ? (
-                        membersLoading ? (
-                          <View className="py-6">
-                            <ActivityIndicator
-                              size="small"
-                              color={colors.accent}
-                            />
-                          </View>
-                        ) : membersError ? (
-                          <Text
-                            style={{
-                              color: colors.danger,
-                              fontSize: 14,
-                              fontFamily: "Poppins_500Medium",
-                            }}
-                          >
-                            Failed to load members.
-                          </Text>
-                        ) : members.length === 0 ? (
-                          <Text
-                            className="text-muted"
-                            style={{
-                              fontSize: 14,
-                              lineHeight: 22,
-                              fontFamily: "Poppins_400Regular",
-                            }}
-                          >
-                            No members found.
-                          </Text>
-                        ) : (
-                          <View style={{ rowGap: 12 }}>
-                            {members.map((member) => {
-                              const memberAvatar = toAbsoluteFileUrl(
-                                member.user.image,
-                              );
-
-                              return (
-                                <View
-                                  key={member.id}
-                                  className="flex-row items-center rounded-[20px] border border-border bg-surface px-4 py-3"
-                                  style={{ width: "100%" }}
-                                >
-                                  <View className="mr-3 h-[48px] w-[48px] overflow-hidden rounded-full border border-border bg-segment">
-                                    {memberAvatar ? (
-                                      <Image
-                                        source={{ uri: memberAvatar }}
-                                        style={{
-                                          width: "100%",
-                                          height: "100%",
-                                        }}
-                                        resizeMode="cover"
-                                      />
-                                    ) : (
-                                      <View className="h-full w-full items-center justify-center">
-                                        <Ionicons
-                                          name="person-outline"
-                                          size={20}
-                                          color={colors.accent}
-                                        />
-                                      </View>
-                                    )}
-                                  </View>
-
-                                  <View style={{ width: "76%" }}>
-                                    <Text
-                                      className="text-foreground"
-                                      style={{
-                                        fontSize: 15,
-                                        fontFamily: "Poppins_600SemiBold",
-                                      }}
-                                    >
-                                      {member.user.name}
-                                    </Text>
-
-                                    <Text
-                                      className="mt-1 text-muted"
-                                      style={{
-                                        fontSize: 13,
-                                        fontFamily: "Poppins_400Regular",
-                                      }}
-                                    >
-                                      {member.role}
-                                    </Text>
-                                  </View>
-                                </View>
-                              );
-                            })}
-                          </View>
-                        )
+                      ) : membersLoading && memberItems.length === 0 ? (
+                        <View className="py-6">
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accent}
+                          />
+                        </View>
+                      ) : membersError ? (
+                        <Text
+                          style={{
+                            color: colors.danger,
+                            fontSize: 14,
+                            fontFamily: "Poppins_500Medium",
+                          }}
+                        >
+                          Failed to load members.
+                        </Text>
+                      ) : memberItems.length === 0 ? (
+                        <Text
+                          className="text-muted"
+                          style={{
+                            fontSize: 14,
+                            lineHeight: 22,
+                            fontFamily: "Poppins_400Regular",
+                          }}
+                        >
+                          No members found.
+                        </Text>
                       ) : (
-                        <Text
-                          className="text-muted"
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 22,
-                            fontFamily: "Poppins_400Regular",
-                          }}
-                        >
-                          Members can only be viewed by community admins or
-                          moderators with member-management permission.
-                        </Text>
+                        <View style={{ rowGap: 12 }}>
+                          {memberItems.map((member) => {
+                            const memberAvatar =
+                              toAbsoluteFileUrl(member.user.image) ?? null;
+
+                            return (
+                              <MemberRow
+                                key={member.id}
+                                member={member}
+                                memberAvatar={memberAvatar}
+                                canManageMembers={canManageMembers}
+                                colors={colors}
+                              />
+                            );
+                          })}
+
+                          {membersFetching && memberItems.length > 0 ? (
+                            <View className="py-5">
+                              <ActivityIndicator
+                                size="small"
+                                color={colors.accent}
+                              />
+                            </View>
+                          ) : null}
+
+                          {membersResponse &&
+                          memberItems.length > 0 &&
+                          membersResponse.meta.page >=
+                            membersResponse.meta.totalPages ? (
+                            <Text
+                              className="py-4 text-center text-muted"
+                              style={{
+                                fontSize: 12,
+                                fontFamily: "Poppins_400Regular",
+                              }}
+                            >
+                              No more members.
+                            </Text>
+                          ) : null}
+                        </View>
                       )}
                     </View>
                   </Tabs.Content>
@@ -758,13 +838,27 @@ export default function CommunityDetailScreen() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function InlineStat({
+  icon,
+  value,
+  label,
+  colors,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  value: string;
+  label: string;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
   return (
-    <View className="flex-1 rounded-[22px] border border-border bg-surface px-4 py-4">
+    <View className="flex-row items-center">
+      <View className="mr-2 h-[34px] w-[34px] items-center justify-center rounded-full bg-segment">
+        <Ionicons name={icon} size={18} color={colors.accent} />
+      </View>
+
       <Text
         className="text-foreground"
         style={{
-          fontSize: 22,
+          fontSize: 16,
           fontFamily: "Poppins_700Bold",
         }}
       >
@@ -772,7 +866,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
       </Text>
 
       <Text
-        className="mt-1 text-muted"
+        className="ml-1 text-muted"
         style={{
           fontSize: 13,
           fontFamily: "Poppins_400Regular",
@@ -780,6 +874,77 @@ function StatCard({ label, value }: { label: string; value: string }) {
       >
         {label}
       </Text>
+    </View>
+  );
+}
+
+function MemberRow({
+  member,
+  memberAvatar,
+  canManageMembers,
+  colors,
+}: {
+  member: CommunityMemberItem;
+  memberAvatar: string | null;
+  canManageMembers: boolean;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  return (
+    <View
+      className="flex-row items-center rounded-[20px] border border-border bg-surface px-4 py-3"
+      style={{ width: "100%" }}
+    >
+      <View className="mr-3 h-[48px] w-[48px] overflow-hidden rounded-full border border-border bg-segment">
+        {memberAvatar ? (
+          <Image
+            source={{ uri: memberAvatar }}
+            style={{
+              width: "100%",
+              height: "100%",
+            }}
+            resizeMode="cover"
+          />
+        ) : (
+          <View className="h-full w-full items-center justify-center">
+            <Ionicons name="person-outline" size={20} color={colors.accent} />
+          </View>
+        )}
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text
+          className="text-foreground"
+          style={{
+            fontSize: 15,
+            fontFamily: "Poppins_600SemiBold",
+          }}
+        >
+          {member.user.name ?? "Unknown User"}
+        </Text>
+
+        <Text
+          className="mt-1 text-muted"
+          style={{
+            fontSize: 13,
+            fontFamily: "Poppins_400Regular",
+          }}
+        >
+          {member.role}
+          {canManageMembers && member.status ? ` • ${member.status}` : ""}
+        </Text>
+
+        {canManageMembers && member.user.email ? (
+          <Text
+            className="mt-1 text-muted"
+            style={{
+              fontSize: 12,
+              fontFamily: "Poppins_400Regular",
+            }}
+          >
+            {member.user.email}
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
 }

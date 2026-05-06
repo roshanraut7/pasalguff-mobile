@@ -1,15 +1,21 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   Pressable,
-  ScrollView,
+  RefreshControl,
   Text,
   View,
 } from "react-native";
 import { Redirect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { Menu, Tabs } from "heroui-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,14 +23,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { signOut, useSession } from "@/api/better-auth-client";
-import {
-  useGetMyCommunitiesQuery,
-  type CommunityItem,
-} from "@/store/api/communityApi";
+
+import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
+import type { CommunityItem } from "@/types/community";
+
 import {
   useGetMyProfileQuery,
   useUpdateMyProfileMutation,
 } from "@/store/api/profileApi";
+
 import {
   useDeletePostMutation,
   useGetMyPostsQuery,
@@ -32,14 +39,18 @@ import {
   useSharePostMutation,
   useUnlikePostMutation,
 } from "@/store/api/postApi";
-import type { CommunityPost, CommunityPostMedia } from "@/types/post";
+
+import type { CommunityPost, CommunityPostMediaType } from "@/types/post";
+
 import {
   useUploadProfileAvatarMutation,
   useUploadProfileCoverMutation,
 } from "@/store/api/uploadApi";
+
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
 import CommunityCard from "@/components/common/communityCard";
+
 import {
   createProfileStyles,
   type ProfileColors,
@@ -48,19 +59,27 @@ import {
 
 type ImageTarget = "avatar" | "cover";
 
+const POSTS_LIMIT = 10;
+
 export default function ProfileScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createProfileStyles(colors), [colors]);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [tab, setTab] = useState("posts");
+
   const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(
     null,
   );
 
+  const [postsCursor, setPostsCursor] = useState<string | null>(null);
+  const [allPosts, setAllPosts] = useState<CommunityPost[]>([]);
+
+  const lastAppliedCursorRef = useRef<string | null>("__initial__");
+
   const [viewer, setViewer] = useState<{
     visible: boolean;
-    media: CommunityPostMedia[];
+    media: CommunityPostMediaType[];
     index: number;
   }>({
     visible: false,
@@ -74,6 +93,7 @@ export default function ProfileScreen() {
     data: profile,
     isLoading: profileLoading,
     error: profileError,
+    refetch: refetchProfile,
   } = useGetMyProfileQuery(undefined, {
     skip: !session?.user,
   });
@@ -82,6 +102,7 @@ export default function ProfileScreen() {
     data: myCommunitiesResponse,
     isLoading: myCommunitiesLoading,
     error: myCommunitiesError,
+    refetch: refetchMyCommunities,
   } = useGetMyCommunitiesQuery(
     {
       page: 1,
@@ -92,15 +113,16 @@ export default function ProfileScreen() {
     },
   );
 
-  const myCommunities = (myCommunitiesResponse?.data ?? []) as CommunityItem[];
-
   const {
     data: myPostsResponse,
     isLoading: myPostsLoading,
+    isFetching: myPostsFetching,
     error: myPostsError,
+    refetch: refetchMyPosts,
   } = useGetMyPostsQuery(
     {
-      limit: 20,
+      limit: POSTS_LIMIT,
+      cursor: postsCursor,
       sortBy: "newest",
     },
     {
@@ -108,7 +130,10 @@ export default function ProfileScreen() {
     },
   );
 
-  const myPosts = myPostsResponse?.data ?? [];
+  const myCommunities = (myCommunitiesResponse?.data ?? []) as CommunityItem[];
+
+  const hasMorePosts = myPostsResponse?.meta?.hasMore ?? false;
+  const nextPostsCursor = myPostsResponse?.meta?.nextCursor ?? null;
 
   const [deletePost, { isLoading: isDeletingPost }] = useDeletePostMutation();
   const [likePost] = useLikePostMutation();
@@ -155,6 +180,54 @@ export default function ProfileScreen() {
     );
   }, [myCommunities]);
 
+  useEffect(() => {
+    if (!myPostsResponse) return;
+
+    const responseCursor = postsCursor ?? null;
+
+    if (lastAppliedCursorRef.current === responseCursor) return;
+
+    lastAppliedCursorRef.current = responseCursor;
+
+    const posts = myPostsResponse.data ?? [];
+
+    if (!responseCursor) {
+      setAllPosts(posts);
+      return;
+    }
+
+    setAllPosts((prev) => {
+      const existingIds = new Set(prev.map((post) => post.id));
+      const newPosts = posts.filter((post) => !existingIds.has(post.id));
+
+      return [...prev, ...newPosts];
+    });
+  }, [myPostsResponse, postsCursor]);
+
+  const loadMorePosts = useCallback(() => {
+    if (tab !== "posts") return;
+    if (myPostsLoading || myPostsFetching) return;
+    if (!hasMorePosts || !nextPostsCursor) return;
+
+    setPostsCursor(nextPostsCursor);
+  }, [
+    tab,
+    myPostsLoading,
+    myPostsFetching,
+    hasMorePosts,
+    nextPostsCursor,
+  ]);
+
+  const refreshProfilePage = useCallback(() => {
+    lastAppliedCursorRef.current = "__refresh__";
+    setPostsCursor(null);
+    setAllPosts([]);
+
+    refetchProfile();
+    refetchMyCommunities();
+    refetchMyPosts();
+  }, [refetchProfile, refetchMyCommunities, refetchMyPosts]);
+
   const handleLogout = async () => {
     try {
       setIsLoggingOut(true);
@@ -175,13 +248,16 @@ export default function ProfileScreen() {
     router.push("/pages/editprofile");
   };
 
-  const openViewer = useCallback((media: CommunityPostMedia[], index: number) => {
-    setViewer({
-      visible: true,
-      media,
-      index,
-    });
-  }, []);
+  const openViewer = useCallback(
+    (media: CommunityPostMediaType[], index: number) => {
+      setViewer({
+        visible: true,
+        media,
+        index,
+      });
+    },
+    [],
+  );
 
   const closeViewer = useCallback(() => {
     setViewer((prev) => ({
@@ -197,6 +273,8 @@ export default function ProfileScreen() {
           communityId: post.communityId,
           postId: post.id,
         }).unwrap();
+
+        setAllPosts((prev) => prev.filter((item) => item.id !== post.id));
       } catch (error) {
         console.log("Delete post failed:", error);
         throw error;
@@ -209,15 +287,39 @@ export default function ProfileScreen() {
     async (post: CommunityPost) => {
       try {
         if (post.isLikedByMe) {
-          await unlikePost({
+          const response = await unlikePost({
             communityId: post.communityId,
             postId: post.id,
           }).unwrap();
+
+          setAllPosts((prev) =>
+            prev.map((item) =>
+              item.id === post.id
+                ? {
+                    ...item,
+                    isLikedByMe: response.liked,
+                    likeCount: response.likeCount,
+                  }
+                : item,
+            ),
+          );
         } else {
-          await likePost({
+          const response = await likePost({
             communityId: post.communityId,
             postId: post.id,
           }).unwrap();
+
+          setAllPosts((prev) =>
+            prev.map((item) =>
+              item.id === post.id
+                ? {
+                    ...item,
+                    isLikedByMe: response.liked,
+                    likeCount: response.likeCount,
+                  }
+                : item,
+            ),
+          );
         }
       } catch (error) {
         console.log("Like/unlike failed:", error);
@@ -229,13 +331,24 @@ export default function ProfileScreen() {
   const handleSharePost = useCallback(
     async (post: CommunityPost) => {
       try {
-        await sharePost({
+        const response = await sharePost({
           communityId: post.communityId,
           postId: post.id,
           body: {
             platform: "copy_link",
           },
         }).unwrap();
+
+        setAllPosts((prev) =>
+          prev.map((item) =>
+            item.id === post.id
+              ? {
+                  ...item,
+                  shareCount: response.shareCount,
+                }
+              : item,
+          ),
+        );
       } catch (error) {
         console.log("Share post failed:", error);
       }
@@ -320,9 +433,46 @@ export default function ProfileScreen() {
   const isUploadingAvatar = uploadingTarget === "avatar";
   const isUploadingCover = uploadingTarget === "cover";
 
+  const renderPost = useCallback(
+    ({ item }: { item: CommunityPost }) => {
+      return (
+        <CommunityPostCard
+          post={item}
+          disableMediaPlayback={viewer.visible}
+          canDelete
+          isDeleting={isDeletingPost}
+          onDelete={handleDeletePost}
+          onPressLike={handleLikePost}
+          onPressComment={(post) => {
+            console.log("Open comments:", {
+              postId: post.id,
+              communityId: post.communityId,
+            });
+          }}
+          onPressShare={handleSharePost}
+          onPressAuthor={(authorId) => {
+            router.push({
+              pathname: "/user/profile/[userId]",
+              params: { userId: authorId },
+            });
+          }}
+          onPressMedia={openViewer}
+        />
+      );
+    },
+    [
+      viewer.visible,
+      isDeletingPost,
+      handleDeletePost,
+      handleLikePost,
+      handleSharePost,
+      openViewer,
+    ],
+  );
+
   if (isPending || profileLoading) {
     return (
-      <SafeAreaView style={styles.root} edges={["top"]}>
+      <SafeAreaView style={styles.root} edges={["left", "right"]}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
@@ -336,101 +486,41 @@ export default function ProfileScreen() {
 
   return (
     <>
-      <SafeAreaView style={styles.root} edges={["top"]}>
-        <ScrollView
+      <SafeAreaView style={styles.root} edges={["left", "right"]}>
+        <FlatList
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
+          data={tab === "posts" ? allPosts : []}
+          keyExtractor={(item) => item.id}
+          renderItem={renderPost}
           showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.page}>
-            <View style={styles.coverSection}>
-              {!!displayCover ? (
-                <Image
-                  source={{ uri: displayCover }}
-                  style={styles.coverImage}
-                  resizeMode="cover"
-                />
-              ) : (
-                <LinearGradient
-                  colors={[colors.accent, colors.surfaceTertiary, colors.segment]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.coverFallback}
-                >
-                  <View style={styles.coverFallbackContent}>
-                    <Text style={styles.coverSmallText}>
-                      {user?.businessType || "Profile"}
-                    </Text>
+          onEndReached={loadMorePosts}
+          onEndReachedThreshold={0.5}
+          refreshControl={
+            <RefreshControl
+              refreshing={myPostsFetching && postsCursor === null}
+              onRefresh={refreshProfilePage}
+              tintColor={colors.accent}
+            />
+          }
+          ListHeaderComponent={
+            <View style={styles.page}>
+              <View style={styles.coverSection}>
+                {!!displayCover ? (
+                  <Image
+                    source={{ uri: displayCover }}
+                    style={styles.coverImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.coverFallback} />
+                )}
 
-                    <Text style={styles.coverBigText}>
-                      {user?.businessName || fullName}
-                    </Text>
-                  </View>
-                </LinearGradient>
-              )}
-
-              <View style={styles.coverActionWrap}>
-                <Menu>
-                  <Menu.Trigger asChild>
-                    <Pressable style={styles.coverActionButton}>
-                      <Ionicons name="camera-outline" size={20} color="#fff" />
-                    </Pressable>
-                  </Menu.Trigger>
-
-                  <Menu.Portal>
-                    <Menu.Overlay />
-                    <Menu.Content
-                      presentation="popover"
-                      placement="bottom"
-                      align="end"
-                      width={220}
-                      className="rounded-2xl border border-border bg-surface"
-                    >
-                      <Menu.Item onPress={() => pickFromCamera("cover")}>
-                        <Menu.ItemTitle>
-                          {isUploadingCover ? "Uploading..." : "Take photo"}
-                        </Menu.ItemTitle>
-                      </Menu.Item>
-
-                      <Menu.Item onPress={() => pickFromGallery("cover")}>
-                        <Menu.ItemTitle>Choose from gallery</Menu.ItemTitle>
-                      </Menu.Item>
-
-                      <Menu.Item
-                        onPress={() => removeProfileImage("cover")}
-                        variant="danger"
-                      >
-                        <Menu.ItemTitle>Remove cover photo</Menu.ItemTitle>
-                      </Menu.Item>
-                    </Menu.Content>
-                  </Menu.Portal>
-                </Menu>
-              </View>
-
-              <View style={styles.avatarFloatingWrap}>
-                <View style={styles.avatarOuter}>
-                  {displayAvatar ? (
-                    <Image
-                      source={{ uri: displayAvatar }}
-                      style={styles.avatarImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.avatarFallback}>
-                      <Text style={styles.avatarFallbackText}>{initials}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.avatarActionWrap}>
+                <View style={styles.coverActionWrap}>
                   <Menu>
                     <Menu.Trigger asChild>
-                      <Pressable style={styles.avatarActionButton}>
-                        <Ionicons
-                          name="camera-outline"
-                          size={16}
-                          color={colors.accent}
-                        />
+                      <Pressable style={styles.coverActionButton}>
+                        <Ionicons name="camera-outline" size={20} color="#fff" />
                       </Pressable>
                     </Menu.Trigger>
 
@@ -443,173 +533,189 @@ export default function ProfileScreen() {
                         width={220}
                         className="rounded-2xl border border-border bg-surface"
                       >
-                        <Menu.Item onPress={() => pickFromCamera("avatar")}>
+                        <Menu.Item onPress={() => pickFromCamera("cover")}>
                           <Menu.ItemTitle>
-                            {isUploadingAvatar ? "Uploading..." : "Take photo"}
+                            {isUploadingCover ? "Uploading..." : "Take photo"}
                           </Menu.ItemTitle>
                         </Menu.Item>
 
-                        <Menu.Item onPress={() => pickFromGallery("avatar")}>
+                        <Menu.Item onPress={() => pickFromGallery("cover")}>
                           <Menu.ItemTitle>Choose from gallery</Menu.ItemTitle>
                         </Menu.Item>
 
                         <Menu.Item
-                          onPress={() => removeProfileImage("avatar")}
+                          onPress={() => removeProfileImage("cover")}
                           variant="danger"
                         >
-                          <Menu.ItemTitle>Remove profile photo</Menu.ItemTitle>
+                          <Menu.ItemTitle>Remove cover photo</Menu.ItemTitle>
                         </Menu.Item>
                       </Menu.Content>
                     </Menu.Portal>
                   </Menu>
                 </View>
-              </View>
-            </View>
 
-            <View style={styles.profileInfoSection}>
-              <View style={styles.profileInfoRow}>
-                <View style={styles.profileInfoLeft}>
-                  <Text style={styles.profileName}>{fullName}</Text>
-                  <Text style={styles.profileEmail}>{user?.email}</Text>
-
-                  {!!user?.businessType && (
-                    <Text style={styles.profileBusinessType}>
-                      {user.businessType}
-                    </Text>
-                  )}
-
-                  {profileError ? (
-                    <Text style={styles.errorText}>Failed to load profile</Text>
-                  ) : null}
-                </View>
-
-                <View style={styles.profileInfoRight}>
-                  <Menu>
-                    <Menu.Trigger asChild>
-                      <Pressable style={styles.menuButton}>
-                        <Ionicons
-                          name="ellipsis-horizontal"
-                          size={22}
-                          color={colors.accent}
-                        />
-                      </Pressable>
-                    </Menu.Trigger>
-
-                    <Menu.Portal>
-                      <Menu.Overlay />
-                      <Menu.Content
-                        presentation="popover"
-                        placement="bottom"
-                        align="end"
-                        width={230}
-                        className="rounded-2xl border border-border bg-surface"
-                      >
-                        <Menu.Item onPress={handleEditProfile}>
-                          <Menu.ItemTitle>Edit Profile</Menu.ItemTitle>
-                        </Menu.Item>
-
-                        <Menu.Item onPress={handleCreateCommunity}>
-                          <Menu.ItemTitle>Create Community</Menu.ItemTitle>
-                        </Menu.Item>
-
-                        <Menu.Item
-                          onPress={handleLogout}
-                          variant="danger"
-                          isDisabled={isLoggingOut}
-                        >
-                          <Menu.ItemTitle>
-                            {isLoggingOut ? "Logging out..." : "Logout"}
-                          </Menu.ItemTitle>
-                        </Menu.Item>
-                      </Menu.Content>
-                    </Menu.Portal>
-                  </Menu>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.tabsSection}>
-              <Tabs
-                value={tab}
-                onValueChange={setTab}
-                variant="secondary"
-                style={{ width: "100%" }}
-              >
-                <Tabs.List>
-                  <Tabs.ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    scrollAlign="start"
-                    contentContainerStyle={styles.tabsListContent}
-                  >
-                    <Tabs.Indicator />
-
-                    <Tabs.Trigger value="posts">
-                      <Tabs.Label>Posts</Tabs.Label>
-                    </Tabs.Trigger>
-
-                    <Tabs.Trigger value="about">
-                      <Tabs.Label>About</Tabs.Label>
-                    </Tabs.Trigger>
-
-                    <Tabs.Trigger value="communities">
-                      <Tabs.Label>Communities</Tabs.Label>
-                    </Tabs.Trigger>
-
-                    <Tabs.Trigger value="joinedCommunities">
-                      <Tabs.Label>Joined</Tabs.Label>
-                    </Tabs.Trigger>
-                  </Tabs.ScrollView>
-                </Tabs.List>
-
-                <View style={styles.tabsBody}>
-                  <Tabs.Content value="posts">
-                    <View style={styles.tabPanel}>
-                      {myPostsLoading ? (
-                        <View style={styles.stateWrap}>
-                          <ActivityIndicator size="small" color={colors.accent} />
-                        </View>
-                      ) : myPostsError ? (
-                        <Text style={styles.errorText}>
-                          Failed to load your posts.
+                <View style={styles.avatarFloatingWrap}>
+                  <View style={styles.avatarOuter}>
+                    {displayAvatar ? (
+                      <Image
+                        source={{ uri: displayAvatar }}
+                        style={styles.avatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.avatarFallback}>
+                        <Text style={styles.avatarFallbackText}>
+                          {initials}
                         </Text>
-                      ) : myPosts.length === 0 ? (
-                        <View style={styles.emptyState}>
-                          <Text style={styles.sectionTitle}>Posts</Text>
-                          <Text style={styles.sectionText}>
-                            You have not posted anything yet.
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={styles.postsList}>
-                          {myPosts.map((post) => (
-                            <CommunityPostCard
-                              key={post.id}
-                              post={post}
-                              disableMediaPlayback={viewer.visible}
-                              canDelete
-                              isDeleting={isDeletingPost}
-                              onDelete={handleDeletePost}
-                              onPressLike={handleLikePost}
-                              onPressComment={(item) => {
-                                console.log("Open comments:", {
-                                  postId: item.id,
-                                  communityId: item.communityId,
-                                });
-                              }}
-                              onPressShare={handleSharePost}
-                              onPressAuthor={(authorId) => {
-                                console.log("Open author:", authorId);
-                              }}
-                              onPressMedia={openViewer}
-                            />
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  </Tabs.Content>
+                      </View>
+                    )}
+                  </View>
 
-                  <Tabs.Content value="about">
+                  <View style={styles.avatarActionWrap}>
+                    <Menu>
+                      <Menu.Trigger asChild>
+                        <Pressable style={styles.avatarActionButton}>
+                          <Ionicons
+                            name="camera-outline"
+                            size={16}
+                            color={colors.accent}
+                          />
+                        </Pressable>
+                      </Menu.Trigger>
+
+                      <Menu.Portal>
+                        <Menu.Overlay />
+                        <Menu.Content
+                          presentation="popover"
+                          placement="bottom"
+                          align="end"
+                          width={220}
+                          className="rounded-2xl border border-border bg-surface"
+                        >
+                          <Menu.Item onPress={() => pickFromCamera("avatar")}>
+                            <Menu.ItemTitle>
+                              {isUploadingAvatar
+                                ? "Uploading..."
+                                : "Take photo"}
+                            </Menu.ItemTitle>
+                          </Menu.Item>
+
+                          <Menu.Item onPress={() => pickFromGallery("avatar")}>
+                            <Menu.ItemTitle>Choose from gallery</Menu.ItemTitle>
+                          </Menu.Item>
+
+                          <Menu.Item
+                            onPress={() => removeProfileImage("avatar")}
+                            variant="danger"
+                          >
+                            <Menu.ItemTitle>Remove profile photo</Menu.ItemTitle>
+                          </Menu.Item>
+                        </Menu.Content>
+                      </Menu.Portal>
+                    </Menu>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.profileInfoSection}>
+                <View style={styles.profileInfoRow}>
+                  <View style={styles.profileInfoLeft}>
+                    <Text style={styles.profileName}>{fullName}</Text>
+                    <Text style={styles.profileEmail}>{user?.email}</Text>
+
+                    {!!user?.businessType && (
+                      <Text style={styles.profileBusinessType}>
+                        {user.businessType}
+                      </Text>
+                    )}
+
+                    {profileError ? (
+                      <Text style={styles.errorText}>
+                        Failed to load profile
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.profileInfoRight}>
+                    <Menu>
+                      <Menu.Trigger asChild>
+                        <Pressable style={styles.menuButton}>
+                          <Ionicons
+                            name="ellipsis-horizontal"
+                            size={22}
+                            color={colors.accent}
+                          />
+                        </Pressable>
+                      </Menu.Trigger>
+
+                      <Menu.Portal>
+                        <Menu.Overlay />
+                        <Menu.Content
+                          presentation="popover"
+                          placement="bottom"
+                          align="end"
+                          width={230}
+                          className="rounded-2xl border border-border bg-surface"
+                        >
+                          <Menu.Item onPress={handleEditProfile}>
+                            <Menu.ItemTitle>Edit Profile</Menu.ItemTitle>
+                          </Menu.Item>
+
+                          <Menu.Item onPress={handleCreateCommunity}>
+                            <Menu.ItemTitle>Create Community</Menu.ItemTitle>
+                          </Menu.Item>
+
+                          <Menu.Item
+                            onPress={handleLogout}
+                            variant="danger"
+                            isDisabled={isLoggingOut}
+                          >
+                            <Menu.ItemTitle>
+                              {isLoggingOut ? "Logging out..." : "Logout"}
+                            </Menu.ItemTitle>
+                          </Menu.Item>
+                        </Menu.Content>
+                      </Menu.Portal>
+                    </Menu>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.tabsSection}>
+                <Tabs
+                  value={tab}
+                  onValueChange={setTab}
+                  variant="secondary"
+                  style={{ width: "100%" }}
+                >
+                  <Tabs.List>
+                    <Tabs.ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      scrollAlign="start"
+                      contentContainerStyle={styles.tabsListContent}
+                    >
+                      <Tabs.Indicator />
+
+                      <Tabs.Trigger value="posts">
+                        <Tabs.Label>Posts</Tabs.Label>
+                      </Tabs.Trigger>
+
+                      <Tabs.Trigger value="about">
+                        <Tabs.Label>About</Tabs.Label>
+                      </Tabs.Trigger>
+
+                      <Tabs.Trigger value="communities">
+                        <Tabs.Label>Communities</Tabs.Label>
+                      </Tabs.Trigger>
+
+                      <Tabs.Trigger value="joinedCommunities">
+                        <Tabs.Label>Joined</Tabs.Label>
+                      </Tabs.Trigger>
+                    </Tabs.ScrollView>
+                  </Tabs.List>
+
+                  {tab === "about" ? (
                     <View style={styles.paddedPanel}>
                       <Text style={styles.sectionTitle}>About</Text>
 
@@ -647,9 +753,9 @@ export default function ProfileScreen() {
                         />
                       </View>
                     </View>
-                  </Tabs.Content>
+                  ) : null}
 
-                  <Tabs.Content value="communities">
+                  {tab === "communities" ? (
                     <View style={styles.paddedPanel}>
                       <Text style={styles.sectionTitle}>Communities</Text>
 
@@ -674,23 +780,27 @@ export default function ProfileScreen() {
                         </>
                       ) : (
                         <View style={styles.communityList}>
-                        {ownedCommunities.map((community) => (
-  <CommunityCard
-    key={community.id}
-    community={community}
-    variant="profile"
-    badgeText="Owner"
-    onPress={() => router.push(`/user/community-dashboard`)}
-  />
-))}
+                          {ownedCommunities.map((community) => (
+                            <CommunityCard
+                              key={community.id}
+                              community={community}
+                              variant="profile"
+                              badgeText="Owner"
+                              onPress={() =>
+                                router.push("/user/community-dashboard")
+                              }
+                            />
+                          ))}
                         </View>
                       )}
                     </View>
-                  </Tabs.Content>
+                  ) : null}
 
-                  <Tabs.Content value="joinedCommunities">
+                  {tab === "joinedCommunities" ? (
                     <View style={styles.paddedPanel}>
-                      <Text style={styles.sectionTitle}>Joined Communities</Text>
+                      <Text style={styles.sectionTitle}>
+                        Joined Communities
+                      </Text>
 
                       {myCommunitiesLoading ? (
                         <Text style={styles.sectionText}>
@@ -724,12 +834,46 @@ export default function ProfileScreen() {
                         </View>
                       )}
                     </View>
-                  </Tabs.Content>
-                </View>
-              </Tabs>
+                  ) : null}
+
+                  {tab === "posts" ? (
+                    <View style={styles.tabPanel}>
+                      {myPostsLoading && allPosts.length === 0 ? (
+                        <View style={styles.stateWrap}>
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accent}
+                          />
+                        </View>
+                      ) : myPostsError && allPosts.length === 0 ? (
+                        <Text style={styles.errorText}>
+                          Failed to load your posts.
+                        </Text>
+                      ) : allPosts.length === 0 ? (
+                        <View style={styles.emptyState}>
+                          <Text style={styles.sectionTitle}>Posts</Text>
+                          <Text style={styles.sectionText}>
+                            You have not posted anything yet.
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </Tabs>
+              </View>
             </View>
-          </View>
-        </ScrollView>
+          }
+          ListFooterComponent={
+            tab === "posts" &&
+            myPostsFetching &&
+            allPosts.length > 0 &&
+            postsCursor !== null ? (
+              <View style={styles.stateWrap}>
+                <ActivityIndicator size="small" color={colors.accent} />
+              </View>
+            ) : null
+          }
+        />
       </SafeAreaView>
 
       <PostMediaViewer
