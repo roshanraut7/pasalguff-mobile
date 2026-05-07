@@ -1,13 +1,82 @@
-// app/user/community-dashboard/(tabs)/_layout.tsx
-
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { Tabs, router } from "expo-router";
 import React, { useMemo } from "react";
-import { Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  Text,
+  View,
+} from "react-native";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Tabs, router, useGlobalSearchParams } from "expo-router";
+
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
+import { useGetCommunityDetailsByIdQuery } from "@/store/api/communityApi";
+
+function getParamValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
+}
+
+function getInitialLetter(name?: string | null) {
+  const safeName = name?.trim();
+
+  if (!safeName) return "C";
+
+  return safeName.charAt(0).toUpperCase();
+}
 
 export default function CommunityDashboardTabsLayout() {
   const { colors, isDark } = useAppTheme();
+
+  const globalParams = useGlobalSearchParams<{
+    communityId?: string | string[];
+    id?: string | string[];
+    returnTo?: string | string[];
+    communityName?: string | string[];
+    communityAvatar?: string | string[];
+    communityVisibility?: string | string[];
+    communityCategory?: string | string[];
+  }>();
+
+  const communityId =
+    getParamValue(globalParams.communityId) || getParamValue(globalParams.id);
+
+  const returnTo = getParamValue(globalParams.returnTo);
+
+  /**
+   * These values come from the previous screen.
+   * They help the header show instantly before API loading finishes.
+   */
+  const paramCommunityName = getParamValue(globalParams.communityName);
+  const paramCommunityAvatar = getParamValue(globalParams.communityAvatar);
+  const paramCommunityVisibility = getParamValue(globalParams.communityVisibility);
+  const paramCommunityCategory = getParamValue(globalParams.communityCategory);
+
+  const {
+    data: community,
+    isLoading,
+    isFetching,
+  } = useGetCommunityDetailsByIdQuery(communityId, {
+    skip: !communityId,
+    refetchOnMountOrArgChange: true,
+  });
+
+  const communityName =
+    community?.name || paramCommunityName || "Community Dashboard";
+
+  const avatarUrl =
+    toAbsoluteFileUrl(community?.avatarImage || paramCommunityAvatar) ?? null;
+
+  const subtitle = community
+    ? `${community.category?.name ?? "Community"} • ${community.visibility}`
+    : paramCommunityCategory || paramCommunityVisibility
+      ? `${paramCommunityCategory || "Community"}${
+          paramCommunityVisibility ? ` • ${paramCommunityVisibility}` : ""
+        }`
+      : isLoading || isFetching
+        ? "Loading community details..."
+        : "Manage members, moderators, posts and alerts";
 
   const tabBarStyle = useMemo(
     () => ({
@@ -33,8 +102,24 @@ export default function CommunityDashboardTabsLayout() {
         height: 8,
       },
     }),
-    [colors, isDark]
+    [colors, isDark],
   );
+
+  function handleBackPress() {
+    /**
+     * This fixes double back press issue.
+     * It goes directly to the route passed from previous screen.
+     */
+    if (returnTo) {
+      router.replace(returnTo as any);
+      return;
+    }
+
+    /**
+     * Change this fallback route if your profile route is different.
+     */
+    router.replace("/(tabs)/profile" as any);
+  }
 
   return (
     <Tabs
@@ -47,8 +132,8 @@ export default function CommunityDashboardTabsLayout() {
             style={{
               backgroundColor: colors.background,
               paddingTop: 54,
-              paddingHorizontal: 20,
-              paddingBottom: 14,
+              paddingHorizontal: 18,
+              paddingBottom: 18,
               borderBottomWidth: 1,
               borderBottomColor: colors.border,
             }}
@@ -56,22 +141,26 @@ export default function CommunityDashboardTabsLayout() {
             <View
               style={{
                 flexDirection: "row",
-                alignItems: "center",
-                gap: 12,
+                alignItems: "flex-start",
+                gap: 10,
               }}
             >
               <Pressable
-                onPress={() => router.back()}
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
+                onPress={handleBackPress}
+                style={({ pressed }) => [
+                  {
+                    width: 42,
+                    height: 42,
+                    borderRadius: 21,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginTop: 2,
+                  },
+                  pressed && { opacity: 0.75 },
+                ]}
               >
                 <Ionicons
                   name="chevron-back"
@@ -80,49 +169,77 @@ export default function CommunityDashboardTabsLayout() {
                 />
               </Pressable>
 
-              <View style={{ flex: 1 }}>
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    fontSize: 20,
-                    fontFamily: "Poppins_700Bold",
-                    color: colors.foreground,
-                  }}
-                >
-                  Community Dashboard
-                </Text>
-
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    marginTop: 2,
-                    fontSize: 12,
-                    fontFamily: "Poppins_400Regular",
-                    color: colors.muted,
-                  }}
-                >
-                  Manage members, moderators, posts and alerts
-                </Text>
-              </View>
-
-              <Pressable
+              <View
                 style={{
                   width: 44,
                   height: 44,
                   borderRadius: 22,
-                  backgroundColor: colors.surface,
+                  overflow: "hidden",
+                  backgroundColor: colors.surfaceTertiary,
                   borderWidth: 1,
                   borderColor: colors.border,
                   alignItems: "center",
                   justifyContent: "center",
+                  marginTop: 1,
                 }}
               >
-                <Ionicons
-                  name="ellipsis-horizontal"
-                  size={22}
-                  color={colors.foreground}
-                />
-              </Pressable>
+                {isLoading && !paramCommunityName && !paramCommunityAvatar ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : avatarUrl ? (
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                    }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text
+                    style={{
+                      color: colors.accent,
+                      fontSize: 20,
+                      fontFamily: "Poppins_700Bold",
+                    }}
+                  >
+                    {getInitialLetter(communityName)}
+                  </Text>
+                )}
+              </View>
+
+              <View
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  justifyContent: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 20,
+                    lineHeight: 26,
+                    fontFamily: "Poppins_700Bold",
+                    color: colors.foreground,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {communityName}
+                </Text>
+
+                <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  style={{
+                    marginTop: 3,
+                    fontSize: 13,
+                    lineHeight: 18,
+                    fontFamily: "Poppins_400Regular",
+                    color: colors.muted,
+                  }}
+                >
+                  {subtitle}
+                </Text>
+              </View>
             </View>
           </View>
         ),
@@ -193,11 +310,11 @@ export default function CommunityDashboardTabsLayout() {
                 },
               }}
             >
-             <MaterialIcons
-          name="dashboard"
-          size={30}
-          color={focused ? colors.accent : colors.foreground}
-        />
+              <MaterialIcons
+                name="dashboard"
+                size={30}
+                color={focused ? colors.accent : colors.foreground}
+              />
             </View>
           ),
         }}

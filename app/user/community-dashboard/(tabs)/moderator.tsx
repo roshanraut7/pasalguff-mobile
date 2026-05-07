@@ -1,7 +1,5 @@
-// app/user/community-dashboard/(tabs)/moderator.tsx
-
-import React, { useMemo, useState } from "react";
-import { router } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
+import { router, useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 import {
   Alert,
   Pressable,
@@ -14,63 +12,103 @@ import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "heroui-native";
 import { Modal, Portal } from "react-native-paper";
 
-import DataTable, {
-  useDataTableState,
-} from "@/components/common/data-table";
+import DataTable from "@/components/common/data-table";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import {
-  communityModeratorsMock,
-  type CommunityDashboardModerator,
-} from "@/mocks/moderator";
 import {
   createModeratorColumns,
   createModeratorFilters,
   getModeratorInitials,
+  getModeratorPermissions,
   getPermissionLabel,
   type ModeratorAction,
 } from "@/components/column/user-community/moderator.columns";
+import { useGetCommunityModeratorsQuery } from "@/store/api/communityApi";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
+import type { CommunityMemberItem } from "@/types/community";
+
+type ModeratorStatusFilter = "ACTIVE" | "LEFT" | "BANNED";
+
+function getParamValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
+}
 
 export default function ModeratorScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
+  const localParams = useLocalSearchParams<{
+    communityId?: string | string[];
+    id?: string | string[];
+  }>();
+
+  const globalParams = useGlobalSearchParams<{
+    communityId?: string | string[];
+    id?: string | string[];
+  }>();
+
+  const communityId =
+    getParamValue(localParams.communityId) ||
+    getParamValue(globalParams.communityId) ||
+    getParamValue(localParams.id) ||
+    getParamValue(globalParams.id);
+
   const [selectedModerator, setSelectedModerator] =
-    useState<CommunityDashboardModerator | null>(null);
+    useState<CommunityMemberItem | null>(null);
 
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
 
-  const openActionSheet = (moderator: CommunityDashboardModerator) => {
-    setSelectedModerator(moderator);
-    setActionSheetVisible(true);
-  };
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
 
-  const closeActionSheet = () => {
-    setActionSheetVisible(false);
-    setSelectedModerator(null);
-  };
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const handleModeratorAction = (action: ModeratorAction) => {
-    if (!selectedModerator) return;
+  const [activeFilters, setActiveFilters] = useState<Record<string, string>>({
+    status: "ACTIVE",
+  });
 
-    const actionLabel: Record<ModeratorAction, string> = {
-      view: "View profile",
-      message: "Message",
-      editPermissions: "Edit permissions",
-      activity: "View activity",
-      suspend: "Suspend moderator",
-      reactivate: "Reactivate moderator",
-      remove: "Remove moderator",
-    };
+  const statusFilter = activeFilters.status as ModeratorStatusFilter;
 
-    const moderatorName = selectedModerator.name;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(0);
+    }, 400);
 
-    closeActionSheet();
+    return () => clearTimeout(timer);
+  }, [search]);
 
-    Alert.alert(
-      actionLabel[action],
-      `${actionLabel[action]}: ${moderatorName}`,
-    );
-  };
+  useEffect(() => {
+    setPage(0);
+    setSearch("");
+    setDebouncedSearch("");
+    setActiveFilters({
+      status: "ACTIVE",
+    });
+  }, [communityId]);
+
+  const {
+    data: moderatorsResponse,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+  } = useGetCommunityModeratorsQuery(
+    {
+      communityId,
+      page: page + 1,
+      limit: pageSize,
+      search: debouncedSearch || undefined,
+      status: statusFilter,
+    },
+    {
+      skip: !communityId,
+      refetchOnMountOrArgChange: true,
+    },
+  );
+
+  const moderators = moderatorsResponse?.data ?? [];
 
   const columns = useMemo(
     () =>
@@ -83,16 +121,75 @@ export default function ModeratorScreen() {
 
   const filters = useMemo(() => createModeratorFilters(), []);
 
-  const table = useDataTableState({
-    data: communityModeratorsMock,
-    columns,
-    filters,
-    initialSort: {
-      key: "assignedAt",
-      direction: "desc",
-    },
-    initialPageSize: 10,
-  });
+  function handleFilterChange(key: string, value: string) {
+    setActiveFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+
+    setPage(0);
+  }
+
+  function handlePageSizeChange(nextPageSize: number) {
+    setPageSize(nextPageSize);
+    setPage(0);
+  }
+
+  function openActionSheet(moderator: CommunityMemberItem) {
+    setSelectedModerator(moderator);
+    setActionSheetVisible(true);
+  }
+
+  function closeActionSheet() {
+    setActionSheetVisible(false);
+    setSelectedModerator(null);
+  }
+
+  function handleModeratorAction(action: ModeratorAction) {
+    if (!selectedModerator) return;
+
+    const moderatorName = selectedModerator.user.name ?? "Unknown User";
+
+    const actionLabel: Record<ModeratorAction, string> = {
+      view: "View profile",
+      message: "Message",
+      editPermissions: "Edit permissions",
+      activity: "View activity",
+      suspend: "Suspend moderator",
+      reactivate: "Reactivate moderator",
+      remove: "Remove moderator",
+    };
+
+    closeActionSheet();
+
+    if (action === "activity") {
+      router.push({
+        pathname: "/pages/moderator-activity",
+        params: {
+          moderatorId: selectedModerator.id,
+          userId: selectedModerator.userId,
+          communityId: selectedModerator.communityId,
+        },
+      });
+      return;
+    }
+
+    Alert.alert(actionLabel[action], `${actionLabel[action]}: ${moderatorName}`);
+  }
+
+  if (!communityId) {
+    return (
+      <View style={styles.centerWrap}>
+        <Ionicons name="warning-outline" size={30} color={colors.warning} />
+
+        <Text style={styles.centerTitle}>Community ID missing</Text>
+
+        <Text style={styles.centerSubtitle}>
+          Open this screen with communityId in the route params.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <>
@@ -101,29 +198,72 @@ export default function ModeratorScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Moderators</Text>
+
+            <Text style={styles.subtitle}>
+              {moderatorsResponse?.meta?.total ?? 0} moderators and admins
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() => refetch()}
+            style={({ pressed }) => [
+              styles.retryButton,
+              pressed && { opacity: 0.75 },
+            ]}
+          >
+            <Ionicons name="refresh-outline" size={18} color={colors.accent} />
+
+            <Text style={styles.retryText}>Refresh</Text>
+          </Pressable>
+        </View>
+
+        {error ? (
+          <View style={styles.errorBox}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={22}
+              color={colors.danger}
+            />
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.errorTitle}>Failed to load moderators</Text>
+
+              <Text style={styles.errorMessage}>
+                Only the community owner or member manager can view this list.
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         <DataTable
-          rows={table.rows}
+          rows={moderators}
           columns={columns}
           rowKey={(row) => row.id}
-          searchValue={table.search}
-          onSearchChange={table.setSearch}
+          searchValue={search}
+          onSearchChange={setSearch}
           searchPlaceholder="Search moderators"
           filters={filters}
-          activeFilters={table.activeFilters}
-          onFilterChange={table.handleFilterChange}
-          sortBy={table.sortBy}
-          sortDirection={table.sortDirection}
-          onSortChange={table.handleSortChange}
-          emptyTitle="No moderators found"
-          emptySubtitle="Try searching another moderator or changing the status filter."
+          activeFilters={activeFilters}
+          onFilterChange={handleFilterChange}
+          emptyTitle={error ? "Failed to load moderators" : "No moderators found"}
+          emptySubtitle={
+            error
+              ? "Tap refresh and try again."
+              : "No moderator matched this search."
+          }
+          isLoading={isLoading}
+          isFetching={isFetching}
           pagination={{
-            page: table.page,
-            pageSize: table.pageSize,
-            totalItems: table.filteredCount,
-            totalPages: table.totalPages,
-            onPageChange: table.setPage,
-            onPageSizeChange: table.setPageSize,
-            pageSizeOptions: [5, 10, 20],
+            page,
+            pageSize,
+            totalItems: moderatorsResponse?.meta?.total ?? 0,
+            totalPages: Math.max(1, moderatorsResponse?.meta?.totalPages ?? 1),
+            onPageChange: setPage,
+            onPageSizeChange: handlePageSizeChange,
+            pageSizeOptions: [10, 20, 50],
           }}
         />
       </ScrollView>
@@ -139,31 +279,48 @@ export default function ModeratorScreen() {
           <View style={styles.sheetHeader}>
             <View style={styles.moderatorInfo}>
               {selectedModerator ? (
-                <Avatar alt="" size="lg" variant="soft" color="success">
-                  <Avatar.Image source={{ uri: selectedModerator.avatar }} />
+                <Avatar
+                  alt={selectedModerator.user.name ?? "Moderator"}
+                  size="lg"
+                  variant="soft"
+                  color="success"
+                >
+                  {toAbsoluteFileUrl(selectedModerator.user.image) ? (
+                    <Avatar.Image
+                      source={{
+                        uri: toAbsoluteFileUrl(selectedModerator.user.image)!,
+                      }}
+                    />
+                  ) : null}
+
                   <Avatar.Fallback>
-                    {getModeratorInitials(selectedModerator.name)}
+                    {getModeratorInitials(selectedModerator.user.name)}
                   </Avatar.Fallback>
                 </Avatar>
               ) : null}
+
               <View style={styles.moderatorTextWrap}>
                 <Text numberOfLines={1} style={styles.sheetTitle}>
-                  {selectedModerator?.name ?? "Moderator"}
+                  {selectedModerator?.user.name ?? "Moderator"}
                 </Text>
 
                 <Text numberOfLines={1} style={styles.sheetSubtitle}>
-                  Manage this moderator
+                  {selectedModerator?.user.email ??
+                    selectedModerator?.role ??
+                    "Community moderator"}
                 </Text>
 
                 {selectedModerator ? (
                   <View style={styles.permissionPreview}>
-                    {selectedModerator.permissions.map((permission) => (
-                      <View key={permission} style={styles.permissionChip}>
-                        <Text style={styles.permissionChipText}>
-                          {getPermissionLabel(permission)}
-                        </Text>
-                      </View>
-                    ))}
+                    {getModeratorPermissions(selectedModerator).map(
+                      (permission) => (
+                        <View key={permission} style={styles.permissionChip}>
+                          <Text style={styles.permissionChipText}>
+                            {getPermissionLabel(permission)}
+                          </Text>
+                        </View>
+                      ),
+                    )}
                   </View>
                 ) : null}
               </View>
@@ -200,21 +357,10 @@ export default function ModeratorScreen() {
             />
 
             <GridAction
-  icon="analytics-outline"
-  label="Activity"
-  onPress={() => {
-    if (!selectedModerator) return;
-
-    closeActionSheet();
-
-    router.push({
-      pathname: "/pages/moderator-activity",
-      params: {
-        moderatorId: selectedModerator.id,
-      },
-    });
-  }}
-/>
+              icon="analytics-outline"
+              label="Activity"
+              onPress={() => handleModeratorAction("activity")}
+            />
 
             {selectedModerator?.status === "ACTIVE" ? (
               <GridAction
@@ -223,15 +369,13 @@ export default function ModeratorScreen() {
                 danger
                 onPress={() => handleModeratorAction("suspend")}
               />
-            ) : null}
-
-            {selectedModerator?.status === "SUSPENDED" ? (
+            ) : (
               <GridAction
                 icon="refresh-outline"
                 label="Reactivate"
                 onPress={() => handleModeratorAction("reactivate")}
               />
-            ) : null}
+            )}
 
             <GridAction
               icon="trash-outline"
@@ -298,6 +442,97 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       paddingBottom: 155,
     },
 
+    header: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+
+    title: {
+      color: colors.foreground,
+      fontSize: 22,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    subtitle: {
+      marginTop: 3,
+      color: colors.muted,
+      fontSize: 13,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    centerWrap: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 24,
+      backgroundColor: colors.surface,
+    },
+
+    centerTitle: {
+      marginTop: 12,
+      color: colors.foreground,
+      fontSize: 18,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    centerSubtitle: {
+      marginTop: 6,
+      color: colors.muted,
+      fontSize: 13,
+      lineHeight: 20,
+      textAlign: "center",
+      fontFamily: "Poppins_400Regular",
+    },
+
+    retryButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 13,
+      paddingVertical: 9,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    retryText: {
+      color: colors.accent,
+      fontSize: 13,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    errorBox: {
+      marginHorizontal: 16,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 18,
+      padding: 14,
+      flexDirection: "row",
+      gap: 10,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    errorTitle: {
+      color: colors.danger,
+      fontSize: 14,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    errorMessage: {
+      marginTop: 3,
+      color: colors.muted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
+    },
+
     modalContainer: {
       marginHorizontal: 0,
       marginBottom: 0,
@@ -326,14 +561,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
       flexDirection: "row",
-      alignItems: "flex-start",
+      alignItems: "center",
       gap: 12,
     },
 
     moderatorInfo: {
       flex: 1,
       flexDirection: "row",
-      alignItems: "flex-start",
+      alignItems: "center",
       gap: 12,
     },
 
@@ -342,38 +577,16 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     },
 
     sheetTitle: {
+      color: colors.foreground,
       fontSize: 18,
       fontFamily: "Poppins_700Bold",
-      color: colors.foreground,
     },
 
     sheetSubtitle: {
       marginTop: 2,
+      color: colors.muted,
       fontSize: 13,
       fontFamily: "Poppins_400Regular",
-      color: colors.muted,
-    },
-
-    permissionPreview: {
-      marginTop: 10,
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 6,
-    },
-
-    permissionChip: {
-      paddingHorizontal: 9,
-      paddingVertical: 5,
-      borderRadius: 999,
-      backgroundColor: colors.surfaceTertiary,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-
-    permissionChipText: {
-      fontSize: 11,
-      fontFamily: "Poppins_700Bold",
-      color: colors.accent,
     },
 
     closeButton: {
@@ -385,6 +598,28 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       backgroundColor: colors.surfaceSecondary,
       borderWidth: 1,
       borderColor: colors.border,
+    },
+
+    permissionPreview: {
+      marginTop: 10,
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+
+    permissionChip: {
+      borderRadius: 999,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    permissionChipText: {
+      color: colors.foreground,
+      fontSize: 11,
+      fontFamily: "Poppins_600SemiBold",
     },
 
     actionGrid: {

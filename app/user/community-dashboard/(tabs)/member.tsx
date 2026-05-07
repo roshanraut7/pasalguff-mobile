@@ -1,6 +1,4 @@
-// app/user/community-dashboard/(tabs)/member.tsx
-
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -12,82 +10,187 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "heroui-native";
 import { Modal, Portal } from "react-native-paper";
+import { useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 
-import DataTable, {
-  useDataTableState,
-} from "@/components/common/data-table";
+import DataTable from "@/components/common/data-table";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import {
-  communityMembersMock,
-  type CommunityDashboardMember,
-} from "@/mocks/member";
 import {
   createMemberColumns,
   createMemberFilters,
   getMemberInitials,
   type MemberAction,
 } from "@/components/column/user-community/member.columns";
+import { useGetCommunityMembersQuery } from "@/store/api/communityApi";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
+import type { CommunityMemberItem } from "@/types/community";
+
+type MemberStatusFilter = "ACTIVE" | "LEFT" | "BANNED";
+
+function getParamValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
+}
 
 export default function MemberScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
+  const localParams = useLocalSearchParams<{
+    communityId?: string | string[];
+    id?: string | string[];
+  }>();
+
+  const globalParams = useGlobalSearchParams<{
+    communityId?: string | string[];
+    id?: string | string[];
+  }>();
+
+  /**
+   * In nested Expo Router tabs, local params can be empty.
+   * This fallback reads global params too.
+   */
+  const communityId =
+    getParamValue(localParams.communityId) ||
+    getParamValue(globalParams.communityId) ||
+    getParamValue(localParams.id) ||
+    getParamValue(globalParams.id);
+
   const [selectedMember, setSelectedMember] =
-    useState<CommunityDashboardMember | null>(null);
+    useState<CommunityMemberItem | null>(null);
 
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
 
-  const openActionSheet = (member: CommunityDashboardMember) => {
-    setSelectedMember(member);
-    setActionSheetVisible(true);
-  };
+  /**
+   * DataTable page is 0-based.
+   * Backend page is 1-based.
+   */
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
 
-  const closeActionSheet = () => {
-    setActionSheetVisible(false);
-    setSelectedMember(null);
-  };
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const handleMemberAction = (action: MemberAction) => {
-    if (!selectedMember) return;
+  const [activeFilters, setActiveFilters] = useState<Record<string, string>>({
+    status: "ACTIVE",
+  });
 
-    const actionLabel: Record<MemberAction, string> = {
-      view: "View profile",
-      message: "Message",
-      approve: "Approve request",
-      reject: "Reject request",
-      ban: "Ban member",
-      unban: "Unban member",
-      remove: "Remove member",
-    };
+  const statusFilter = activeFilters.status as MemberStatusFilter;
 
-    const memberName = selectedMember.name;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(0);
+    }, 400);
 
-    closeActionSheet();
+    return () => clearTimeout(timer);
+  }, [search]);
 
-    Alert.alert(actionLabel[action], `${actionLabel[action]}: ${memberName}`);
-  };
+  useEffect(() => {
+    setPage(0);
+    setSearch("");
+    setDebouncedSearch("");
+    setActiveFilters({
+      status: "ACTIVE",
+    });
+  }, [communityId]);
+
+  const {
+    data: membersResponse,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+  } = useGetCommunityMembersQuery(
+    {
+      communityId,
+      page: page + 1,
+      limit: pageSize,
+      search: debouncedSearch || undefined,
+      status: statusFilter,
+    },
+    {
+      skip: !communityId,
+      refetchOnMountOrArgChange: true,
+    },
+  );
+
+  const members = membersResponse?.data ?? [];
+
+  const canManageMembers =
+    membersResponse?.viewer?.isOwner === true ||
+    membersResponse?.viewer?.canManageMembers === true;
 
   const columns = useMemo(
     () =>
       createMemberColumns({
         colors,
+        canManageMembers,
         onActionPress: openActionSheet,
       }),
-    [colors],
+    [colors, canManageMembers],
   );
 
   const filters = useMemo(() => createMemberFilters(), []);
 
-  const table = useDataTableState({
-    data: communityMembersMock,
-    columns,
-    filters,
-    initialSort: {
-      key: "joinedAt",
-      direction: "desc",
-    },
-    initialPageSize: 10,
-  });
+  function handleFilterChange(key: string, value: string) {
+    setActiveFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+
+    setPage(0);
+  }
+
+  function handlePageChange(nextPage: number) {
+    setPage(nextPage);
+  }
+
+  function handlePageSizeChange(nextPageSize: number) {
+    setPageSize(nextPageSize);
+    setPage(0);
+  }
+
+  function openActionSheet(member: CommunityMemberItem) {
+    setSelectedMember(member);
+    setActionSheetVisible(true);
+  }
+
+  function closeActionSheet() {
+    setActionSheetVisible(false);
+    setSelectedMember(null);
+  }
+
+  function handleMemberAction(action: MemberAction) {
+    if (!selectedMember) return;
+
+    const memberName = selectedMember.user.name ?? "Unknown User";
+
+    const actionLabel: Record<MemberAction, string> = {
+      view: "View profile",
+      message: "Message",
+      ban: "Ban member",
+      unban: "Unban member",
+      remove: "Remove member",
+    };
+
+    closeActionSheet();
+
+    Alert.alert(actionLabel[action], `${actionLabel[action]}: ${memberName}`);
+  }
+
+  if (!communityId) {
+    return (
+      <View style={styles.centerWrap}>
+        <Ionicons name="warning-outline" size={30} color={colors.warning} />
+
+        <Text style={styles.centerTitle}>Community ID missing</Text>
+
+        <Text style={styles.centerSubtitle}>
+          Open this screen with communityId in the route params.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <>
@@ -96,29 +199,69 @@ export default function MemberScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Community Members</Text>
+
+            <Text style={styles.subtitle}>
+              {membersResponse?.meta?.total ?? 0} joined members
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() => refetch()}
+            style={({ pressed }) => [
+              styles.retryButton,
+              pressed && { opacity: 0.75 },
+            ]}
+          >
+            <Ionicons name="refresh-outline" size={18} color={colors.accent} />
+
+            <Text style={styles.retryText}>Refresh</Text>
+          </Pressable>
+        </View>
+
+        {error ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle-outline" size={22} color={colors.danger} />
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.errorTitle}>Failed to load members</Text>
+
+              <Text style={styles.errorMessage}>
+                Please check that the logged-in user is the owner or has joined
+                this community.
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         <DataTable
-          rows={table.rows}
+          rows={members}
           columns={columns}
           rowKey={(row) => row.id}
-          searchValue={table.search}
-          onSearchChange={table.setSearch}
+          searchValue={search}
+          onSearchChange={setSearch}
           searchPlaceholder="Search members"
-          filters={filters}
-          activeFilters={table.activeFilters}
-          onFilterChange={table.handleFilterChange}
-          sortBy={table.sortBy}
-          sortDirection={table.sortDirection}
-          onSortChange={table.handleSortChange}
-          emptyTitle="No members found"
-          emptySubtitle="Try searching another member or changing the status filter."
+          filters={canManageMembers ? filters : []}
+          activeFilters={activeFilters}
+          onFilterChange={handleFilterChange}
+          emptyTitle={error ? "Failed to load members" : "No members found"}
+          emptySubtitle={
+            error
+              ? "Tap refresh and try again."
+              : "No joined members matched this search."
+          }
+          isLoading={isLoading}
+          isFetching={isFetching}
           pagination={{
-            page: table.page,
-            pageSize: table.pageSize,
-            totalItems: table.filteredCount,
-            totalPages: table.totalPages,
-            onPageChange: table.setPage,
-            onPageSizeChange: table.setPageSize,
-            pageSizeOptions: [5, 10, 20],
+            page,
+            pageSize,
+            totalItems: membersResponse?.meta?.total ?? 0,
+            totalPages: Math.max(1, membersResponse?.meta?.totalPages ?? 1),
+            onPageChange: handlePageChange,
+            onPageSizeChange: handlePageSizeChange,
+            pageSizeOptions: [10, 20, 50],
           }}
         />
       </ScrollView>
@@ -134,21 +277,35 @@ export default function MemberScreen() {
           <View style={styles.sheetHeader}>
             <View style={styles.memberInfo}>
               {selectedMember ? (
-                <Avatar alt="" size="lg" variant="soft" color="success">
-                  <Avatar.Image source={{ uri: selectedMember.avatar }} />
+                <Avatar
+                  alt={selectedMember.user.name ?? "Member"}
+                  size="lg"
+                  variant="soft"
+                  color="success"
+                >
+                  {toAbsoluteFileUrl(selectedMember.user.image) ? (
+                    <Avatar.Image
+                      source={{
+                        uri: toAbsoluteFileUrl(selectedMember.user.image)!,
+                      }}
+                    />
+                  ) : null}
+
                   <Avatar.Fallback>
-                    {getMemberInitials(selectedMember.name)}
+                    {getMemberInitials(selectedMember.user.name)}
                   </Avatar.Fallback>
                 </Avatar>
               ) : null}
 
               <View style={styles.memberTextWrap}>
                 <Text numberOfLines={1} style={styles.sheetTitle}>
-                  {selectedMember?.name ?? "Member"}
+                  {selectedMember?.user.name ?? "Member"}
                 </Text>
 
                 <Text numberOfLines={1} style={styles.sheetSubtitle}>
-                  Choose what you want to do
+                  {selectedMember?.user.email ??
+                    selectedMember?.role ??
+                    "Community member"}
                 </Text>
               </View>
             </View>
@@ -177,24 +334,7 @@ export default function MemberScreen() {
               onPress={() => handleMemberAction("message")}
             />
 
-            {selectedMember?.status === "PENDING" ? (
-              <>
-                <GridAction
-                  icon="checkmark-circle-outline"
-                  label="Approve"
-                  onPress={() => handleMemberAction("approve")}
-                />
-
-                <GridAction
-                  icon="close-circle-outline"
-                  label="Reject"
-                  danger
-                  onPress={() => handleMemberAction("reject")}
-                />
-              </>
-            ) : null}
-
-            {selectedMember?.status === "ACTIVE" ? (
+            {canManageMembers && selectedMember?.status === "ACTIVE" ? (
               <GridAction
                 icon="ban-outline"
                 label="Ban"
@@ -203,7 +343,7 @@ export default function MemberScreen() {
               />
             ) : null}
 
-            {selectedMember?.status === "BANNED" ? (
+            {canManageMembers && selectedMember?.status === "BANNED" ? (
               <GridAction
                 icon="refresh-outline"
                 label="Unban"
@@ -211,12 +351,14 @@ export default function MemberScreen() {
               />
             ) : null}
 
-            <GridAction
-              icon="trash-outline"
-              label="Remove"
-              danger
-              onPress={() => handleMemberAction("remove")}
-            />
+            {canManageMembers ? (
+              <GridAction
+                icon="trash-outline"
+                label="Remove"
+                danger
+                onPress={() => handleMemberAction("remove")}
+              />
+            ) : null}
           </View>
         </Modal>
       </Portal>
@@ -273,10 +415,98 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
 
     scrollContent: {
       flexGrow: 1,
-
-      // no padding from left, right or top
-      // only bottom padding so pagination is visible above floating tab bar
       paddingBottom: 155,
+    },
+
+    header: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+
+    title: {
+      color: colors.foreground,
+      fontSize: 22,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    subtitle: {
+      marginTop: 3,
+      color: colors.muted,
+      fontSize: 13,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    centerWrap: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 24,
+      backgroundColor: colors.surface,
+    },
+
+    centerTitle: {
+      marginTop: 12,
+      color: colors.foreground,
+      fontSize: 18,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    centerSubtitle: {
+      marginTop: 6,
+      color: colors.muted,
+      fontSize: 13,
+      lineHeight: 20,
+      textAlign: "center",
+      fontFamily: "Poppins_400Regular",
+    },
+
+    retryButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 13,
+      paddingVertical: 9,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    retryText: {
+      color: colors.accent,
+      fontSize: 13,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    errorBox: {
+      marginHorizontal: 16,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 18,
+      padding: 14,
+      flexDirection: "row",
+      gap: 10,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    errorTitle: {
+      color: colors.danger,
+      fontSize: 14,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    errorMessage: {
+      marginTop: 3,
+      color: colors.muted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
     },
 
     modalContainer: {
@@ -323,16 +553,16 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     },
 
     sheetTitle: {
+      color: colors.foreground,
       fontSize: 18,
       fontFamily: "Poppins_700Bold",
-      color: colors.foreground,
     },
 
     sheetSubtitle: {
       marginTop: 2,
+      color: colors.muted,
       fontSize: 13,
       fontFamily: "Poppins_400Regular",
-      color: colors.muted,
     },
 
     closeButton: {

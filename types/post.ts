@@ -354,3 +354,82 @@ export type DeleteCommentResponse = {
   message: string;
   comment: PostComment;
 };
+/* =========================================================
+   user-community-posts-table
+   ========================================================= */
+
+export type CommunityPostTableItem = {
+  id: string;
+  communityId: string;
+  authorId: string;
+
+  type: "TEXT" | "MEDIA" | "LINK" | string;
+  tag: string | null;
+  status: "PUBLISHED" | "HIDDEN" | "REMOVED" | string;
+
+  content: string | null;
+  linkUrl: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+
+  author: {
+    id: string;
+    name: string | null;
+    image?: string | null;
+  };
+
+  media: {
+    id: string;
+    type: string;
+    url: string;
+    sortOrder: number;
+  }[];
+
+  likeCount: number;
+  commentCount: number;
+  shareCount: number;
+};
+
+export type CommunityPostsTableResponse = {
+  data: CommunityPostTableItem[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage?: boolean;
+    hasPreviousPage?: boolean;
+  };
+  community: {
+    id: string;
+    name: string;
+    slug: string;
+    visibility: "PUBLIC" | "PRIVATE" | string;
+  };
+  viewer: {
+    isOwner: boolean;
+    isActiveMember: boolean;
+    canManagePosts: boolean;
+    role: string | null;
+  };
+  filters: {
+    search: string | null;
+    status?: string | null;
+    type: string | null;
+    tag: string | null;
+    sortBy: string;
+  };
+};
+
+export type CommunityPostsTableQuery = {
+  communityId: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: "PUBLISHED" | "HIDDEN" | "REMOVED";
+  type?: "TEXT" | "MEDIA" | "LINK";
+  tag?: string;
+  sortBy?: "newest" | "oldest";
+};

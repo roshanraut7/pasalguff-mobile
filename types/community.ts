@@ -9,6 +9,8 @@ export type PaginatedResponse<T> = {
     page: number;
     limit: number;
     totalPages: number;
+    hasNextPage?: boolean;
+    hasPreviousPage?: boolean;
   };
   filters?: Record<string, unknown>;
 };
@@ -100,25 +102,36 @@ export type CommunityAccessItem = {
 
 export type CommunityMemberUser = {
   id: string;
-  email?: string;
-  name: string;
-  firstName?: string;
-  lastName?: string;
+  name: string | null;
   image?: string | null;
-  businessName?: string;
-};
 
+  /**
+   * These only come for owner/admin/member manager.
+   */
+  email?: string | null;
+  role?: string | null;
+  createdAt?: string | null;
+};
 export type CommunityMemberItem = {
   id: string;
+  communityId: string;
+  userId: string;
+
   role: CommunityRole;
-  status: CommunityMemberStatus;
+
+  /**
+   * Normal joined members may not receive status.
+   * Owner/admin/member manager receives status.
+   */
+  status?: CommunityMemberStatus;
+
   joinedAt: string;
-  updatedAt: string;
-  canEditCommunity: boolean;
-  canManageMembers: boolean;
-  canManagePosts: boolean;
-  canManageComments: boolean;
-  canManageReports: boolean;
+
+  /**
+   * These only come for owner/admin/member manager.
+   */
+  permissions?: CommunityPermissions;
+
   user: CommunityMemberUser;
 };
 
@@ -223,7 +236,6 @@ export type MemberListQuery = {
   page?: number;
   limit?: number;
   search?: string;
-  role?: CommunityRole;
   status?: CommunityMemberStatus;
 };
 
@@ -241,4 +253,56 @@ export type JoinRequestListQuery = {
 export type CommunityStatusResponse = {
   message: string;
   community: CommunityItem;
+};
+
+export type CommunityMembersResponse = PaginatedResponse<CommunityMemberItem> & {
+  community: {
+    id: string;
+    name: string;
+    slug: string;
+    visibility: CommunityVisibility;
+  };
+
+  viewer: {
+    isOwner: boolean;
+    isActiveMember: boolean;
+    canManageMembers: boolean;
+    role: CommunityRole | null;
+    status: CommunityMemberStatus | null;
+  };
+
+  filters: {
+    search: string | null;
+    status: CommunityMemberStatus;
+  }
+};
+
+export type CommunityModeratorsResponse =
+  PaginatedResponse<CommunityMemberItem> & {
+    community: {
+      id: string;
+      name: string;
+      slug: string;
+      visibility: CommunityVisibility;
+    };
+
+    viewer: {
+      isOwner: boolean;
+      canManageMembers: boolean;
+      role: CommunityRole | null;
+      status: CommunityMemberStatus | null;
+    };
+
+    filters: {
+      search: string | null;
+      status: CommunityMemberStatus;
+    };
+  };
+
+export type ModeratorListQuery = {
+  communityId: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: CommunityMemberStatus;
 };

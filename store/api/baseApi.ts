@@ -89,6 +89,7 @@ export const baseApi = createApi({
      "AdminUsers",
        "AdminPosts",
          "Friend",
+         "CommunityModerators",
 
     /**
      * New engagement tags.

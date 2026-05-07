@@ -16,9 +16,12 @@ import type {
   JoinRequestListQuery,
   MemberListQuery,
   PaginatedResponse,
+  CommunityMembersResponse,
   ReviewCommunityJoinRequestPayload,
   TransferCommunityAdminPayload,
   UpdateCommunityPayload,
+   CommunityModeratorsResponse,
+  ModeratorListQuery,
   UpdateModeratorPermissionsPayload,
 } from "@/types/community";
 
@@ -281,8 +284,8 @@ export const communityApi = baseApi.injectEndpoints({
        MEMBERS
        ========================================================= */
 
-  getCommunityMembers: builder.query<
-  PaginatedResponse<CommunityMemberItem>,
+ getCommunityMembers: builder.query<
+  CommunityMembersResponse,
   MemberListQuery
 >({
   query: ({ communityId, page = 1, limit = 20, search, status }) => ({
@@ -297,6 +300,25 @@ export const communityApi = baseApi.injectEndpoints({
   }),
   providesTags: (_result, _error, { communityId }) => [
     { type: "CommunityMembers" as const, id: communityId },
+  ],
+}),
+
+getCommunityModerators: builder.query<
+  CommunityModeratorsResponse,
+  ModeratorListQuery
+>({
+  query: ({ communityId, page = 1, limit = 20, search, status }) => ({
+    url: `/communities/${communityId}/moderators`,
+    method: "GET",
+    params: {
+      page,
+      limit,
+      ...(search ? { search } : {}),
+      ...(status ? { status } : {}),
+    },
+  }),
+  providesTags: (_result, _error, { communityId }) => [
+    { type: "CommunityModerators" as const, id: communityId },
   ],
 }),
 
@@ -423,6 +445,10 @@ export const communityApi = baseApi.injectEndpoints({
     }),
   }),
 });
+ /* =========================================================
+       User-Community Moderator
+       ========================================================= */
+
 
 export const {
   useGetExploreCommunitiesQuery,
@@ -451,6 +477,7 @@ export const {
   useRemoveCommunityMemberMutation,
   useBanCommunityMemberMutation,
   useUnbanCommunityMemberMutation,
+  useGetCommunityModeratorsQuery,
 
   useTransferCommunityAdminMutation,
 } = communityApi;

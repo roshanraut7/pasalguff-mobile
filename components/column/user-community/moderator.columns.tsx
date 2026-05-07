@@ -1,5 +1,3 @@
-// components/column/user-community/moderator.columns.tsx
-
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,12 +7,11 @@ import type {
   DataTableColumn,
   DataTableFilterConfig,
 } from "@/components/common/data-table";
-import type { AppColors } from "@/constants/theme";
-import type {
-  CommunityDashboardModerator,
-  CommunityModeratorPermission,
-  CommunityModeratorStatus,
-} from "@/mocks/moderator";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
+import type { CommunityMemberItem } from "@/types/community";
+import { useAppTheme } from "@/hooks/useAppTheme";
+
+type AppColors = ReturnType<typeof useAppTheme>["colors"];
 
 export type ModeratorAction =
   | "view"
@@ -27,32 +24,52 @@ export type ModeratorAction =
 
 type CreateModeratorColumnsParams = {
   colors: AppColors;
-  onActionPress: (moderator: CommunityDashboardModerator) => void;
+  onActionPress: (moderator: CommunityMemberItem) => void;
 };
 
-export function getModeratorInitials(name: string) {
-  const parts = name.trim().split(" ").filter(Boolean);
+type PermissionKey =
+  | "canEditCommunity"
+  | "canManageMembers"
+  | "canManagePosts"
+  | "canManageComments"
+  | "canManageReports";
+
+const permissionLabels: Record<PermissionKey, string> = {
+  canEditCommunity: "Edit Community",
+  canManageMembers: "Manage Members",
+  canManagePosts: "Manage Posts",
+  canManageComments: "Manage Comments",
+  canManageReports: "Manage Reports",
+};
+
+export function getModeratorInitials(name?: string | null) {
+  const safeName = name?.trim() || "Unknown User";
+  const parts = safeName.split(" ").filter(Boolean);
 
   if (parts.length === 0) return "U";
+  if (parts.length === 1) return parts[0]?.[0]?.toUpperCase() ?? "U";
 
-  if (parts.length === 1) {
-    return parts[0][0]?.toUpperCase() ?? "U";
-  }
-
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+  return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
 }
 
-export function getPermissionLabel(permission: CommunityModeratorPermission) {
-  const labels: Record<CommunityModeratorPermission, string> = {
-    POSTS: "Posts",
-    REPORTS: "Reports",
-    REQUESTS: "Requests",
-    BAN: "Ban",
-    PIN: "Pin",
-    COMMENTS: "Comments",
-  };
+export function getModeratorPermissions(row: CommunityMemberItem) {
+  const permissions = row.permissions;
 
-  return labels[permission];
+  if (!permissions) return [];
+
+  const keys: PermissionKey[] = [
+    "canEditCommunity",
+    "canManageMembers",
+    "canManagePosts",
+    "canManageComments",
+    "canManageReports",
+  ];
+
+  return keys.filter((key) => permissions[key] === true);
+}
+
+export function getPermissionLabel(permission: PermissionKey) {
+  return permissionLabels[permission];
 }
 
 function formatAssignedDate(value: string) {
@@ -63,11 +80,15 @@ function formatAssignedDate(value: string) {
   });
 }
 
-function getStatusLabel(status: CommunityModeratorStatus) {
+function getStatusLabel(status?: CommunityMemberItem["status"]) {
+  if (!status) return "-";
   return status.charAt(0) + status.slice(1).toLowerCase();
 }
 
-function getStatusColors(status: CommunityModeratorStatus, colors: AppColors) {
+function getStatusColors(
+  status: CommunityMemberItem["status"] | undefined,
+  colors: AppColors,
+) {
   if (status === "ACTIVE") {
     return {
       text: colors.success,
@@ -76,10 +97,18 @@ function getStatusColors(status: CommunityModeratorStatus, colors: AppColors) {
     };
   }
 
+  if (status === "BANNED") {
+    return {
+      text: colors.danger,
+      background: "rgba(220, 38, 38, 0.10)",
+      border: "rgba(220, 38, 38, 0.22)",
+    };
+  }
+
   return {
-    text: colors.danger,
-    background: "rgba(220, 38, 38, 0.10)",
-    border: "rgba(220, 38, 38, 0.22)",
+    text: colors.muted,
+    background: colors.surfaceSecondary,
+    border: colors.border,
   };
 }
 
@@ -87,22 +116,46 @@ function ModeratorCell({
   row,
   colors,
 }: {
-  row: CommunityDashboardModerator;
+  row: CommunityMemberItem;
+  colors: AppColors;
+}) {
+  const styles = createColumnStyles(colors);
+  const name = row.user.name ?? "Unknown User";
+  const avatarUrl = toAbsoluteFileUrl(row.user.image) ?? undefined;
+
+  return (
+    <View style={styles.moderatorCell}>
+      <Avatar alt={name} size="sm" variant="soft" color="success">
+        {avatarUrl ? <Avatar.Image source={{ uri: avatarUrl }} /> : null}
+        <Avatar.Fallback>{getModeratorInitials(name)}</Avatar.Fallback>
+      </Avatar>
+
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={styles.moderatorName}>
+          {name}
+        </Text>
+
+        <Text numberOfLines={1} style={styles.moderatorSubText}>
+          {row.user.email ?? row.role}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function RoleCell({
+  row,
+  colors,
+}: {
+  row: CommunityMemberItem;
   colors: AppColors;
 }) {
   const styles = createColumnStyles(colors);
 
   return (
-    <View style={styles.moderatorCell}>
-      <Avatar alt="" size="sm" variant="soft" color="success">
-        <Avatar.Image source={{ uri: row.avatar }} />
-        <Avatar.Fallback>{getModeratorInitials(row.name)}</Avatar.Fallback>
-      </Avatar>
-
-      <Text numberOfLines={1} style={styles.moderatorName}>
-        {row.name}
-      </Text>
-    </View>
+    <Text numberOfLines={1} style={styles.roleText}>
+      {row.role}
+    </Text>
   );
 }
 
@@ -110,10 +163,11 @@ function PermissionsCell({
   row,
   colors,
 }: {
-  row: CommunityDashboardModerator;
+  row: CommunityMemberItem;
   colors: AppColors;
 }) {
   const styles = createColumnStyles(colors);
+  const permissions = getModeratorPermissions(row);
 
   return (
     <View style={styles.permissionCell}>
@@ -128,7 +182,7 @@ function PermissionsCell({
             <Ionicons name="key-outline" size={14} color={colors.accent} />
 
             <Text numberOfLines={1} style={styles.permissionButtonText}>
-              {row.permissions.length} Permissions
+              {permissions.length} Permissions
             </Text>
 
             <Ionicons name="chevron-down" size={14} color={colors.accent} />
@@ -142,20 +196,33 @@ function PermissionsCell({
             presentation="popover"
             placement="bottom"
             align="center"
-            width={180}
+            width={220}
             style={styles.permissionMenuContent}
           >
-            {row.permissions.map((permission) => (
-              <Menu.Item key={permission}>
+            {permissions.length === 0 ? (
+              <Menu.Item>
                 <View style={styles.permissionMenuItem}>
-                  <View style={styles.permissionDot} />
-
                   <Text numberOfLines={1} style={styles.permissionMenuItemText}>
-                    {getPermissionLabel(permission)}
+                    No permissions
                   </Text>
                 </View>
               </Menu.Item>
-            ))}
+            ) : (
+              permissions.map((permission) => (
+                <Menu.Item key={permission}>
+                  <View style={styles.permissionMenuItem}>
+                    <View style={styles.permissionDot} />
+
+                    <Text
+                      numberOfLines={1}
+                      style={styles.permissionMenuItemText}
+                    >
+                      {getPermissionLabel(permission)}
+                    </Text>
+                  </View>
+                </Menu.Item>
+              ))
+            )}
           </Menu.Content>
         </Menu.Portal>
       </Menu>
@@ -167,14 +234,14 @@ function AssignedCell({
   row,
   colors,
 }: {
-  row: CommunityDashboardModerator;
+  row: CommunityMemberItem;
   colors: AppColors;
 }) {
   const styles = createColumnStyles(colors);
 
   return (
     <Text numberOfLines={1} style={styles.assignedText}>
-      {formatAssignedDate(row.assignedAt)}
+      {formatAssignedDate(row.joinedAt)}
     </Text>
   );
 }
@@ -183,7 +250,7 @@ function StatusCell({
   status,
   colors,
 }: {
-  status: CommunityModeratorStatus;
+  status?: CommunityMemberItem["status"];
   colors: AppColors;
 }) {
   const styles = createColumnStyles(colors);
@@ -211,9 +278,9 @@ function ActionCell({
   colors,
   onActionPress,
 }: {
-  row: CommunityDashboardModerator;
+  row: CommunityMemberItem;
   colors: AppColors;
-  onActionPress: (moderator: CommunityDashboardModerator) => void;
+  onActionPress: (moderator: CommunityMemberItem) => void;
 }) {
   const styles = createColumnStyles(colors);
 
@@ -233,49 +300,60 @@ function ActionCell({
 export function createModeratorColumns({
   colors,
   onActionPress,
-}: CreateModeratorColumnsParams): DataTableColumn<CommunityDashboardModerator>[] {
+}: CreateModeratorColumnsParams): DataTableColumn<CommunityMemberItem>[] {
   return [
     {
-      key: "name",
+      key: "moderator",
       label: "Moderator",
-      width: 220,
+      width: 260,
       searchable: true,
-      sortable: true,
-      getSearchValue: (row) => row.name,
-      getSortValue: (row) => row.name,
+      sortable: false,
+      getSearchValue: (row) => `${row.user.name ?? ""} ${row.user.email ?? ""}`,
       render: (row) => <ModeratorCell row={row} colors={colors} />,
+    },
+    {
+      key: "role",
+      label: "Role",
+      width: 130,
+      searchable: true,
+      sortable: false,
+      align: "center",
+      getSearchValue: (row) => row.role,
+      render: (row) => <RoleCell row={row} colors={colors} />,
     },
     {
       key: "permissions",
       label: "Permissions",
-      width: 180,
-      searchable: true,
-      getSearchValue: (row) => row.permissions.join(" "),
+      width: 190,
+      searchable: false,
+      sortable: false,
+      align: "center",
       render: (row) => <PermissionsCell row={row} colors={colors} />,
-    },
-    {
-      key: "assignedAt",
-      label: "Assigned",
-      width: 145,
-      sortable: true,
-      getSortValue: (row) => new Date(row.assignedAt).getTime(),
-      render: (row) => <AssignedCell row={row} colors={colors} />,
     },
     {
       key: "status",
       label: "Status",
       width: 130,
       searchable: true,
-      sortable: true,
+      sortable: false,
       align: "center",
-      getSearchValue: (row) => row.status,
-      getSortValue: (row) => row.status,
+      getSearchValue: (row) => row.status ?? "",
       render: (row) => <StatusCell status={row.status} colors={colors} />,
+    },
+    {
+      key: "joinedAt",
+      label: "Assigned",
+      width: 150,
+      searchable: false,
+      sortable: false,
+      render: (row) => <AssignedCell row={row} colors={colors} />,
     },
     {
       key: "actions",
       label: "Action",
       width: 95,
+      searchable: false,
+      sortable: false,
       align: "right",
       render: (row) => (
         <ActionCell
@@ -288,22 +366,18 @@ export function createModeratorColumns({
   ];
 }
 
-export function createModeratorFilters(): DataTableFilterConfig<CommunityDashboardModerator>[] {
+export function createModeratorFilters(): DataTableFilterConfig<CommunityMemberItem>[] {
   return [
     {
       key: "status",
       label: "Status",
-      defaultValue: "ALL",
+      defaultValue: "ACTIVE",
       options: [
-        { label: "All", value: "ALL" },
         { label: "Active", value: "ACTIVE" },
-        { label: "Suspended", value: "SUSPENDED" },
+        { label: "Left", value: "LEFT" },
+        { label: "Banned", value: "BANNED" },
       ],
-      predicate: (row, value) => {
-        if (value === "ALL") return true;
-
-        return row.status === value;
-      },
+      predicate: () => true,
     },
   ];
 }
@@ -315,65 +389,65 @@ function createColumnStyles(colors: AppColors) {
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
-      overflow: "hidden",
     },
 
     moderatorName: {
       flex: 1,
+      color: colors.foreground,
       fontSize: 14,
       fontFamily: "Poppins_600SemiBold",
+    },
+
+    moderatorSubText: {
+      marginTop: 2,
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    roleText: {
       color: colors.foreground,
+      fontSize: 13,
+      fontFamily: "Poppins_600SemiBold",
     },
 
     permissionCell: {
-      width: "100%",
-      alignItems: "flex-start",
-      justifyContent: "center",
+      alignItems: "center",
     },
 
     permissionButton: {
-      width: 155,
+      maxWidth: 170,
       minHeight: 36,
-      paddingHorizontal: 10,
       borderRadius: 999,
-      backgroundColor: colors.surfaceTertiary,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
       borderWidth: 1,
       borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
       gap: 6,
     },
 
     permissionButtonText: {
       flex: 1,
-      fontSize: 11,
-      fontFamily: "Poppins_700Bold",
       color: colors.accent,
+      fontSize: 12,
+      fontFamily: "Poppins_600SemiBold",
     },
 
     permissionMenuContent: {
       borderRadius: 16,
       backgroundColor: colors.surface,
-      borderWidth: 1,
       borderColor: colors.border,
-      paddingVertical: 6,
-      shadowColor: "#000000",
-      shadowOpacity: 0.12,
-      shadowRadius: 10,
-      shadowOffset: {
-        width: 0,
-        height: 5,
-      },
-      elevation: 10,
+      borderWidth: 1,
     },
 
     permissionMenuItem: {
-      minHeight: 38,
-      paddingHorizontal: 10,
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
+      paddingVertical: 4,
     },
 
     permissionDot: {
@@ -384,24 +458,23 @@ function createColumnStyles(colors: AppColors) {
     },
 
     permissionMenuItemText: {
-      flex: 1,
+      color: colors.foreground,
       fontSize: 13,
       fontFamily: "Poppins_500Medium",
-      color: colors.foreground,
     },
 
     assignedText: {
+      color: colors.muted,
       fontSize: 13,
       fontFamily: "Poppins_400Regular",
-      color: colors.muted,
     },
 
     statusBadge: {
-      alignSelf: "flex-start",
+      alignSelf: "center",
+      borderWidth: 1,
+      borderRadius: 999,
       paddingHorizontal: 10,
       paddingVertical: 5,
-      borderRadius: 999,
-      borderWidth: 1,
     },
 
     statusText: {

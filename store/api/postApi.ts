@@ -23,6 +23,8 @@ import type {
   SharePostArgs,
   SharePostResponse,
   UpdateCommentArgs,
+   CommunityPostsTableQuery,
+  CommunityPostsTableResponse,
   UpdateCommunityPostArgs,
 } from "@/types/post";
 
@@ -215,6 +217,37 @@ export const postApi = baseApi.injectEndpoints({
         { type: "AdminPosts" as const, id: "LIST" },
       ],
     }),
+    getCommunityPostsTable: builder.query<
+  CommunityPostsTableResponse,
+  CommunityPostsTableQuery
+>({
+  query: ({
+    communityId,
+    page = 1,
+    limit = 20,
+    search,
+    status,
+    type,
+    tag,
+    sortBy,
+  }) => ({
+    url: `/communities/${communityId}/posts`,
+    method: "GET",
+    params: {
+      page,
+      limit,
+      ...(search ? { search } : {}),
+      ...(status ? { status } : {}),
+      ...(type ? { type } : {}),
+      ...(tag ? { tag } : {}),
+      ...(sortBy ? { sortBy } : {}),
+    },
+  }),
+
+  providesTags: (_result, _error, arg) => [
+    { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
+  ],
+}),
 
     /* =========================================================
        MY POSTS / MY DRAFTS
@@ -488,4 +521,5 @@ export const {
   useCreateCommentReplyMutation,
   useUpdateCommentMutation,
   useDeleteCommentMutation,
+  useGetCommunityPostsTableQuery 
 } = postApi;

@@ -781,15 +781,25 @@ export default function ProfileScreen() {
                       ) : (
                         <View style={styles.communityList}>
                           {ownedCommunities.map((community) => (
-                            <CommunityCard
-                              key={community.id}
-                              community={community}
-                              variant="profile"
-                              badgeText="Owner"
-                              onPress={() =>
-                                router.push("/user/community-dashboard")
-                              }
-                            />
+                           <CommunityCard
+  key={community.id}
+  community={community}
+  variant="profile"
+  badgeText="Owner"
+  onPress={() =>
+    router.push({
+      pathname: "/user/community-dashboard",
+      params: {
+       communityId: community.id,
+    communityName: community.name,
+    communityAvatar: community.avatarImage ?? "",
+    communityVisibility: community.visibility,
+    communityCategory: community.category?.name ?? "",
+    returnTo: "/(tabs)/profile",
+      },
+    })
+  }
+/>
                           ))}
                         </View>
                       )}

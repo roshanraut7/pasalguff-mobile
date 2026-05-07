@@ -1,5 +1,3 @@
-// components/column/user-community/member.columns.tsx
-
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,33 +7,28 @@ import type {
   DataTableColumn,
   DataTableFilterConfig,
 } from "@/components/common/data-table";
-import type { AppColors } from "@/constants/theme";
-import type {
-  CommunityDashboardMember,
-  CommunityMemberStatus,
-} from "@/mocks/member";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
+import type { CommunityMemberItem } from "@/types/community";
+import { useAppTheme } from "@/hooks/useAppTheme";
 
-export type MemberAction =
-  | "view"
-  | "message"
-  | "approve"
-  | "reject"
-  | "ban"
-  | "unban"
-  | "remove";
+type AppColors = ReturnType<typeof useAppTheme>["colors"];
+
+export type MemberAction = "view" | "message" | "ban" | "unban" | "remove";
 
 type CreateMemberColumnsParams = {
   colors: AppColors;
-  onActionPress: (member: CommunityDashboardMember) => void;
+  canManageMembers: boolean;
+  onActionPress: (member: CommunityMemberItem) => void;
 };
 
-export function getMemberInitials(name: string) {
-  const parts = name.trim().split(" ").filter(Boolean);
+export function getMemberInitials(name?: string | null) {
+  const safeName = name?.trim() || "Unknown User";
+  const parts = safeName.split(" ").filter(Boolean);
 
   if (parts.length === 0) return "U";
-  if (parts.length === 1) return parts[0][0]?.toUpperCase() ?? "U";
+  if (parts.length === 1) return parts[0]?.[0]?.toUpperCase() ?? "U";
 
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+  return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
 }
 
 function formatJoinedDate(value: string) {
@@ -46,11 +39,15 @@ function formatJoinedDate(value: string) {
   });
 }
 
-function getStatusLabel(status: CommunityMemberStatus) {
+function getStatusLabel(status?: CommunityMemberItem["status"]) {
+  if (!status) return "-";
   return status.charAt(0) + status.slice(1).toLowerCase();
 }
 
-function getStatusColors(status: CommunityMemberStatus, colors: AppColors) {
+function getStatusColors(
+  status: CommunityMemberItem["status"] | undefined,
+  colors: AppColors,
+) {
   if (status === "ACTIVE") {
     return {
       text: colors.success,
@@ -59,19 +56,19 @@ function getStatusColors(status: CommunityMemberStatus, colors: AppColors) {
     };
   }
 
-  if (status === "PENDING") {
-    return {
-      text: colors.warning,
-      background: "rgba(245, 158, 11, 0.12)",
-      border: "rgba(245, 158, 11, 0.25)",
-    };
-  }
-
   if (status === "BANNED") {
     return {
       text: colors.danger,
       background: "rgba(220, 38, 38, 0.10)",
       border: "rgba(220, 38, 38, 0.22)",
+    };
+  }
+
+  if (status === "LEFT") {
+    return {
+      text: colors.muted,
+      background: colors.surfaceSecondary,
+      border: colors.border,
     };
   }
 
@@ -86,22 +83,62 @@ function MemberCell({
   row,
   colors,
 }: {
-  row: CommunityDashboardMember;
+  row: CommunityMemberItem;
+  colors: AppColors;
+}) {
+  const styles = createColumnStyles(colors);
+  const avatarUrl = toAbsoluteFileUrl(row.user.image) ?? undefined;
+  const name = row.user.name ?? "Unknown User";
+
+  return (
+    <View style={styles.memberCell}>
+      <Avatar alt={name} size="sm" variant="soft" color="success">
+        {avatarUrl ? <Avatar.Image source={{ uri: avatarUrl }} /> : null}
+        <Avatar.Fallback>{getMemberInitials(name)}</Avatar.Fallback>
+      </Avatar>
+
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={styles.memberName}>
+          {name}
+        </Text>
+
+        <Text numberOfLines={1} style={styles.memberSubText}>
+          {row.role}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function EmailCell({
+  row,
+  colors,
+}: {
+  row: CommunityMemberItem;
   colors: AppColors;
 }) {
   const styles = createColumnStyles(colors);
 
   return (
-    <View style={styles.memberCell}>
-      <Avatar alt="" size="sm" variant="soft" color="success">
-        <Avatar.Image source={{ uri: row.avatar }} />
-        <Avatar.Fallback>{getMemberInitials(row.name)}</Avatar.Fallback>
-      </Avatar>
+    <Text numberOfLines={1} style={styles.mutedText}>
+      {row.user.email ?? "-"}
+    </Text>
+  );
+}
 
-      <Text numberOfLines={1} style={styles.memberName}>
-        {row.name}
-      </Text>
-    </View>
+function RoleCell({
+  row,
+  colors,
+}: {
+  row: CommunityMemberItem;
+  colors: AppColors;
+}) {
+  const styles = createColumnStyles(colors);
+
+  return (
+    <Text numberOfLines={1} style={styles.roleText}>
+      {row.role}
+    </Text>
   );
 }
 
@@ -109,7 +146,7 @@ function StatusCell({
   status,
   colors,
 }: {
-  status: CommunityMemberStatus;
+  status?: CommunityMemberItem["status"];
   colors: AppColors;
 }) {
   const styles = createColumnStyles(colors);
@@ -136,7 +173,7 @@ function JoinedCell({
   row,
   colors,
 }: {
-  row: CommunityDashboardMember;
+  row: CommunityMemberItem;
   colors: AppColors;
 }) {
   const styles = createColumnStyles(colors);
@@ -149,9 +186,9 @@ function ActionCell({
   colors,
   onActionPress,
 }: {
-  row: CommunityDashboardMember;
+  row: CommunityMemberItem;
   colors: AppColors;
-  onActionPress: (member: CommunityDashboardMember) => void;
+  onActionPress: (member: CommunityMemberItem) => void;
 }) {
   const styles = createColumnStyles(colors);
 
@@ -170,42 +207,67 @@ function ActionCell({
 
 export function createMemberColumns({
   colors,
+  canManageMembers,
   onActionPress,
-}: CreateMemberColumnsParams): DataTableColumn<CommunityDashboardMember>[] {
-  return [
+}: CreateMemberColumnsParams): DataTableColumn<CommunityMemberItem>[] {
+  const columns: DataTableColumn<CommunityMemberItem>[] = [
     {
-      key: "name",
+      key: "member",
       label: "Member",
-      width: 220,
+      width: 230,
       searchable: true,
-      sortable: true,
-      getSearchValue: (row) => row.name,
-      getSortValue: (row) => row.name,
+      sortable: false,
+      getSearchValue: (row) => row.user.name ?? "",
       render: (row) => <MemberCell row={row} colors={colors} />,
     },
     {
-      key: "status",
-      label: "Status",
-      width: 125,
+      key: "role",
+      label: "Role",
+      width: 130,
       searchable: true,
-      sortable: true,
+      sortable: false,
       align: "center",
-      getSearchValue: (row) => row.status,
-      getSortValue: (row) => row.status,
-      render: (row) => <StatusCell status={row.status} colors={colors} />,
+      getSearchValue: (row) => row.role,
+      render: (row) => <RoleCell row={row} colors={colors} />,
     },
     {
       key: "joinedAt",
       label: "Joined",
-      width: 145,
-      sortable: true,
-      getSortValue: (row) => new Date(row.joinedAt).getTime(),
+      width: 150,
+      searchable: false,
+      sortable: false,
       render: (row) => <JoinedCell row={row} colors={colors} />,
     },
-    {
+  ];
+
+  if (canManageMembers) {
+    columns.splice(1, 0, {
+      key: "email",
+      label: "Email",
+      width: 240,
+      searchable: true,
+      sortable: false,
+      getSearchValue: (row) => row.user.email ?? "",
+      render: (row) => <EmailCell row={row} colors={colors} />,
+    });
+
+    columns.splice(3, 0, {
+      key: "status",
+      label: "Status",
+      width: 130,
+      searchable: true,
+      sortable: false,
+      align: "center",
+      getSearchValue: (row) => row.status ?? "",
+      render: (row) => <StatusCell status={row.status} colors={colors} />,
+    });
+
+    columns.push({
       key: "actions",
       label: "Action",
       width: 95,
+      searchable: false,
+      sortable: false,
       align: "right",
       render: (row) => (
         <ActionCell
@@ -214,27 +276,24 @@ export function createMemberColumns({
           onActionPress={onActionPress}
         />
       ),
-    },
-  ];
+    });
+  }
+
+  return columns;
 }
 
-export function createMemberFilters(): DataTableFilterConfig<CommunityDashboardMember>[] {
+export function createMemberFilters(): DataTableFilterConfig<CommunityMemberItem>[] {
   return [
     {
       key: "status",
       label: "Status",
-      defaultValue: "ALL",
+      defaultValue: "ACTIVE",
       options: [
-        { label: "All", value: "ALL" },
         { label: "Active", value: "ACTIVE" },
-        { label: "Pending", value: "PENDING" },
-        { label: "Banned", value: "BANNED" },
         { label: "Left", value: "LEFT" },
+        { label: "Banned", value: "BANNED" },
       ],
-      predicate: (row, value) => {
-        if (value === "ALL") return true;
-        return row.status === value;
-      },
+      predicate: () => true,
     },
   ];
 }
@@ -250,17 +309,36 @@ function createColumnStyles(colors: AppColors) {
 
     memberName: {
       flex: 1,
+      color: colors.foreground,
       fontSize: 14,
       fontFamily: "Poppins_600SemiBold",
+    },
+
+    memberSubText: {
+      marginTop: 2,
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    mutedText: {
+      color: colors.muted,
+      fontSize: 13,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    roleText: {
       color: colors.foreground,
+      fontSize: 13,
+      fontFamily: "Poppins_600SemiBold",
     },
 
     statusBadge: {
       alignSelf: "flex-start",
+      borderWidth: 1,
+      borderRadius: 999,
       paddingHorizontal: 10,
       paddingVertical: 5,
-      borderRadius: 999,
-      borderWidth: 1,
     },
 
     statusText: {
@@ -269,9 +347,9 @@ function createColumnStyles(colors: AppColors) {
     },
 
     joinedText: {
+      color: colors.muted,
       fontSize: 13,
       fontFamily: "Poppins_400Regular",
-      color: colors.muted,
     },
 
     actionButton: {
