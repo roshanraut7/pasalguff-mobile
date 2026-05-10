@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useMemo, useState } from "react";
 import {
+  Linking,
   Modal,
   Pressable,
   StyleSheet,
@@ -14,20 +15,26 @@ import { VideoView, useVideoPlayer } from "expo-video";
 import { Image as ExpoImage } from "expo-image";
 
 import { toAbsoluteFileUrl } from "@/lib/file-url";
-import type { CommunityPostMedia } from "@/store/api/postApi";
+import type { PostMedia } from "@/types/post";
 
 type PostMediaViewerProps = {
   visible: boolean;
-  media: CommunityPostMedia[];
+  media: PostMedia[];
   initialIndex?: number;
   onClose: () => void;
 };
 
-const ViewerImageSlide = memo(function ViewerImageSlide({
-  uri,
-}: {
-  uri: string;
-}) {
+function getFileNameFromUrl(uri: string) {
+  try {
+    const cleanUrl = uri.split("?")[0];
+    const name = cleanUrl.split("/").pop();
+    return decodeURIComponent(name || "File");
+  } catch {
+    return "File";
+  }
+}
+
+const ViewerImageSlide = memo(function ViewerImageSlide({ uri }: { uri: string }) {
   return (
     <View style={styles.viewerSlide}>
       <ExpoImage
@@ -72,6 +79,41 @@ const ViewerVideoSlide = memo(function ViewerVideoSlide({
   );
 });
 
+const ViewerFileSlide = memo(function ViewerFileSlide({ uri }: { uri: string }) {
+  const fileName = getFileNameFromUrl(uri);
+
+  const openFile = async () => {
+    const canOpen = await Linking.canOpenURL(uri);
+
+    if (canOpen) {
+      await Linking.openURL(uri);
+    }
+  };
+
+  return (
+    <View style={styles.fileSlide}>
+      <View style={styles.fileCard}>
+        <View style={styles.fileIconCircle}>
+          <Ionicons name="document-text-outline" size={46} color="#ffffff" />
+        </View>
+
+        <Text style={styles.fileTitle} numberOfLines={2} ellipsizeMode="middle">
+          {fileName}
+        </Text>
+
+        <Text style={styles.fileSubtitle}>
+          This file cannot be previewed like an image. Tap below to open it.
+        </Text>
+
+        <Pressable onPress={openFile} style={styles.openFileButton}>
+          <Ionicons name="open-outline" size={18} color="#000000" />
+          <Text style={styles.openFileButtonText}>Open file</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
+
 export default function PostMediaViewer({
   visible,
   media,
@@ -81,15 +123,10 @@ export default function PostMediaViewer({
   const { width, height } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
 
-  useEffect(() => {
-    if (visible) {
-      setCurrentIndex(initialIndex);
-    }
-  }, [visible, initialIndex]);
-
-  const normalizedMedia = useMemo<CommunityPostMedia[]>(
+  const normalizedMedia = useMemo<PostMedia[]>(
     () =>
       [...media]
+        .filter((item) => Boolean(item?.url))
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
         .map((item) => ({
           ...item,
@@ -97,6 +134,17 @@ export default function PostMediaViewer({
         })),
     [media]
   );
+
+  const safeInitialIndex =
+    normalizedMedia.length > 0
+      ? Math.min(Math.max(initialIndex, 0), normalizedMedia.length - 1)
+      : 0;
+
+  useEffect(() => {
+    if (visible) {
+      setCurrentIndex(safeInitialIndex);
+    }
+  }, [visible, safeInitialIndex]);
 
   const viewerWidth = width;
   const viewerHeight = height * 0.84;
@@ -123,32 +171,48 @@ export default function PostMediaViewer({
         </View>
 
         <View style={styles.viewerBody}>
-          <Carousel
-            key={`${visible}-${initialIndex}-${normalizedMedia.length}`}
-            defaultIndex={initialIndex}
-            loop={normalizedMedia.length > 1}
-            enabled={normalizedMedia.length > 1}
-            pagingEnabled
-            snapEnabled
-            width={viewerWidth}
-            height={viewerHeight}
-            style={{ width: viewerWidth, height: viewerHeight }}
-            data={normalizedMedia}
-            scrollAnimationDuration={320}
-            onSnapToItem={setCurrentIndex}
-            renderItem={({ item, index }) =>
-              item.type === "VIDEO" ? (
-                <ViewerVideoSlide uri={item.url} active={index === currentIndex} />
-              ) : (
-                <ViewerImageSlide uri={item.url} />
-              )
-            }
-          />
+          {normalizedMedia.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="alert-circle-outline" size={42} color="#ffffff" />
+              <Text style={styles.emptyStateText}>No media found</Text>
+            </View>
+          ) : (
+            <Carousel
+              key={`${visible}-${safeInitialIndex}-${normalizedMedia.length}`}
+              defaultIndex={safeInitialIndex}
+              loop={normalizedMedia.length > 1}
+              enabled={normalizedMedia.length > 1}
+              pagingEnabled
+              snapEnabled
+              width={viewerWidth}
+              height={viewerHeight}
+              style={{ width: viewerWidth, height: viewerHeight }}
+              data={normalizedMedia}
+              scrollAnimationDuration={320}
+              onSnapToItem={setCurrentIndex}
+              renderItem={({ item, index }) => {
+                if (item.type === "VIDEO") {
+                  return (
+                    <ViewerVideoSlide
+                      uri={item.url}
+                      active={index === currentIndex}
+                    />
+                  );
+                }
+
+                if (item.type === "IMAGE") {
+                  return <ViewerImageSlide uri={item.url} />;
+                }
+
+                return <ViewerFileSlide uri={item.url} />;
+              }}
+            />
+          )}
         </View>
 
         {normalizedMedia.length > 1 && (
           <View style={styles.viewerDotsRow}>
-            {normalizedMedia.map((item, index) => (
+            {normalizedMedia.slice(0, 8).map((item, index) => (
               <View
                 key={item.id ?? `${item.url}-${index}`}
                 style={[
@@ -157,6 +221,10 @@ export default function PostMediaViewer({
                 ]}
               />
             ))}
+
+            {normalizedMedia.length > 8 && (
+              <Text style={styles.moreDotsText}>+{normalizedMedia.length - 8}</Text>
+            )}
           </View>
         )}
       </SafeAreaView>
@@ -198,11 +266,79 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#000000",
   },
+  fileSlide: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#000000",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  fileCard: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 24,
+    padding: 22,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+  },
+  fileIconCircle: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  fileTitle: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontFamily: "Poppins_600SemiBold",
+    textAlign: "center",
+    lineHeight: 22,
+    maxWidth: "100%",
+  },
+  fileSubtitle: {
+    marginTop: 8,
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  openFileButton: {
+    marginTop: 18,
+    height: 44,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    backgroundColor: "#ffffff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  openFileButtonText: {
+    color: "#000000",
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  emptyStateText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontFamily: "Poppins_500Medium",
+  },
   viewerDotsRow: {
     position: "absolute",
     bottom: 28,
     alignSelf: "center",
     flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -218,5 +354,10 @@ const styles = StyleSheet.create({
   viewerDotActive: {
     width: 18,
     backgroundColor: "#ffffff",
+  },
+  moreDotsText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontFamily: "Poppins_500Medium",
   },
 });

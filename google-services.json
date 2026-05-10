@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "176815304961",
+    "project_id": "pasal-guff",
+    "storage_bucket": "pasal-guff.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:176815304961:android:05aa6496b7e7b82613eb00",
+        "android_client_info": {
+          "package_name": "com.pasalguff.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDuS9MnuOg7KXREZFJ0J7iAcPsyX3RaUe0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

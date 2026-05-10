@@ -12,6 +12,7 @@ import { Tabs, router, useGlobalSearchParams } from "expo-router";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { useGetCommunityDetailsByIdQuery } from "@/store/api/communityApi";
+import { useGetMyNotificationsQuery } from "@/store/api/notificationApi";
 
 function getParamValue(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? "";
@@ -24,6 +25,70 @@ function getInitialLetter(name?: string | null) {
   if (!safeName) return "C";
 
   return safeName.charAt(0).toUpperCase();
+}
+
+function NotificationTabIcon({
+  focused,
+  colors,
+  count,
+}: {
+  focused: boolean;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  count: number;
+}) {
+  const displayCount = count > 99 ? "99+" : String(count);
+
+  return (
+    <View
+      style={{
+        width: 48,
+        height: 48,
+        alignItems: "center",
+        justifyContent: "center",
+        position: "relative",
+        overflow: "visible",
+      }}
+    >
+      <Ionicons
+        name={focused ? "notifications" : "notifications-outline"}
+        size={27}
+        color={focused ? colors.accent : colors.muted}
+      />
+
+      {count > 0 ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 2,
+            right: 2,
+            minWidth: 20,
+            height: 20,
+            borderRadius: 10,
+            paddingHorizontal: 5,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.danger,
+            borderWidth: 2,
+            borderColor: colors.surface,
+            zIndex: 999,
+            elevation: 10,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.dangerForeground ?? "#FFFFFF",
+              fontSize: 10,
+              lineHeight: 12,
+              fontFamily: "Poppins_700Bold",
+            }}
+          >
+            {displayCount}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 export default function CommunityDashboardTabsLayout() {
@@ -44,13 +109,11 @@ export default function CommunityDashboardTabsLayout() {
 
   const returnTo = getParamValue(globalParams.returnTo);
 
-  /**
-   * These values come from the previous screen.
-   * They help the header show instantly before API loading finishes.
-   */
   const paramCommunityName = getParamValue(globalParams.communityName);
   const paramCommunityAvatar = getParamValue(globalParams.communityAvatar);
-  const paramCommunityVisibility = getParamValue(globalParams.communityVisibility);
+  const paramCommunityVisibility = getParamValue(
+    globalParams.communityVisibility,
+  );
   const paramCommunityCategory = getParamValue(globalParams.communityCategory);
 
   const {
@@ -61,6 +124,26 @@ export default function CommunityDashboardTabsLayout() {
     skip: !communityId,
     refetchOnMountOrArgChange: true,
   });
+
+  /**
+   * Notification badge count.
+   * We use limit: 1 because we only need meta.unreadCount.
+   */
+  const { data: notificationCountResponse } = useGetMyNotificationsQuery(
+    {
+      page: 1,
+      limit: 1,
+      communityId,
+    },
+    {
+      skip: !communityId,
+      refetchOnMountOrArgChange: true,
+      pollingInterval: 30000,
+    },
+  );
+
+  const notificationUnreadCount =
+    notificationCountResponse?.meta?.unreadCount ?? 0;
 
   const communityName =
     community?.name || paramCommunityName || "Community Dashboard";
@@ -106,18 +189,11 @@ export default function CommunityDashboardTabsLayout() {
   );
 
   function handleBackPress() {
-    /**
-     * This fixes double back press issue.
-     * It goes directly to the route passed from previous screen.
-     */
     if (returnTo) {
       router.replace(returnTo as any);
       return;
     }
 
-    /**
-     * Change this fallback route if your profile route is different.
-     */
     router.replace("/(tabs)/profile" as any);
   }
 
@@ -252,6 +328,7 @@ export default function CommunityDashboardTabsLayout() {
           height: 54,
           alignItems: "center",
           justifyContent: "center",
+          overflow: "visible",
         },
       }}
     >
@@ -339,10 +416,10 @@ export default function CommunityDashboardTabsLayout() {
         options={{
           title: "Notifications",
           tabBarIcon: ({ focused }) => (
-            <Ionicons
-              name={focused ? "notifications" : "notifications-outline"}
-              size={27}
-              color={focused ? colors.accent : colors.muted}
+            <NotificationTabIcon
+              focused={focused}
+              colors={colors}
+              count={notificationUnreadCount}
             />
           ),
         }}

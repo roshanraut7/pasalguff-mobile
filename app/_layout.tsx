@@ -4,7 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 import "../global.css";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { HeroUINativeConfig, HeroUINativeProvider } from "heroui-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFonts } from "expo-font";
@@ -20,6 +20,9 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { PaperProvider } from "react-native-paper";
 import { buildPaperTheme } from "@/constants/paper-theme";
 
+// import { testFirebaseNotificationSetup } from "@/lib/firebase-notification-test";
+import NotificationBootstrap from "@/components/NotificationBootstrap";
+
 import {
   Poppins_400Regular,
   Poppins_500Medium,
@@ -31,14 +34,18 @@ function AppContent() {
   const insets = useSafeAreaInsets();
   const { navigationTheme, statusBarStyle, colors, isDark } = useAppTheme();
 
+  // useEffect(() => {
+  //   testFirebaseNotificationSetup();
+  // }, []);
+
   const paperTheme = useMemo(
     () => buildPaperTheme(colors, isDark),
-    [colors, isDark]
+    [colors, isDark],
   );
 
   const config: HeroUINativeConfig = {
     devInfo: {
-      stylingPrinciples: false,        // ← This disables the warning message
+      stylingPrinciples: false,
     },
     toast: {
       defaultProps: {
@@ -70,13 +77,14 @@ function AppContent() {
       <PaperProvider theme={paperTheme}>
         <BottomSheetModalProvider>
           <ThemeProvider value={navigationTheme}>
+             <NotificationBootstrap />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="admin" />
               <Stack.Screen name="modal" options={{ presentation: "modal" }} />
-              
             </Stack>
+
             <StatusBar style={statusBarStyle} />
           </ThemeProvider>
         </BottomSheetModalProvider>

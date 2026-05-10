@@ -1,30 +1,123 @@
-// app/user/community-dashboard/(tabs)/index.tsx
-
-import React from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useMemo } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 import { LineChart } from "react-native-gifted-charts";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import AdminKpiCard from "@/components/common/Kpi-card";
+import { useGetCommunityDashboardOverviewQuery } from "@/store/api/communityApi";
 
-const memberGrowthData = [
-  { value: 80, label: "Jan" },
-  { value: 120, label: "Feb" },
-  { value: 160, label: "Mar" },
-  { value: 210, label: "Apr" },
-  { value: 245, label: "May" },
-];
+type ChartPoint = {
+  value: number;
+  label: string;
+};
 
-const postGrowthData = [
-  { value: 18, label: "Jan" },
-  { value: 34, label: "Feb" },
-  { value: 49, label: "Mar" },
-  { value: 71, label: "Apr" },
-  { value: 89, label: "May" },
-];
+function getParamValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
+}
+
+function cloneGrowthData(data?: { value: number; label: string }[]): ChartPoint[] {
+  return (data ?? []).map((item) => ({
+    value: Number(item.value) || 0,
+    label: String(item.label ?? ""),
+  }));
+}
 
 export default function CommunityDashboardScreen() {
   const { colors, isDark } = useAppTheme();
+
+  const localParams = useLocalSearchParams<{
+    communityId?: string | string[];
+    id?: string | string[];
+  }>();
+
+  const globalParams = useGlobalSearchParams<{
+    communityId?: string | string[];
+    id?: string | string[];
+  }>();
+
+  const communityId =
+    getParamValue(localParams.communityId) ||
+    getParamValue(globalParams.communityId) ||
+    getParamValue(localParams.id) ||
+    getParamValue(globalParams.id);
+
+  const {
+    data: dashboard,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+  } = useGetCommunityDashboardOverviewQuery(communityId, {
+    skip: !communityId,
+    refetchOnMountOrArgChange: true,
+  });
+
+  /**
+   * IMPORTANT:
+   * react-native-gifted-charts mutates chart data internally.
+   * RTK Query response data is frozen in development.
+   * So never pass dashboard.growth.members/posts directly to LineChart.
+   */
+  const memberGrowthData = useMemo(
+    () => cloneGrowthData(dashboard?.growth.members),
+    [dashboard?.growth.members],
+  );
+
+  const postGrowthData = useMemo(
+    () => cloneGrowthData(dashboard?.growth.posts),
+    [dashboard?.growth.posts],
+  );
+
+  const maxChartValue = useMemo(() => {
+    const values = [...memberGrowthData, ...postGrowthData].map(
+      (item) => item.value,
+    );
+
+    const max = Math.max(...values, 1);
+
+    return Math.max(5, Math.ceil(max + max * 0.25));
+  }, [memberGrowthData, postGrowthData]);
+
+  const hasChartData =
+    memberGrowthData.length > 0 || postGrowthData.length > 0;
+
+  if (!communityId) {
+    return (
+      <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
+        <Ionicons name="warning-outline" size={30} color={colors.warning} />
+
+        <Text style={[styles.centerTitle, { color: colors.foreground }]}>
+          Community ID missing
+        </Text>
+
+        <Text style={[styles.centerSubtitle, { color: colors.muted }]}>
+          Open this dashboard with communityId in route params.
+        </Text>
+      </View>
+    );
+  }
+
+  if (isLoading && !dashboard) {
+    return (
+      <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+
+        <Text style={[styles.centerSubtitle, { color: colors.muted }]}>
+          Loading dashboard...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -32,124 +125,198 @@ export default function CommunityDashboardScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <View>
-        <Text style={[styles.welcomeText, { color: colors.foreground }]}>
-          Welcome back, Admin
-        </Text>
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.welcomeText, { color: colors.foreground }]}>
+            Welcome back
+          </Text>
 
-        <Text style={[styles.welcomeSubText, { color: colors.muted }]}>
-          Here is your community overview.
-        </Text>
+          <Text style={[styles.welcomeSubText, { color: colors.muted }]}>
+            {dashboard?.community.name
+              ? `Here is ${dashboard.community.name} overview.`
+              : "Here is your community overview."}
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={() => refetch()}
+          style={({ pressed }) => [
+            styles.refreshButton,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+            pressed && { opacity: 0.75 },
+          ]}
+        >
+          {isFetching ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <Ionicons name="refresh-outline" size={18} color={colors.accent} />
+          )}
+
+          <Text style={[styles.refreshText, { color: colors.accent }]}>
+            Refresh
+          </Text>
+        </Pressable>
       </View>
 
+      {error ? (
+        <View
+          style={[
+            styles.errorBox,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Ionicons
+            name="alert-circle-outline"
+            size={22}
+            color={colors.danger}
+          />
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.errorTitle, { color: colors.danger }]}>
+              Failed to load dashboard
+            </Text>
+
+            <Text style={[styles.errorMessage, { color: colors.muted }]}>
+              Please check your access or try again.
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       <View style={styles.kpiGrid}>
-        <AdminKpiCard title="Members" value={245} icon="people-outline" />
-        <AdminKpiCard title="Posts" value={89} icon="newspaper-outline" />
-        <AdminKpiCard title="Banned" value={8} icon="ban-outline" />
+        <AdminKpiCard
+          title="Members"
+          value={dashboard?.kpis.members ?? 0}
+          icon="people-outline"
+        />
+
+        <AdminKpiCard
+          title="Posts"
+          value={dashboard?.kpis.posts ?? 0}
+          icon="newspaper-outline"
+        />
+
+        <AdminKpiCard
+          title="Banned"
+          value={dashboard?.kpis.banned ?? 0}
+          icon="ban-outline"
+        />
+
         <AdminKpiCard
           title="Moderators"
-          value={4}
+          value={dashboard?.kpis.moderators ?? 0}
           icon="shield-checkmark-outline"
         />
       </View>
 
-      <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-        Growth Overview
-      </Text>
+      <View
+        style={[
+          styles.chartCard,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+          Growth Overview
+        </Text>
 
-      <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>
-        Monthly member and post growth comparison.
-      </Text>
+        <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>
+          Real monthly member and post growth for this community.
+        </Text>
 
-      <LineChart
-        data={memberGrowthData}
-        data2={postGrowthData}
-        height={230}
-        width={320}
-        spacing={68}
-        initialSpacing={16}
-        endSpacing={18}
-        thickness={3}
-        thickness2={3}
-        color={colors.accent}
-        color2={colors.warning}
-        dataPointsColor={colors.accent}
-        dataPointsColor2={colors.warning}
-        dataPointsRadius={4}
-        dataPointsRadius2={4}
-        curved
-        areaChart
-        startFillColor={colors.accent}
-        endFillColor={colors.accent}
-        startOpacity={isDark ? 0.22 : 0.18}
-        endOpacity={0.02}
-        startFillColor2={colors.warning}
-        endFillColor2={colors.warning}
-        startOpacity2={isDark ? 0.18 : 0.14}
-        endOpacity2={0.02}
-        noOfSections={5}
-        maxValue={260}
-        yAxisThickness={0}
-        xAxisThickness={1}
-        xAxisColor={colors.border}
-        rulesColor={colors.separator}
-        rulesType="solid"
-        yAxisTextStyle={{
-          color: colors.muted,
-          fontSize: 11,
-          fontFamily: "Poppins_400Regular",
-        }}
-        xAxisLabelTextStyle={{
-          color: colors.muted,
-          fontSize: 11,
-          fontFamily: "Poppins_400Regular",
-        }}
-        pointerConfig={{
-          pointerStripColor: colors.border,
-          pointerStripWidth: 1,
-          pointerColor: colors.accent,
-          radius: 5,
-          pointerLabelWidth: 90,
-          pointerLabelHeight: 54,
-          activatePointersOnLongPress: true,
-          autoAdjustPointerLabelPosition: true,
-          pointerLabelComponent: (items: any[]) => (
-            <View
-              style={[
-                styles.pointerBox,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Text style={[styles.pointerText, { color: colors.foreground }]}>
-                Members: {items?.[0]?.value ?? "-"}
-              </Text>
-
-              <Text style={[styles.pointerText, { color: colors.foreground }]}>
-                Posts: {items?.[1]?.value ?? "-"}
-              </Text>
-            </View>
-          ),
-        }}
-      />
-
-      <View style={styles.legendRow}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: colors.accent }]} />
-          <Text style={[styles.legendText, { color: colors.muted }]}>
-            Members
-          </Text>
-        </View>
-
-        <View style={styles.legendItem}>
+        {!hasChartData ? (
           <View
-            style={[styles.legendDot, { backgroundColor: colors.warning }]}
-          />
-          <Text style={[styles.legendText, { color: colors.muted }]}>
-            Posts
-          </Text>
+            style={[
+              styles.emptyChartBox,
+              {
+                backgroundColor: colors.surfaceSecondary,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons name="bar-chart-outline" size={28} color={colors.muted} />
+
+            <Text style={[styles.emptyChartText, { color: colors.muted }]}>
+              No growth data found yet.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.chartWrap}>
+            <LineChart
+              data={memberGrowthData}
+              data2={postGrowthData}
+              height={230}
+              width={320}
+              spacing={68}
+              initialSpacing={16}
+              endSpacing={18}
+              thickness={3}
+              thickness2={3}
+              color={colors.accent}
+              color2={colors.warning}
+              dataPointsColor={colors.accent}
+              dataPointsColor2={colors.warning}
+              dataPointsRadius={4}
+              dataPointsRadius2={4}
+              curved
+              areaChart
+              startFillColor={colors.accent}
+              endFillColor={colors.accent}
+              startOpacity={isDark ? 0.22 : 0.18}
+              endOpacity={0.02}
+              startFillColor2={colors.warning}
+              endFillColor2={colors.warning}
+              startOpacity2={isDark ? 0.18 : 0.14}
+              endOpacity2={0.02}
+              noOfSections={5}
+              maxValue={maxChartValue}
+              yAxisThickness={0}
+              xAxisThickness={1}
+              xAxisColor={colors.border}
+              rulesColor={colors.separator}
+              rulesType="solid"
+              yAxisTextStyle={{
+                color: colors.muted,
+                fontSize: 11,
+                fontFamily: "Poppins_400Regular",
+              }}
+              xAxisLabelTextStyle={{
+                color: colors.muted,
+                fontSize: 11,
+                fontFamily: "Poppins_400Regular",
+              }}
+            />
+          </View>
+        )}
+
+        <View style={styles.legendRow}>
+          <View style={styles.legendItem}>
+            <View
+              style={[styles.legendDot, { backgroundColor: colors.accent }]}
+            />
+
+            <Text style={[styles.legendText, { color: colors.muted }]}>
+              Members
+            </Text>
+          </View>
+
+          <View style={styles.legendItem}>
+            <View
+              style={[styles.legendDot, { backgroundColor: colors.warning }]}
+            />
+
+            <Text style={[styles.legendText, { color: colors.muted }]}>
+              Posts
+            </Text>
+          </View>
         </View>
       </View>
     </ScrollView>
@@ -167,6 +334,12 @@ const styles = StyleSheet.create({
     gap: 16,
   },
 
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+
   welcomeText: {
     fontSize: 24,
     fontFamily: "Poppins_700Bold",
@@ -179,27 +352,88 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
 
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+
+  refreshText: {
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold",
+  },
+
+  errorBox: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  errorTitle: {
+    fontSize: 14,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  errorMessage: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: "Poppins_400Regular",
+  },
+
   kpiGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
   },
 
+  chartCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 16,
+    overflow: "hidden",
+  },
+
   sectionTitle: {
-    marginTop: 4,
     fontSize: 19,
     fontFamily: "Poppins_700Bold",
   },
 
   sectionSubtitle: {
-    marginTop: -10,
+    marginTop: 4,
     fontSize: 13,
     lineHeight: 19,
     fontFamily: "Poppins_400Regular",
   },
 
+  chartWrap: {
+    marginTop: 16,
+    overflow: "hidden",
+  },
+
+  emptyChartBox: {
+    marginTop: 16,
+    height: 220,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  emptyChartText: {
+    fontSize: 13,
+    fontFamily: "Poppins_500Medium",
+  },
+
   legendRow: {
-    marginTop: -4,
+    marginTop: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 18,
@@ -222,15 +456,24 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_500Medium",
   },
 
-  pointerBox: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
+  centerWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
   },
 
-  pointerText: {
-    fontSize: 11,
-    fontFamily: "Poppins_600SemiBold",
+  centerTitle: {
+    marginTop: 12,
+    fontSize: 18,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  centerSubtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "center",
+    fontFamily: "Poppins_400Regular",
   },
 });

@@ -80,6 +80,7 @@ export const baseApi = createApi({
 
     "Profile",
     "AdminCommunities",
+    "Notifications",
 
     /**
      * Post feed / post detail / my posts.
@@ -90,6 +91,8 @@ export const baseApi = createApi({
        "AdminPosts",
          "Friend",
          "CommunityModerators",
+         "Chat",
+    "Message",
 
     /**
      * New engagement tags.

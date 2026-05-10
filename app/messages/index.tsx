@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,31 +13,126 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SearchField } from "heroui-native";
+import { io, type Socket } from "socket.io-client";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
-import {
-  CONVERSATIONS,
-  ONLINE_USERS,
-  type ConversationItem,
-} from "@/mocks/messages.mock";
+import { useSession } from "@/api/better-auth-client";
+import { type Chat, useGetMyChatsQuery } from "@/store/api/chatApi";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
+
+const RAW_API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ?? process.env.EXPO_PUBLIC_AUTH_URL ?? "";
+
+function getSocketOrigin() {
+  const rawBase = RAW_API_BASE_URL.trim();
+
+  if (!rawBase) return "";
+
+  const cleanedBase = rawBase
+    .replace(/\/api\/auth\/?$/i, "")
+    .replace(/\/api\/?$/i, "");
+
+  return cleanedBase.endsWith("/") ? cleanedBase.slice(0, -1) : cleanedBase;
+}
 
 export default function MessagesScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [search, setSearch] = useState("");
 
-  const filteredConversations = useMemo(() => {
+  const { data: session } = useSession();
+  const currentUserId = session?.user?.id;
+
+  const {
+    data: chats = [],
+    isLoading,
+    isFetching,
+    isError,
+    refetch,
+  } = useGetMyChatsQuery();
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const socketOrigin = getSocketOrigin();
+
+    if (!socketOrigin) {
+      console.log("Socket origin is missing");
+      return;
+    }
+
+    let mounted = true;
+
+    const socket: Socket = io(`${socketOrigin}/chat`, {
+      transports: ["websocket"],
+      auth: {
+        userId: currentUserId,
+      },
+    });
+
+    socket.on("connect", () => {
+      console.log("Messages list socket connected:", socket.id);
+    });
+
+    socket.on("connected", (payload) => {
+      console.log("Backend socket connected:", payload);
+    });
+
+    socket.on("message:new", async () => {
+      if (!mounted) return;
+      await refetch();
+    });
+
+    socket.on("message:delivered", async () => {
+      if (!mounted) return;
+      await refetch();
+    });
+
+    socket.on("chat:read", async () => {
+      if (!mounted) return;
+      await refetch();
+    });
+
+    socket.on("connect_error", (error) => {
+      console.log("Messages list socket connect error:", error.message);
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log("Messages list socket disconnected:", reason);
+    });
+
+    return () => {
+      mounted = false;
+
+      socket.off("connect");
+      socket.off("connected");
+      socket.off("message:new");
+      socket.off("message:delivered");
+      socket.off("chat:read");
+      socket.off("connect_error");
+      socket.off("disconnect");
+
+      socket.disconnect();
+    };
+  }, [currentUserId, refetch]);
+
+  const filteredChats = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    if (!q) return CONVERSATIONS;
+    if (!q) return chats;
+    return chats.filter((chat) => {
+      const name =
+        chat.otherUser?.name || chat.otherUser?.businessName || "Unknown User";
 
-    return CONVERSATIONS.filter((item) => {
+      const lastMessage =
+        chat.lastMessage?.content || chat.lastMessage?.fileName || "";
+
       return (
-        item.name.toLowerCase().includes(q) ||
-        item.lastMessage.toLowerCase().includes(q)
+        name.toLowerCase().includes(q) ||
+        lastMessage.toLowerCase().includes(q)
       );
     });
-  }, [search]);
+  }, [search, chats]);
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -63,103 +160,127 @@ export default function MessagesScreen() {
             <SearchField.Group className="rounded-[18px] bg-field-background px-3 py-2">
               <SearchField.SearchIcon className="px-3" />
               <SearchField.Input placeholder="Search messages" />
-             <SearchField.ClearButton className="mr-2 px-2" />
+              <SearchField.ClearButton className="mr-2 px-2" />
             </SearchField.Group>
           </SearchField>
         </View>
 
-        <View style={styles.onlineSection}> 
-          <Text style={styles.sectionTitle}>Online Friends</Text>
+        {isLoading ? (
+          <View style={styles.centerWrap}>
+            <ActivityIndicator />
+            <Text style={styles.emptyText}>Loading messages...</Text>
+          </View>
+        ) : isError ? (
+          <View style={styles.centerWrap}>
+            <Text style={styles.emptyTitle}>Could not load messages</Text>
 
+            <Pressable style={styles.retryButton} onPress={() => refetch()}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : (
           <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.onlineRow}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={isFetching} onRefresh={refetch} />
+            }
           >
-            {ONLINE_USERS.map((user, index) => (
-              <Pressable
-                key={user.id}
-                style={styles.onlineItem}
-                onPress={() =>
-                  router.push(`/messages/${CONVERSATIONS[index]?.id ?? "c1"}`)
-                }
-              >
-                <View style={styles.onlineAvatarWrap}>
-                  <Image source={{ uri: user.avatar }} style={styles.onlineAvatar} />
-                  <View style={styles.onlineDot} />
-                </View>
-
-                <Text numberOfLines={1} style={styles.onlineName}>
-                  {user.name}
+            {filteredChats.length === 0 ? (
+              <View style={styles.centerWrap}>
+                <Text style={styles.emptyTitle}>No messages yet</Text>
+                <Text style={styles.emptyText}>
+                  Open a community member profile and press Message.
                 </Text>
-              </Pressable>
-            ))}
+              </View>
+            ) : (
+              filteredChats.map((chat, index) => (
+                <ConversationRow
+                  key={chat.id}
+                  chat={chat}
+                  styles={styles}
+                  showBorder={index !== filteredChats.length - 1}
+                  onPress={() => router.push(`/messages/${chat.id}`)}
+                />
+              ))
+            )}
           </ScrollView>
-        </View>
-
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-        >
-          {filteredConversations.map((item, index) => (
-            <ConversationRow
-              key={item.id}
-              item={item}
-              styles={styles}
-              showBorder={index !== filteredConversations.length - 1}
-              onPress={() => router.push(`/messages/${item.id}`)}
-            />
-          ))}
-        </ScrollView>
+        )}
       </View>
     </SafeAreaView>
   );
 }
 
 function ConversationRow({
-  item,
+  chat,
   styles,
   showBorder,
   onPress,
 }: {
-  item: ConversationItem;
+  chat: Chat;
   styles: ReturnType<typeof createStyles>;
   showBorder: boolean;
   onPress: () => void;
 }) {
+  const name =
+    chat.otherUser?.name || chat.otherUser?.businessName || "Unknown User";
+
+  const avatar = getAvatarUrl(name, chat.otherUser?.image);
+
+  const lastMessage =
+    chat.lastMessage?.content ||
+    chat.lastMessage?.fileName ||
+    "No messages yet";
+
   return (
     <Pressable
       onPress={onPress}
       style={[styles.row, showBorder && styles.rowBorder]}
     >
       <View style={styles.avatarWrap}>
-        <Image source={{ uri: item.avatar }} style={styles.avatar} />
-        {item.isOnline ? <View style={styles.rowOnlineDot} /> : null}
+        <Image source={{ uri: avatar }} style={styles.avatar} />
       </View>
 
       <View style={styles.rowMiddle}>
         <Text numberOfLines={1} style={styles.rowName}>
-          {item.name}
+          {name}
         </Text>
 
         <Text numberOfLines={1} ellipsizeMode="tail" style={styles.rowMessage}>
-          {item.lastMessage}
+          {lastMessage}
         </Text>
       </View>
 
       <View style={styles.rowRight}>
-        <Text style={styles.rowTime}>{item.lastSeenLabel}</Text>
+        <Text style={styles.rowTime}>{formatChatTime(chat.updatedAt)}</Text>
 
-        {item.unreadCount > 0 ? (
-          <View style={styles.unreadBadge}>
-            <Text style={styles.unreadBadgeText}>
-              {item.unreadCount > 9 ? "9+" : item.unreadCount}
-            </Text>
-          </View>
+        {chat.lastMessage?.status === "DELIVERED" ? (
+          <Ionicons name="checkmark-done" size={16} color="#16a34a" />
+        ) : chat.lastMessage ? (
+          <Ionicons name="checkmark" size={16} color="#94a3b8" />
         ) : null}
       </View>
     </Pressable>
   );
+}
+
+function getAvatarUrl(name: string, image?: string | null) {
+  const absoluteImage = toAbsoluteFileUrl(image);
+
+  if (absoluteImage) return absoluteImage;
+
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    name || "User",
+  )}`;
+}
+
+function formatChatTime(value: string) {
+  const date = new Date(value);
+
+  return date.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
@@ -180,161 +301,112 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       justifyContent: "space-between",
     },
     backButton: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
+      width: 38,
+      height: 38,
+      borderRadius: 19,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
     },
-    title: {
-      flex: 1,
-      marginLeft: 12,
-      fontSize: 28,
-      fontFamily: "Poppins_700Bold",
-      color: colors.foreground,
-    },
-    subtitle: {
-      marginTop: 8,
-      marginBottom: 16,
-      fontSize: 13,
-      fontFamily: "Poppins_400Regular",
-      color: colors.muted,
-    },
     newChatButton: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+      width: 38,
+      height: 38,
+      borderRadius: 19,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.accent,
     },
+    title: {
+      fontSize: 22,
+      fontWeight: "800",
+      color: colors.foreground,
+    },
+    subtitle: {
+      marginTop: 8,
+      fontSize: 14,
+      color: colors.muted,
+    },
     searchWrap: {
-      marginBottom: 18,
-    },
-    onlineSection: {
+      marginTop: 16,
       marginBottom: 12,
-    },
-    sectionTitle: {
-      marginBottom: 12,
-      fontSize: 16,
-      fontFamily: "Poppins_600SemiBold",
-      color: colors.foreground,
-    },
-    onlineRow: {
-      paddingRight: 10,
-      gap: 14,
-    },
-    onlineItem: {
-      width: 68,
-      alignItems: "center",
-    },
-    onlineAvatarWrap: {
-      position: "relative",
-      width: 58,
-      height: 58,
-      marginBottom: 8,
-    },
-    onlineAvatar: {
-      width: 58,
-      height: 58,
-      borderRadius: 29,
-    },
-    onlineDot: {
-      position: "absolute",
-      right: 2,
-      bottom: 2,
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      backgroundColor: "#22c55e",
-      borderWidth: 2,
-      borderColor: colors.background,
-    },
-    onlineName: {
-      width: "100%",
-      textAlign: "center",
-      fontSize: 12,
-      fontFamily: "Poppins_500Medium",
-      color: colors.foreground,
     },
     listContent: {
-      paddingBottom: 40,
+      paddingBottom: 28,
     },
     row: {
       flexDirection: "row",
       alignItems: "center",
       paddingVertical: 14,
-      backgroundColor: colors.background,
     },
     rowBorder: {
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
     avatarWrap: {
-      position: "relative",
-      width: 56,
-      height: 56,
-      marginRight: 12,
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      overflow: "hidden",
+      backgroundColor: colors.surfaceSecondary,
     },
     avatar: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-    },
-    rowOnlineDot: {
-      position: "absolute",
-      right: 2,
-      bottom: 2,
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      backgroundColor: "#22c55e",
-      borderWidth: 2,
-      borderColor: colors.background,
+      width: "100%",
+      height: "100%",
     },
     rowMiddle: {
       flex: 1,
-      paddingRight: 10,
+      marginLeft: 12,
     },
     rowName: {
       fontSize: 15,
-      fontFamily: "Poppins_600SemiBold",
+      fontWeight: "700",
       color: colors.foreground,
     },
     rowMessage: {
       marginTop: 4,
       fontSize: 13,
-      lineHeight: 18,
-      fontFamily: "Poppins_400Regular",
       color: colors.muted,
     },
     rowRight: {
       alignItems: "flex-end",
-      justifyContent: "center",
-      minWidth: 58,
+      gap: 8,
+      marginLeft: 8,
     },
     rowTime: {
-      fontSize: 11,
-      fontFamily: "Poppins_500Medium",
+      fontSize: 12,
       color: colors.muted,
     },
-    unreadBadge: {
-      marginTop: 8,
-      minWidth: 22,
-      height: 22,
-      borderRadius: 11,
+    centerWrap: {
+      flex: 1,
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 6,
+      paddingVertical: 60,
+      paddingHorizontal: 20,
+    },
+    emptyTitle: {
+      fontSize: 17,
+      fontWeight: "700",
+      color: colors.foreground,
+      textAlign: "center",
+    },
+    emptyText: {
+      marginTop: 8,
+      fontSize: 13,
+      color: colors.muted,
+      textAlign: "center",
+    },
+    retryButton: {
+      marginTop: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+      borderRadius: 14,
       backgroundColor: colors.accent,
     },
-    unreadBadgeText: {
-      fontSize: 11,
-      fontFamily: "Poppins_600SemiBold",
+    retryText: {
       color: colors.accentForeground,
+      fontWeight: "700",
     },
   });
 }

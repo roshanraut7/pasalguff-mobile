@@ -306,3 +306,38 @@ export type ModeratorListQuery = {
   search?: string;
   status?: CommunityMemberStatus;
 };
+
+export type CommunityDashboardOverviewResponse = {
+  community: {
+    id: string;
+    name: string;
+    slug: string;
+    visibility: CommunityVisibility;
+  };
+
+  kpis: {
+    members: number;
+    posts: number;
+    banned: number;
+    moderators: number;
+  };
+
+  growth: {
+    members: {
+      value: number;
+      label: string;
+    }[];
+    posts: {
+      value: number;
+      label: string;
+    }[];
+  };
+
+  viewer: {
+    isOwner: boolean;
+    isActiveMember: boolean;
+    role: CommunityRole | null;
+    canManageMembers: boolean;
+    canManagePosts: boolean;
+  };
+};

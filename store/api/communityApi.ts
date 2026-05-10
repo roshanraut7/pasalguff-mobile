@@ -23,6 +23,7 @@ import type {
    CommunityModeratorsResponse,
   ModeratorListQuery,
   UpdateModeratorPermissionsPayload,
+  CommunityDashboardOverviewResponse 
 } from "@/types/community";
 
 export const communityApi = baseApi.injectEndpoints({
@@ -421,6 +422,23 @@ getCommunityModerators: builder.query<
         { type: "MyCommunity" as const, id: "LIST" },
       ],
     }),
+     /* =========================================================
+       User-Community admin dashboard view
+       ========================================================= */
+       
+
+    getCommunityDashboardOverview: builder.query<
+  CommunityDashboardOverviewResponse,
+  string
+>({
+  query: (communityId) => ({
+    url: `/communities/${communityId}/dashboard/overview`,
+    method: "GET",
+  }),
+  providesTags: (_result, _error, communityId) => [
+    { type: "Community" as const, id: communityId },
+  ],
+}),
 
     /* =========================================================
        ADMIN TRANSFER
@@ -445,9 +463,6 @@ getCommunityModerators: builder.query<
     }),
   }),
 });
- /* =========================================================
-       User-Community Moderator
-       ========================================================= */
 
 
 export const {
@@ -480,4 +495,5 @@ export const {
   useGetCommunityModeratorsQuery,
 
   useTransferCommunityAdminMutation,
+  useGetCommunityDashboardOverviewQuery 
 } = communityApi;
