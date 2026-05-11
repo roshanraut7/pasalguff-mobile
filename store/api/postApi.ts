@@ -356,6 +356,51 @@ export const postApi = baseApi.injectEndpoints({
       ],
     }),
 
+
+ /* =========================================================
+       Get Home Feed Post
+       ========================================================= */
+    getHomeFeedPosts: builder.query<
+  CursorResponse<CommunityPost>,
+  {
+    limit?: number;
+    cursor?: string | null;
+    search?: string;
+    tag?: string;
+    type?: "TEXT" | "MEDIA" | "LINK";
+    sortBy?: "newest" | "oldest";
+  }
+>({
+  query: ({ limit = 10, cursor, search, tag, type, sortBy }) => ({
+    url: "/posts/feed",
+    method: "GET",
+    params: {
+      limit,
+      ...(cursor ? { cursor } : {}),
+      ...(search ? { search } : {}),
+      ...(tag ? { tag } : {}),
+      ...(type ? { type } : {}),
+      ...(sortBy ? { sortBy } : {}),
+    },
+  }),
+
+  providesTags: (result) =>
+    result
+      ? [
+          ...result.data.map((post) => ({
+            type: "Post" as const,
+            id: post.id,
+          })),
+          { type: "Post" as const, id: "LIST" },
+          { type: "Post" as const, id: "HOME-FEED" },
+        ]
+      : [
+          { type: "Post" as const, id: "LIST" },
+          { type: "Post" as const, id: "HOME-FEED" },
+        ],
+}),
+
+
     /* =========================================================
        COMMENTS
        ========================================================= */
@@ -473,6 +518,8 @@ export const postApi = baseApi.injectEndpoints({
   }),
 });
 
+
+
 /* =========================================================
    HOOK EXPORTS
    ========================================================= */
@@ -521,5 +568,6 @@ export const {
   useCreateCommentReplyMutation,
   useUpdateCommentMutation,
   useDeleteCommentMutation,
+  useGetHomeFeedPostsQuery,
   useGetCommunityPostsTableQuery 
 } = postApi;

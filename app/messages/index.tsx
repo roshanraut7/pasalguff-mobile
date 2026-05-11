@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SearchField } from "heroui-native";
 import { io, type Socket } from "socket.io-client";
+import dayjs from "dayjs";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useSession } from "@/api/better-auth-client";
@@ -39,6 +40,7 @@ export default function MessagesScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [search, setSearch] = useState("");
+  const [presenceTick, setPresenceTick] = useState(0);
 
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
@@ -50,6 +52,16 @@ export default function MessagesScreen() {
     isError,
     refetch,
   } = useGetMyChatsQuery();
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPresenceTick((value) => value + 1);
+    }, 60 * 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -70,6 +82,12 @@ export default function MessagesScreen() {
       },
     });
 
+    const handleRefresh = async () => {
+      if (!mounted) return;
+      await refetch();
+      setPresenceTick((value) => value + 1);
+    };
+
     socket.on("connect", () => {
       console.log("Messages list socket connected:", socket.id);
     });
@@ -78,20 +96,12 @@ export default function MessagesScreen() {
       console.log("Backend socket connected:", payload);
     });
 
-    socket.on("message:new", async () => {
-      if (!mounted) return;
-      await refetch();
-    });
+    socket.on("message:new", handleRefresh);
+    socket.on("message:delivered", handleRefresh);
+    socket.on("chat:read", handleRefresh);
 
-    socket.on("message:delivered", async () => {
-      if (!mounted) return;
-      await refetch();
-    });
-
-    socket.on("chat:read", async () => {
-      if (!mounted) return;
-      await refetch();
-    });
+    // Important for Online / Active now / Active 2m ago in the list
+    socket.on("presence:update", handleRefresh);
 
     socket.on("connect_error", (error) => {
       console.log("Messages list socket connect error:", error.message);
@@ -106,9 +116,10 @@ export default function MessagesScreen() {
 
       socket.off("connect");
       socket.off("connected");
-      socket.off("message:new");
-      socket.off("message:delivered");
-      socket.off("chat:read");
+      socket.off("message:new", handleRefresh);
+      socket.off("message:delivered", handleRefresh);
+      socket.off("chat:read", handleRefresh);
+      socket.off("presence:update", handleRefresh);
       socket.off("connect_error");
       socket.off("disconnect");
 
@@ -120,6 +131,7 @@ export default function MessagesScreen() {
     const q = search.trim().toLowerCase();
 
     if (!q) return chats;
+
     return chats.filter((chat) => {
       const name =
         chat.otherUser?.name || chat.otherUser?.businessName || "Unknown User";
@@ -200,6 +212,7 @@ export default function MessagesScreen() {
                   chat={chat}
                   styles={styles}
                   showBorder={index !== filteredChats.length - 1}
+                  presenceTick={presenceTick}
                   onPress={() => router.push(`/messages/${chat.id}`)}
                 />
               ))
@@ -215,11 +228,13 @@ function ConversationRow({
   chat,
   styles,
   showBorder,
+  presenceTick,
   onPress,
 }: {
   chat: Chat;
   styles: ReturnType<typeof createStyles>;
   showBorder: boolean;
+  presenceTick: number;
   onPress: () => void;
 }) {
   const name =
@@ -227,10 +242,7 @@ function ConversationRow({
 
   const avatar = getAvatarUrl(name, chat.otherUser?.image);
 
-  const lastMessage =
-    chat.lastMessage?.content ||
-    chat.lastMessage?.fileName ||
-    "No messages yet";
+  const lastMessage = getLastMessagePreview(chat);
 
   return (
     <Pressable
@@ -239,15 +251,27 @@ function ConversationRow({
     >
       <View style={styles.avatarWrap}>
         <Image source={{ uri: avatar }} style={styles.avatar} />
+
+        {chat.otherUser?.isOnline ? <View style={styles.onlineDot} /> : null}
       </View>
 
       <View style={styles.rowMiddle}>
-        <Text numberOfLines={1} style={styles.rowName}>
-          {name}
-        </Text>
+        <View style={styles.rowNameLine}>
+          <Text numberOfLines={1} style={styles.rowName}>
+            {name}
+          </Text>
+
+          {chat.otherUser?.isOnline ? (
+            <Text style={styles.onlineText}>Online</Text>
+          ) : null}
+        </View>
 
         <Text numberOfLines={1} ellipsizeMode="tail" style={styles.rowMessage}>
           {lastMessage}
+        </Text>
+
+        <Text numberOfLines={1} style={styles.rowPresence}>
+          {formatActiveStatus(chat.otherUser, presenceTick)}
         </Text>
       </View>
 
@@ -264,6 +288,20 @@ function ConversationRow({
   );
 }
 
+function getLastMessagePreview(chat: Chat) {
+  const lastMessage = chat.lastMessage;
+
+  if (!lastMessage) return "No messages yet";
+
+  if (lastMessage.type === "IMAGE") return "📷 Photo";
+  if (lastMessage.type === "VIDEO") return "🎥 Video";
+  if (lastMessage.type === "FILE") {
+    return `📄 ${lastMessage.fileName || "File"}`;
+  }
+
+  return lastMessage.content || "Message";
+}
+
 function getAvatarUrl(name: string, image?: string | null) {
   const absoluteImage = toAbsoluteFileUrl(image);
 
@@ -275,12 +313,54 @@ function getAvatarUrl(name: string, image?: string | null) {
 }
 
 function formatChatTime(value: string) {
-  const date = new Date(value);
+  const date = dayjs(value);
+  const now = dayjs();
 
-  return date.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  if (date.isSame(now, "day")) {
+    return date.format("hh:mm A");
+  }
+
+  if (date.isSame(now.subtract(1, "day"), "day")) {
+    return "Yesterday";
+  }
+
+  return date.format("D MMM");
+}
+
+function formatActiveStatus(
+  user?: {
+    isOnline?: boolean;
+    lastSeenAt?: string | null;
+  } | null,
+  _tick?: number,
+) {
+  if (!user) return "Direct message";
+
+  if (user.isOnline) return "Online now";
+
+  if (!user.lastSeenAt) return "Offline";
+
+  const lastSeen = dayjs(user.lastSeenAt);
+
+  if (!lastSeen.isValid()) return "Offline";
+
+  const now = dayjs();
+
+  const diffMinutes = now.diff(lastSeen, "minute");
+  const diffHours = now.diff(lastSeen, "hour");
+  const diffDays = now.diff(lastSeen, "day");
+
+  if (diffMinutes < 1) return "Active just now";
+  if (diffMinutes === 1) return "Active 1m ago";
+  if (diffMinutes < 60) return `Active ${diffMinutes}m ago`;
+
+  if (diffHours === 1) return "Active 1h ago";
+  if (diffHours < 24) return `Active ${diffHours}h ago`;
+
+  if (diffDays === 1) return "Active yesterday";
+  if (diffDays < 7) return `Active ${diffDays}d ago`;
+
+  return "Offline";
 }
 
 function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
@@ -348,25 +428,54 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       width: 52,
       height: 52,
       borderRadius: 26,
-      overflow: "hidden",
       backgroundColor: colors.surfaceSecondary,
+      position: "relative",
     },
     avatar: {
       width: "100%",
       height: "100%",
+      borderRadius: 26,
+    },
+    onlineDot: {
+      position: "absolute",
+      right: 1,
+      bottom: 1,
+      width: 13,
+      height: 13,
+      borderRadius: 7,
+      backgroundColor: colors.success,
+      borderWidth: 2,
+      borderColor: colors.background,
     },
     rowMiddle: {
       flex: 1,
       marginLeft: 12,
+      minWidth: 0,
+    },
+    rowNameLine: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
     },
     rowName: {
+      flex: 1,
       fontSize: 15,
       fontWeight: "700",
       color: colors.foreground,
     },
+    onlineText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: colors.success,
+    },
     rowMessage: {
       marginTop: 4,
       fontSize: 13,
+      color: colors.muted,
+    },
+    rowPresence: {
+      marginTop: 3,
+      fontSize: 11,
       color: colors.muted,
     },
     rowRight: {

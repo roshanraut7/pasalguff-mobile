@@ -743,7 +743,7 @@ export default function CreatePostScreen() {
       const updateBody = {
         tag: parsed.data.tag,
         content: parsed.data.html,
-        linkUrl: parsed.data.linkUrl?.trim() || null,
+        linkUrl: parsed.data.linkUrl?.trim() || undefined,
         media,
       };
 
@@ -826,7 +826,7 @@ export default function CreatePostScreen() {
       const updateBody = {
         tag: parsed.data.tag,
         content: parsed.data.html,
-        linkUrl: parsed.data.linkUrl?.trim() || null,
+        linkUrl: parsed.data.linkUrl?.trim() || undefined,
         media,
       };
 
@@ -983,18 +983,14 @@ export default function CreatePostScreen() {
         <View style={styles.contentWrap}>
           <View style={styles.topBar}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-              <Pressable
-                onPress={() => {
-                  if (router.canGoBack()) {
-                    router.back();
-                  } else {
-                    router.replace("/(tabs)");
-                  }
-                }}
-                style={styles.backButton}
-              >
-                <Ionicons name="chevron-back" size={22} color={p.text} />
-              </Pressable>
+             <Pressable
+  onPress={() => {
+    router.replace("/(tabs)");
+  }}
+  style={styles.backButton}
+>
+  <Ionicons name="chevron-back" size={22} color={p.text} />
+</Pressable>
 
               <Text style={styles.screenTitle}>Create post</Text>
             </View>

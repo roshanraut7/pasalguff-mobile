@@ -26,6 +26,7 @@ import { signOut, useSession } from "@/api/better-auth-client";
 
 import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
 import type { CommunityItem } from "@/types/community";
+import { baseApi } from "@/store/api/baseApi";
 
 import {
   useGetMyProfileQuery,
@@ -40,7 +41,8 @@ import {
   useUnlikePostMutation,
 } from "@/store/api/postApi";
 
-import type { CommunityPost, CommunityPostMediaType } from "@/types/post";
+import type { PostMedia } from "@/types/post";
+import type { CommunityPost } from "@/types/post";
 
 import {
   useUploadProfileAvatarMutation,
@@ -56,6 +58,7 @@ import {
   type ProfileColors,
   type ProfileStyles,
 } from "@/constants/styles/profile.styles";
+import { useDispatch } from "react-redux";
 
 type ImageTarget = "avatar" | "cover";
 
@@ -79,7 +82,7 @@ export default function ProfileScreen() {
 
   const [viewer, setViewer] = useState<{
     visible: boolean;
-    media: CommunityPostMediaType[];
+    media:PostMedia[];
     index: number;
   }>({
     visible: false,
@@ -143,6 +146,7 @@ export default function ProfileScreen() {
   const [updateMyProfile] = useUpdateMyProfileMutation();
   const [uploadProfileAvatar] = useUploadProfileAvatarMutation();
   const [uploadProfileCover] = useUploadProfileCoverMutation();
+  const dispatch = useDispatch();
 
   const user = profile ?? session?.user;
 
@@ -228,17 +232,23 @@ export default function ProfileScreen() {
     refetchMyPosts();
   }, [refetchProfile, refetchMyCommunities, refetchMyPosts]);
 
-  const handleLogout = async () => {
-    try {
-      setIsLoggingOut(true);
-      await signOut();
-      router.replace("/(auth)");
-    } catch (error) {
-      console.log(error);
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
+const handleLogout = async () => {
+  try {
+    setIsLoggingOut(true);
+
+    await signOut();
+
+    // This clears old account API data: profile, chats, communities, posts, etc.
+    dispatch(baseApi.util.resetApiState());
+
+    // Replace route so user cannot go back to old account screens
+    router.replace("/(auth)");
+  } catch (error) {
+    console.log("Logout failed:", error);
+  } finally {
+    setIsLoggingOut(false);
+  }
+};
 
   const handleCreateCommunity = () => {
     router.push("/pages/createCommunity");
@@ -249,7 +259,7 @@ export default function ProfileScreen() {
   };
 
   const openViewer = useCallback(
-    (media: CommunityPostMediaType[], index: number) => {
+    (media:PostMedia[], index: number) => {
       setViewer({
         visible: true,
         media,

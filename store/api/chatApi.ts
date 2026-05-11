@@ -2,7 +2,6 @@ import { baseApi } from "./baseApi";
 
 export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE";
 export type MessageStatus = "SENT" | "DELIVERED";
-
 export type ChatUser = {
   id: string;
   name: string;
@@ -11,6 +10,10 @@ export type ChatUser = {
   image?: string | null;
   businessName?: string | null;
   businessType?: string | null;
+
+  // For online / active status
+  isOnline?: boolean;
+  lastSeenAt?: string | null;
 };
 
 export type ChatMember = {

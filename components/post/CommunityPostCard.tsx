@@ -33,7 +33,7 @@ import Animated, {
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
-import type { CommunityPost, CommunityPostMedia } from "@/store/api/postApi";
+import type { CommunityPost, PostMedia } from "@/types/post";
 
 const systemFonts = [
   ...defaultSystemFonts,
@@ -55,7 +55,7 @@ type CommunityPostCardProps = {
   onPressComment?: (post: CommunityPost) => void;
   onPressShare?: (post: CommunityPost) => void;
   onPressAuthor?: (authorId: string) => void;
-  onPressMedia?: (media: CommunityPostMedia[], startIndex: number) => void;
+  onPressMedia?: (media: PostMedia[], startIndex: number) => void;
   canDelete?: boolean;
   isDeleting?: boolean;
   onDelete?: (post: CommunityPost) => Promise<void> | void;
@@ -249,9 +249,9 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
   colors,
   styles,
 }: {
-  media: CommunityPostMedia[];
+  media: PostMedia[];
   disabled?: boolean;
-  onPressMedia?: (media: CommunityPostMedia[], startIndex: number) => void;
+  onPressMedia?: (media: PostMedia[], startIndex: number) => void;
   onDoubleTapLike?: () => void;
   colors: AppColors;
   styles: ReturnType<typeof createStyles>;
@@ -259,7 +259,7 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
   const { width: screenWidth } = useWindowDimensions();
   const [index, setIndex] = useState(0);
 
-  const normalizedMedia = useMemo<CommunityPostMedia[]>(
+  const normalizedMedia = useMemo<PostMedia[]>(
     () =>
       [...media]
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))

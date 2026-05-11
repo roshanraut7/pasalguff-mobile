@@ -1,5 +1,14 @@
-import { Redirect } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { router } from "expo-router";
+import { useCallback } from "react";
+import { View } from "react-native";
 
 export default function CreateTabRedirect() {
-  return <Redirect href="/pages/createpost" />;
+  useFocusEffect(
+    useCallback(() => {
+      router.push("/pages/createpost");
+    }, []),
+  );
+
+  return <View />;
 }

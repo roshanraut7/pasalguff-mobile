@@ -29,10 +29,23 @@ import {
   useSharePostMutation,
   useUnlikePostMutation,
 } from "@/store/api/postApi";
-import type { CommunityPostMediaType } from "@/types/post";
+import type { CommunityPostMediaType, PostMedia } from "@/types/post";
 import type { CommunityMemberItem } from "@/types/community";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
+
+type ViewerInputMedia = {
+  id?: string;
+  type: CommunityPostMediaType;
+  url: string;
+  sortOrder?: number;
+};
+
+type MediaViewerState = {
+  visible: boolean;
+  media: PostMedia[];
+  index: number;
+};
 
 export default function CommunityDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
@@ -48,11 +61,7 @@ export default function CommunityDetailScreen() {
   const [memberPage, setMemberPage] = useState(1);
   const [memberItems, setMemberItems] = useState<CommunityMemberItem[]>([]);
 
-  const [viewer, setViewer] = useState<{
-    visible: boolean;
-    media: CommunityPostMediaType[];
-    index: number;
-  }>({
+  const [viewer, setViewer] = useState<MediaViewerState>({
     visible: false,
     media: [],
     index: 0,
@@ -267,15 +276,27 @@ export default function CommunityDetailScreen() {
     [sharePost],
   );
 
-  const openViewer = useCallback(
-    (media: CommunityPostMediaType[], index: number) => {
-      setViewer({
-        visible: true,
-        media,
-        index,
-      });
+  const normalizeViewerMedia = useCallback(
+    (media: ViewerInputMedia[]): PostMedia[] => {
+      return media.map((item, index) => ({
+        id: item.id ?? `${item.url}-${index}`,
+        type: item.type,
+        url: item.url,
+        sortOrder: item.sortOrder ?? index,
+      }));
     },
     [],
+  );
+
+  const openViewer = useCallback(
+    (media: ViewerInputMedia[], startIndex: number = 0) => {
+      setViewer({
+        visible: true,
+        media: normalizeViewerMedia(media),
+        index: startIndex,
+      });
+    },
+    [normalizeViewerMedia],
   );
 
   const closeViewer = useCallback(() => {
@@ -424,7 +445,9 @@ export default function CommunityDetailScreen() {
 
               <View className="absolute left-5 top-5">
                 <Pressable
-                  onPress={() => router.back()}
+                  onPress={() => {
+                    router.replace("/(tabs)");
+                  }}
                   className="h-[42px] w-[42px] items-center justify-center rounded-full border border-white/20 bg-white/15"
                 >
                   <Ionicons name="chevron-back" size={20} color="#fff" />
