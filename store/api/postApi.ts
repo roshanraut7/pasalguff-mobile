@@ -33,7 +33,7 @@ import type {
    ========================================================= */
 
 export const postApi = baseApi.injectEndpoints({
-  overrideExisting: false,
+  overrideExisting: true,
 
   endpoints: (builder) => ({
     /* =========================================================
@@ -360,7 +360,7 @@ export const postApi = baseApi.injectEndpoints({
  /* =========================================================
        Get Home Feed Post
        ========================================================= */
-    getHomeFeedPosts: builder.query<
+ getHomeFeedPosts: builder.query<
   CursorResponse<CommunityPost>,
   {
     limit?: number;
@@ -430,20 +430,23 @@ export const postApi = baseApi.injectEndpoints({
           : [{ type: "PostComment" as const, id: `POST-${arg.postId}` }],
     }),
 
-    createPostComment: builder.mutation<PostComment, CreatePostCommentArgs>({
-      query: ({ communityId, postId, body }) => ({
-        url: `/communities/${communityId}/posts/${postId}/comments`,
-        method: "POST",
-        body,
-      }),
+   createPostComment: builder.mutation<PostComment, CreatePostCommentArgs>({
+  query: ({ communityId, postId, body }) => ({
+    url: `/communities/${communityId}/posts/${postId}/comments`,
+    method: "POST",
+    body,
+  }),
 
-      invalidatesTags: (_result, _error, arg) => [
-        { type: "Post" as const, id: arg.postId },
-        { type: "PostComment" as const, id: `POST-${arg.postId}` },
-        { type: "AdminPosts" as const, id: arg.postId },
-        { type: "AdminPosts" as const, id: "LIST" },
-      ],
-    }),
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Post" as const, id: arg.postId },
+    { type: "Post" as const, id: "LIST" },
+    { type: "Post" as const, id: "HOME-FEED" },
+    { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
+    { type: "PostComment" as const, id: `POST-${arg.postId}` },
+    { type: "AdminPosts" as const, id: arg.postId },
+    { type: "AdminPosts" as const, id: "LIST" },
+  ],
+}),
 
     getCommentReplies: builder.query<
       CursorResponse<PostComment>,

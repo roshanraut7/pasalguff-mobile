@@ -1,17 +1,20 @@
 import { useEffect } from "react";
 import { Platform } from "react-native";
+import { useDispatch } from "react-redux";
 
 import {
   getFcmToken,
   listenForegroundNotifications,
   listenForFcmTokenRefresh,
 } from "@/lib/notifications";
-import { useRegisterPushTokenMutation } from "@/store/api/notificationApi";
-
-// Use your real session hook path
+import {
+  notificationApi,
+  useRegisterPushTokenMutation,
+} from "@/store/api/notificationApi";
 import { useSession } from "@/api/better-auth-client";
 
 export default function NotificationBootstrap() {
+  const dispatch = useDispatch();
   const { data: session } = useSession();
   const [registerPushToken] = useRegisterPushTokenMutation();
 
@@ -43,7 +46,9 @@ export default function NotificationBootstrap() {
           console.log("Refreshed push token saved to backend");
         });
 
-        unsubscribeForeground = listenForegroundNotifications();
+        unsubscribeForeground = listenForegroundNotifications(() => {
+          dispatch(notificationApi.util.invalidateTags(["Notifications"]));
+        });
       } catch (error) {
         console.log("Notification setup failed:", error);
       }
@@ -55,7 +60,7 @@ export default function NotificationBootstrap() {
       unsubscribeTokenRefresh?.();
       unsubscribeForeground?.();
     };
-  }, [session?.user, registerPushToken]);
+  }, [session?.user, registerPushToken, dispatch]);
 
   return null;
 }

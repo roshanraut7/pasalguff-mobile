@@ -302,7 +302,15 @@ export type CreateCommentReplyArgs = {
   communityId: string;
   postId: string;
   commentId: string;
-  body: CreatePostCommentPayload;
+ body: {
+    content: string;
+
+    /**
+     * This is the exact comment/reply clicked by user.
+     * Example: user clicked reply on r1, send r1 here.
+     */
+    replyToCommentId?: string;
+  };
 };
 
 export type UpdateCommentArgs = {

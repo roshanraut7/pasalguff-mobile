@@ -63,8 +63,9 @@ export function listenForFcmTokenRefresh(
 
   return onTokenRefresh(messaging, onTokenRefreshCallback);
 }
-
-export function listenForegroundNotifications() {
+export function listenForegroundNotifications(
+  onNotificationReceived?: () => void,
+) {
   const messaging = getMessaging(getApp());
 
   return onMessage(messaging, async (remoteMessage) => {
@@ -81,5 +82,7 @@ export function listenForegroundNotifications() {
         },
       },
     });
+
+    onNotificationReceived?.();
   });
 }

@@ -17,6 +17,7 @@ type AppHeaderProps = {
   userName?: string | null;
   avatarUrl?: string | null;
   onAvatarPress?: () => void;
+  notificationCount?: number;
   onFriendsPress?: () => void;
   onNotificationPress?: () => void;
 };

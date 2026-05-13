@@ -11,7 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
-import type { CommunityItem } from "@/store/api/communityApi";
+import type { CommunityItem } from "@/types/community";
 
 type CommunityCardVariant = "explore" | "profile";
 

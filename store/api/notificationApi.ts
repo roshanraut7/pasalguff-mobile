@@ -96,6 +96,11 @@ export const notificationApi = baseApi.injectEndpoints({
     }),
   }),
 });
+export function getUnreadNotificationCount(
+  response?: NotificationListResponse,
+) {
+  return response?.meta?.unreadCount ?? 0;
+}
 
 export const {
   useRegisterPushTokenMutation,

@@ -80,6 +80,20 @@ function getPostTime(post: CommunityPost) {
   return dayjs(post.publishedAt || post.createdAt).fromNow();
 }
 
+function formatCount(value?: number | null) {
+  const count = value ?? 0;
+
+  if (count <= 0) return "";
+  if (count < 1000) return `${count}`;
+  if (count < 1_000_000) return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
+  return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
+}
+
+function actionLabel(label: string, value?: number | null) {
+  const count = formatCount(value);
+  return count ? `${label} ${count}` : label;
+}
+
 function htmlToPlainText(html?: string | null) {
   if (!html) return "";
   return html
@@ -368,8 +382,12 @@ export default function CommunityPostCard({
   const hasMedia = !!post.media?.length;
 
   const [expanded, setExpanded] = useState(false);
-  const [liked, setLiked] = useState(false);
+  const [liked, setLiked] = useState(Boolean(post.isLikedByMe));
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  useEffect(() => {
+    setLiked(Boolean(post.isLikedByMe));
+  }, [post.isLikedByMe]);
 
   const plainText = useMemo(() => htmlToPlainText(post.content), [post.content]);
   const shouldCollapse = plainText.length > 220;
@@ -387,9 +405,9 @@ export default function CommunityPostCard({
   }, [onPressLike, post]);
 
   const handleDoubleTapLike = useCallback(() => {
-    if (!liked) {
-      setLiked(true);
-    }
+    if (liked) return;
+
+    setLiked(true);
     onPressLike?.(post);
   }, [liked, onPressLike, post]);
 
@@ -577,7 +595,7 @@ export default function CommunityPostCard({
       <View style={styles.reactionsRow}>
         <ReactionButton
           icon={liked ? "heart" : "heart-outline"}
-          label="Like"
+          label={actionLabel("Like", post.likeCount)}
           active={liked}
           onPress={toggleLike}
           colors={colors}
@@ -585,14 +603,14 @@ export default function CommunityPostCard({
         />
         <ReactionButton
           icon="chatbubble-outline"
-          label="Comment"
+          label={actionLabel("Comment", post.commentCount)}
           onPress={() => onPressComment?.(post)}
           colors={colors}
           styles={styles}
         />
         <ReactionButton
           icon="share-social-outline"
-          label="Share"
+          label={actionLabel("Share", post.shareCount)}
           onPress={handleShare}
           colors={colors}
           styles={styles}

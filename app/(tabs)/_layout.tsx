@@ -1,4 +1,10 @@
 import AppHeader from "@/components/common/app-header";
+import NotificationModal from "@/components/notification/NotificationModal";
+import {
+  AppNotification,
+  getUnreadNotificationCount,
+  useGetMyNotificationsQuery,
+} from "@/store/api/notificationApi";
 import { useSession } from "@/api/better-auth-client";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useGetMyProfileQuery } from "@/store/api/profileApi";
@@ -10,12 +16,32 @@ import { ActivityIndicator, View } from "react-native";
 
 export default function TabLayout() {
   const [searchValue, setSearchValue] = useState("");
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+
   const { data: session, isPending } = useSession();
   const { colors, isDark } = useAppTheme();
 
   const { data: profile } = useGetMyProfileQuery(undefined, {
     skip: !session?.user,
   });
+
+  const { data: unreadNotificationResponse } = useGetMyNotificationsQuery(
+    {
+      page: 1,
+      limit: 1,
+      unreadOnly: true,
+    },
+    {
+      skip: !session?.user,
+      pollingInterval: 30000,
+      refetchOnFocus: true,
+      refetchOnReconnect: true,
+    },
+  );
+
+  const unreadNotificationCount = getUnreadNotificationCount(
+    unreadNotificationResponse,
+  );
 
   const headerName = useMemo(() => {
     return (
@@ -47,8 +73,41 @@ export default function TabLayout() {
       shadowRadius: 12,
       shadowOffset: { width: 0, height: 6 },
     }),
-    [colors, isDark]
+    [colors, isDark],
   );
+
+  const handleOpenNotification = (notification: AppNotification) => {
+    setNotificationModalOpen(false);
+
+    const postId = notification.data?.postId;
+    const communityId = notification.data?.communityId;
+
+    console.log("Notification pressed:", {
+      type: notification.type,
+      postId,
+      communityId,
+    });
+
+    /**
+     * For now, you do not have /posts/[id].
+     * So do not navigate to post detail yet.
+     *
+     * Later, when you create:
+     * app/posts/[id].tsx
+     *
+     * Then replace this with:
+     *
+     * router.push({
+     *   pathname: "/posts/[id]",
+     *   params: {
+     *     id: String(postId),
+     *     communityId: communityId ? String(communityId) : undefined,
+     *   },
+     * });
+     */
+
+    router.push("/(tabs)");
+  };
 
   if (isPending) {
     return (
@@ -70,126 +129,135 @@ export default function TabLayout() {
   }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: true,
-        header: () => (
-          <AppHeader
-            searchValue={searchValue}
-            onSearchChange={setSearchValue}
-            userName={headerName}
-            avatarUrl={headerAvatar}
-            onAvatarPress={() => router.push("/(tabs)/profile")}
-            onFriendsPress={() => router.push("/user/friends")}
-            onNotificationPress={() => {}}
-          />
-        ),
-        tabBarShowLabel: false,
-        tabBarHideOnKeyboard: true,
-        tabBarStyle,
-        tabBarItemStyle: {
-          height: 52,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ focused }) => (
-            <Ionicons
-              name={focused ? "home" : "home-outline"}
-              size={24}
-              color={focused ? colors.accent : colors.muted}
+    <>
+      <Tabs
+        screenOptions={{
+          headerShown: true,
+          header: () => (
+            <AppHeader
+              searchValue={searchValue}
+              onSearchChange={setSearchValue}
+              userName={headerName}
+              avatarUrl={headerAvatar}
+              notificationCount={unreadNotificationCount}
+              onAvatarPress={() => router.push("/(tabs)/profile")}
+              onFriendsPress={() => router.push("/user/friends")}
+              onNotificationPress={() => setNotificationModalOpen(true)}
             />
           ),
+          tabBarShowLabel: false,
+          tabBarHideOnKeyboard: true,
+          tabBarStyle,
+          tabBarItemStyle: {
+            height: 52,
+          },
         }}
-      />
-
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: "Explore",
-          tabBarIcon: ({ focused }) => (
-            <Ionicons
-              name={focused ? "compass" : "compass-outline"}
-              size={28}
-              color={focused ? colors.accent : colors.muted}
-            />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="create"
-        options={{
-          title: "Create",
-          headerShown: false,
-          tabBarIcon: ({ focused }) => (
-            <View
-              style={{
-                width: 58,
-                height: 58,
-                borderRadius: 29,
-                backgroundColor: focused
-                  ? colors.accent
-                  : colors.surfaceTertiary,
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 26,
-                borderWidth: 4,
-                borderColor: colors.background,
-                shadowColor: isDark ? "#000000" : colors.accent,
-                shadowOpacity: isDark ? 0.28 : 0.18,
-                shadowRadius: 10,
-                shadowOffset: { width: 0, height: 6 },
-                elevation: 8,
-              }}
-            >
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ focused }) => (
               <Ionicons
-                name="add"
-                size={28}
-                color={focused ? colors.accentForeground : colors.foreground}
+                name={focused ? "home" : "home-outline"}
+                size={24}
+                color={focused ? colors.accent : colors.muted}
               />
-            </View>
-          ),
-        }}
-      />
+            ),
+          }}
+        />
 
-    <Tabs.Screen
-  name="messages"
-  options={{
-    title: "Messages",
-    headerShown: false,
-    tabBarIcon: ({ focused }) => (
-      <Ionicons
-        name={focused ? "chatbubble" : "chatbubble-outline"}
-        size={24}
-        color={focused ? colors.accent : colors.muted}
-      />
-    ),
-  }}
-  listeners={{
-    tabPress: (e) => {
-      e.preventDefault();
-      router.push("/messages");
-    },
-  }}
-/>
+        <Tabs.Screen
+          name="explore"
+          options={{
+            title: "Explore",
+            tabBarIcon: ({ focused }) => (
+              <Ionicons
+                name={focused ? "compass" : "compass-outline"}
+                size={28}
+                color={focused ? colors.accent : colors.muted}
+              />
+            ),
+          }}
+        />
 
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ focused }) => (
-            <Ionicons
-              name={focused ? "person" : "person-outline"}
-              size={24}
-              color={focused ? colors.accent : colors.muted}
-            />
-          ),
-        }}
+        <Tabs.Screen
+          name="create"
+          options={{
+            title: "Create",
+            headerShown: false,
+            tabBarIcon: ({ focused }) => (
+              <View
+                style={{
+                  width: 58,
+                  height: 58,
+                  borderRadius: 29,
+                  backgroundColor: focused
+                    ? colors.accent
+                    : colors.surfaceTertiary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 26,
+                  borderWidth: 4,
+                  borderColor: colors.background,
+                  shadowColor: isDark ? "#000000" : colors.accent,
+                  shadowOpacity: isDark ? 0.28 : 0.18,
+                  shadowRadius: 10,
+                  shadowOffset: { width: 0, height: 6 },
+                  elevation: 8,
+                }}
+              >
+                <Ionicons
+                  name="add"
+                  size={28}
+                  color={focused ? colors.accentForeground : colors.foreground}
+                />
+              </View>
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="messages"
+          options={{
+            title: "Messages",
+            headerShown: false,
+            tabBarIcon: ({ focused }) => (
+              <Ionicons
+                name={focused ? "chatbubble" : "chatbubble-outline"}
+                size={24}
+                color={focused ? colors.accent : colors.muted}
+              />
+            ),
+          }}
+          listeners={{
+            tabPress: (e) => {
+              e.preventDefault();
+              router.push("/messages");
+            },
+          }}
+        />
+
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            tabBarIcon: ({ focused }) => (
+              <Ionicons
+                name={focused ? "person" : "person-outline"}
+                size={24}
+                color={focused ? colors.accent : colors.muted}
+              />
+            ),
+          }}
+        />
+      </Tabs>
+
+      <NotificationModal
+        visible={notificationModalOpen}
+        onClose={() => setNotificationModalOpen(false)}
+        onOpenNotification={handleOpenNotification}
       />
-    </Tabs>
+    </>
   );
 }
