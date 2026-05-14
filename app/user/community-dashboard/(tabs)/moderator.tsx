@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { router, useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,15 +25,77 @@ import {
   getPermissionLabel,
   type ModeratorAction,
 } from "@/components/column/user-community/moderator.columns";
-import { useGetCommunityModeratorsQuery } from "@/store/api/communityApi";
+import {
+  useAssignCommunityModeratorMutation,
+  useGetCommunityModeratorsQuery,
+  useUpdateModeratorPermissionsMutation,
+} from "@/store/api/communityApi";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import type { CommunityMemberItem } from "@/types/community";
+import ModeratorPermissionForm, {
+  type ModeratorPermissionValues,
+} from "@/components/form/ModeratorForm";
 
 type ModeratorStatusFilter = "ACTIVE" | "LEFT" | "BANNED";
+type PermissionFormMode = "assign" | "edit";
+
+type CommunityMemberWithPermissionFlags = CommunityMemberItem &
+  Partial<ModeratorPermissionValues>;
 
 function getParamValue(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? "";
   return value ?? "";
+}
+
+function getApiErrorMessage(error: unknown) {
+  if (typeof error === "object" && error !== null && "data" in error) {
+    const data = (error as { data?: { message?: string | string[]; error?: string } }).data;
+
+    if (Array.isArray(data?.message)) {
+      return data.message.join("\n");
+    }
+
+    if (typeof data?.message === "string") {
+      return data.message;
+    }
+
+    if (typeof data?.error === "string") {
+      return data.error;
+    }
+  }
+
+  return "Something went wrong. Please try again.";
+}
+
+function getModeratorDefaultValues(
+  moderator: CommunityMemberItem | null,
+): ModeratorPermissionValues {
+  const item = moderator as CommunityMemberWithPermissionFlags | null;
+  const permissions = moderator?.permissions;
+
+  return {
+    targetUserId: moderator?.userId ?? moderator?.user?.id ?? "",
+
+    canEditCommunity: Boolean(
+      item?.canEditCommunity ?? permissions?.canEditCommunity,
+    ),
+
+    canManageMembers: Boolean(
+      item?.canManageMembers ?? permissions?.canManageMembers,
+    ),
+
+    canManagePosts: Boolean(
+      item?.canManagePosts ?? permissions?.canManagePosts,
+    ),
+
+    canManageComments: Boolean(
+      item?.canManageComments ?? permissions?.canManageComments,
+    ),
+
+    canManageReports: Boolean(
+      item?.canManageReports ?? permissions?.canManageReports,
+    ),
+  };
 }
 
 export default function ModeratorScreen() {
@@ -58,17 +123,34 @@ export default function ModeratorScreen() {
 
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
 
+  const [permissionFormVisible, setPermissionFormVisible] = useState(false);
+  const [permissionFormMode, setPermissionFormMode] =
+    useState<PermissionFormMode>("assign");
+  const [permissionFormModerator, setPermissionFormModerator] =
+    useState<CommunityMemberItem | null>(null);
+
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+
   const [activeFilters, setActiveFilters] = useState<Record<string, string>>({
     status: "ACTIVE",
   });
 
   const statusFilter = activeFilters.status as ModeratorStatusFilter;
+
+  const [assignModerator, { isLoading: isAssigningModerator }] =
+    useAssignCommunityModeratorMutation();
+
+  const [updateModeratorPermissions, { isLoading: isUpdatingPermissions }] =
+    useUpdateModeratorPermissionsMutation();
+
+  const isSubmittingPermissionForm =
+    isAssigningModerator || isUpdatingPermissions;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -135,6 +217,16 @@ export default function ModeratorScreen() {
     setPage(0);
   }
 
+  async function handlePullRefresh() {
+    setIsPullRefreshing(true);
+
+    try {
+      await refetch();
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }
+
   function openActionSheet(moderator: CommunityMemberItem) {
     setSelectedModerator(moderator);
     setActionSheetVisible(true);
@@ -145,10 +237,91 @@ export default function ModeratorScreen() {
     setSelectedModerator(null);
   }
 
+  function openAssignModeratorForm() {
+    setActionSheetVisible(false);
+    setSelectedModerator(null);
+    setPermissionFormMode("assign");
+    setPermissionFormModerator(null);
+    setPermissionFormVisible(true);
+  }
+
+  function openEditPermissionForm(moderator: CommunityMemberItem) {
+    setPermissionFormMode("edit");
+    setPermissionFormModerator(moderator);
+    setPermissionFormVisible(true);
+  }
+
+  function closePermissionForm() {
+    if (isSubmittingPermissionForm) return;
+
+    setPermissionFormVisible(false);
+    setPermissionFormMode("assign");
+    setPermissionFormModerator(null);
+  }
+
+  async function handlePermissionFormSubmit(values: ModeratorPermissionValues) {
+    if (!communityId) return;
+
+    try {
+      if (permissionFormMode === "assign") {
+        const targetUserId = values.targetUserId?.trim();
+
+        if (!targetUserId) {
+          Alert.alert("Missing member", "Please select a member first.");
+          return;
+        }
+
+        await assignModerator({
+          communityId,
+          targetUserId,
+          canEditCommunity: values.canEditCommunity,
+          canManageMembers: values.canManageMembers,
+          canManagePosts: values.canManagePosts,
+          canManageComments: values.canManageComments,
+          canManageReports: values.canManageReports,
+        }).unwrap();
+
+        setPermissionFormVisible(false);
+        setPermissionFormModerator(null);
+
+        Alert.alert("Moderator assigned", "The selected member is now a moderator.");
+        refetch();
+        return;
+      }
+
+      const targetUserId =
+        permissionFormModerator?.userId ?? permissionFormModerator?.user?.id;
+
+      if (!targetUserId) {
+        Alert.alert("Missing moderator", "Moderator user ID was not found.");
+        return;
+      }
+
+      await updateModeratorPermissions({
+        communityId,
+        targetUserId,
+        canEditCommunity: values.canEditCommunity,
+        canManageMembers: values.canManageMembers,
+        canManagePosts: values.canManagePosts,
+        canManageComments: values.canManageComments,
+        canManageReports: values.canManageReports,
+      }).unwrap();
+
+      setPermissionFormVisible(false);
+      setPermissionFormModerator(null);
+
+      Alert.alert("Permissions updated", "Moderator permissions were updated.");
+      refetch();
+    } catch (submitError) {
+      Alert.alert("Action failed", getApiErrorMessage(submitError));
+    }
+  }
+
   function handleModeratorAction(action: ModeratorAction) {
     if (!selectedModerator) return;
 
-    const moderatorName = selectedModerator.user.name ?? "Unknown User";
+    const moderator = selectedModerator;
+    const moderatorName = moderator.user.name ?? "Unknown User";
 
     const actionLabel: Record<ModeratorAction, string> = {
       view: "View profile",
@@ -162,13 +335,18 @@ export default function ModeratorScreen() {
 
     closeActionSheet();
 
+    if (action === "editPermissions") {
+      openEditPermissionForm(moderator);
+      return;
+    }
+
     if (action === "activity") {
       router.push({
         pathname: "/pages/moderator-activity",
         params: {
-          moderatorId: selectedModerator.id,
-          userId: selectedModerator.userId,
-          communityId: selectedModerator.communityId,
+          moderatorId: moderator.id,
+          userId: moderator.userId,
+          communityId: moderator.communityId,
         },
       });
       return;
@@ -197,6 +375,13 @@ export default function ModeratorScreen() {
         style={styles.root}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isPullRefreshing}
+            onRefresh={handlePullRefresh}
+            tintColor={colors.accent}
+          />
+        }
       >
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
@@ -208,15 +393,19 @@ export default function ModeratorScreen() {
           </View>
 
           <Pressable
-            onPress={() => refetch()}
+            onPress={openAssignModeratorForm}
             style={({ pressed }) => [
-              styles.retryButton,
+              styles.addButton,
               pressed && { opacity: 0.75 },
             ]}
           >
-            <Ionicons name="refresh-outline" size={18} color={colors.accent} />
+            <Ionicons
+              name="person-add-outline"
+              size={17}
+              color={colors.accentForeground}
+            />
 
-            <Text style={styles.retryText}>Refresh</Text>
+            <Text style={styles.addText}>Add</Text>
           </Pressable>
         </View>
 
@@ -232,7 +421,8 @@ export default function ModeratorScreen() {
               <Text style={styles.errorTitle}>Failed to load moderators</Text>
 
               <Text style={styles.errorMessage}>
-                Only the community owner or member manager can view this list.
+                Pull down to refresh and try again. Only the community owner or
+                member manager can view this list.
               </Text>
             </View>
           </View>
@@ -251,7 +441,7 @@ export default function ModeratorScreen() {
           emptyTitle={error ? "Failed to load moderators" : "No moderators found"}
           emptySubtitle={
             error
-              ? "Tap refresh and try again."
+              ? "Pull down to refresh and try again."
               : "No moderator matched this search."
           }
           isLoading={isLoading}
@@ -385,6 +575,43 @@ export default function ModeratorScreen() {
             />
           </View>
         </Modal>
+
+        <Modal
+          visible={permissionFormVisible}
+          onDismiss={closePermissionForm}
+          contentContainerStyle={styles.formModalContainer}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.formKeyboardWrap}
+          >
+            <View style={styles.sheetHandle} />
+
+            <ModeratorPermissionForm
+              communityId={communityId}
+              mode={permissionFormMode}
+              isVisible={permissionFormVisible}
+              defaultValues={
+                permissionFormMode === "edit"
+                  ? getModeratorDefaultValues(permissionFormModerator)
+                  : undefined
+              }
+              title={
+                permissionFormMode === "assign"
+                  ? "Assign moderator"
+                  : "Edit permissions"
+              }
+              subtitle={
+                permissionFormMode === "edit" && permissionFormModerator?.user.name
+                  ? permissionFormModerator.user.name
+                  : undefined
+              }
+              isSubmitting={isSubmittingPermissionForm}
+              onCancel={closePermissionForm}
+              onSubmit={handlePermissionFormSubmit}
+            />
+          </KeyboardAvoidingView>
+        </Modal>
       </Portal>
     </>
   );
@@ -489,22 +716,20 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontFamily: "Poppins_400Regular",
     },
 
-    retryButton: {
+    addButton: {
+      minHeight: 38,
       flexDirection: "row",
       alignItems: "center",
-      gap: 7,
-      borderWidth: 1,
-      borderColor: colors.border,
+      gap: 6,
       borderRadius: 999,
       paddingHorizontal: 13,
-      paddingVertical: 9,
-      backgroundColor: colors.surfaceSecondary,
+      backgroundColor: colors.accent,
     },
 
-    retryText: {
-      color: colors.accent,
+    addText: {
+      color: colors.accentForeground,
       fontSize: 13,
-      fontFamily: "Poppins_600SemiBold",
+      fontFamily: "Poppins_700Bold",
     },
 
     errorBox: {
@@ -546,13 +771,31 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       borderColor: colors.border,
     },
 
+    formModalContainer: {
+      marginHorizontal: 0,
+      marginBottom: 0,
+      marginTop: "auto",
+      maxHeight: "88%",
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 30,
+      borderTopRightRadius: 30,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
+    },
+
+    formKeyboardWrap: {
+      maxHeight: "100%",
+      paddingTop: 10,
+    },
+
     sheetHandle: {
       width: 44,
       height: 5,
       borderRadius: 999,
       backgroundColor: colors.border,
       alignSelf: "center",
-      marginBottom: 12,
+      marginBottom: 10,
     },
 
     sheetHeader: {

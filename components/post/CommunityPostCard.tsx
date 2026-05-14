@@ -9,7 +9,6 @@ import React, {
 import {
   Linking,
   Pressable,
-  Share,
   StyleSheet,
   Text,
   View,
@@ -105,7 +104,7 @@ function htmlToPlainText(html?: string | null) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
-
+// Reaction button component used for like, comment, and share actions. It changes appearance based on active state and handles press interactions.
 const ReactionButton = memo(function ReactionButton({
   icon,
   label,
@@ -143,7 +142,7 @@ const ReactionButton = memo(function ReactionButton({
     </Pressable>
   );
 });
-
+// Media tap handling with single vs double tap detection
 const MediaTapLayer = memo(function MediaTapLayer({
   children,
   onSingleTap,
@@ -192,6 +191,7 @@ const MediaTapLayer = memo(function MediaTapLayer({
   );
 });
 
+//ImageSlide and VideoSlide components for rendering media in the carousel, with tap handling for like and media actions
 const ImageSlide = memo(function ImageSlide({
   uri,
   onSingleTap,
@@ -217,6 +217,7 @@ const ImageSlide = memo(function ImageSlide({
   );
 });
 
+// For videos, we use the expo-video player and control playback based on whether the slide is active. Taps are handled similarly to images.
 const VideoSlide = memo(function VideoSlide({
   uri,
   active,
@@ -254,7 +255,7 @@ const VideoSlide = memo(function VideoSlide({
     </MediaTapLayer>
   );
 });
-
+// The PostMediaCarousel component renders a carousel of media items (images/videos) for a post. It handles the logic for displaying dots for multiple media, and the heart animation on double tap.
 const PostMediaCarousel = memo(function PostMediaCarousel({
   media,
   disabled,
@@ -382,13 +383,9 @@ export default function CommunityPostCard({
   const hasMedia = !!post.media?.length;
 
   const [expanded, setExpanded] = useState(false);
-  const [liked, setLiked] = useState(Boolean(post.isLikedByMe));
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  useEffect(() => {
-    setLiked(Boolean(post.isLikedByMe));
-  }, [post.isLikedByMe]);
-
+  const liked = Boolean(post.isLikedByMe);
   const plainText = useMemo(() => htmlToPlainText(post.content), [post.content]);
   const shouldCollapse = plainText.length > 220;
 
@@ -400,29 +397,21 @@ export default function CommunityPostCard({
   const contentWidth = Math.max(width - 24, 220);
 
   const toggleLike = useCallback(() => {
-    setLiked((prev) => !prev);
     onPressLike?.(post);
-  }, [onPressLike, post]);
+
+  },[onPressLike, post]);
+
 
   const handleDoubleTapLike = useCallback(() => {
     if (liked) return;
 
-    setLiked(true);
     onPressLike?.(post);
   }, [liked, onPressLike, post]);
 
-  const handleShare = async () => {
-    if (onPressShare) {
-      onPressShare(post);
-      return;
-    }
+ const handleShare = useCallback(() => {
+  onPressShare?.(post);
+}, [onPressShare, post]);
 
-    const shareMessage = [plainText, post.linkUrl].filter(Boolean).join("\n\n");
-
-    await Share.share({
-      message: shareMessage || "Check out this post",
-    });
-  };
 
   const handleOpenLink = useCallback(async (_event: unknown, href?: string) => {
     if (!href) return;

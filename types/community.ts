@@ -79,12 +79,6 @@ export type CommunityItem = {
   isJoined: boolean;
   myRole: CommunityRole | null;
   myMemberStatus: CommunityMemberStatus | null;
-
-  canEditCommunity: boolean;
-  canManageMembers: boolean;
-  canManagePosts: boolean;
-  canManageComments: boolean;
-  canManageReports: boolean;
 };
 
 export type CommunityAccessItem = {
@@ -104,6 +98,9 @@ export type CommunityMemberUser = {
   id: string;
   name: string | null;
   image?: string | null;
+  firstName?: string | null; 
+  lastName?: string | null;
+  businessName?: string| null;
 
   /**
    * These only come for owner/admin/member manager.
@@ -132,6 +129,11 @@ export type CommunityMemberItem = {
    */
   permissions?: CommunityPermissions;
 
+    canEditCommunity?: boolean;
+  canManageMembers?: boolean;
+  canManagePosts?: boolean;
+  canManageComments?: boolean;
+  canManageReports?: boolean;
   user: CommunityMemberUser;
 };
 

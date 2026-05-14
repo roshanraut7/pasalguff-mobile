@@ -15,36 +15,11 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-
+import type { FeedComment } from "@/utils/post/comment";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import type { CommunityPost, PostMedia } from "@/types/post";
-
-export type FeedComment = {
-  id: string;
-  postId?: string;
-  authorId?: string;
-  parentId?: string | null;
-  content: string;
-  status?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  editedAt?: string | null;
-  deletedAt?: string | null;
-  likeCount?: number | null;
-  isLikedByMe?: boolean | null;
-  author?: {
-    id: string;
-    name?: string | null;
-    firstName?: string | null;
-    lastName?: string | null;
-    businessName?: string | null;
-    image?: string | null;
-  } | null;
-  replies?: FeedComment[];
-  replyCount?: number;
-};
-
+import { toAbsoluteFileUrl } from "@/lib/file-url";
 type Colors = ReturnType<typeof useAppTheme>["colors"];
 
 type CommentPostModalProps = {
@@ -67,27 +42,6 @@ type CommentPostModalProps = {
 const MIN_INPUT_HEIGHT = 42;
 const MAX_INPUT_HEIGHT = 126;
 
-function normalizeFileUrl(value?: string | null) {
-  if (!value) return null;
-
-  if (/^(https?:|file:|content:|data:|blob:)/i.test(value)) {
-    return value;
-  }
-
-  const rawBaseUrl =
-    process.env.EXPO_PUBLIC_API_URL ?? process.env.EXPO_PUBLIC_AUTH_URL ?? "";
-
-  if (!rawBaseUrl) return value;
-
-  const origin = rawBaseUrl
-    .replace(/\/api\/auth\/?$/i, "")
-    .replace(/\/api\/?$/i, "")
-    .replace(/\/$/, "");
-
-  if (!origin) return value;
-
-  return value.startsWith("/") ? `${origin}${value}` : `${origin}/${value}`;
-}
 
 function getCommentAuthorName(comment: FeedComment) {
   const author = comment.author;
@@ -104,7 +58,7 @@ function getCommentAuthorName(comment: FeedComment) {
 }
 
 function getAuthorImage(comment: FeedComment) {
-  return normalizeFileUrl(comment.author?.image ?? null);
+  return toAbsoluteFileUrl(comment.author?.image ?? null);
 }
 
 function getInitial(name: string) {
@@ -675,42 +629,49 @@ function createStyles(colors: Colors) {
     overlay: {
       flex: 1,
       justifyContent: "flex-end",
-      backgroundColor: "rgba(0,0,0,0.45)",
+      backgroundColor: colors.backdrop,
     },
+
     backdrop: {
       ...StyleSheet.absoluteFillObject,
     },
+
     keyboardContainer: {
       flex: 1,
       justifyContent: "flex-end",
     },
+
     sheet: {
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
-      backgroundColor: "#FFFFFF",
+      backgroundColor: colors.surface,
       overflow: "hidden",
     },
+
     dragHandleWrapper: {
       alignItems: "center",
       paddingTop: 8,
       paddingBottom: 4,
     },
+
     dragHandle: {
       width: 42,
       height: 4,
       borderRadius: 999,
-      backgroundColor: "#CED0D4",
+      backgroundColor: colors.border,
     },
+
     header: {
       height: 58,
       paddingHorizontal: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: "#E4E6EB",
+      borderBottomColor: colors.border,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      backgroundColor: "#FFFFFF",
+      backgroundColor: colors.surface,
     },
+
     headerIconButton: {
       width: 40,
       height: 40,
@@ -718,121 +679,148 @@ function createStyles(colors: Colors) {
       alignItems: "center",
       justifyContent: "center",
     },
+
     headerCenter: {
       flex: 1,
       alignItems: "center",
     },
+
     headerTitle: {
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 17,
       fontFamily: "Poppins_700Bold",
     },
+
     headerSubtitle: {
       marginTop: 1,
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 11,
       fontFamily: "Poppins_400Regular",
     },
+
     closeButton: {
       width: 40,
       height: 40,
       borderRadius: 999,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: "#E4E6EB",
+      backgroundColor: colors.surfaceSecondary,
     },
+
     list: {
       flex: 1,
-      backgroundColor: "#FFFFFF",
+      backgroundColor: colors.surface,
     },
+
     listContent: {
       paddingBottom: 110,
     },
+
     postHeaderWrap: {
-      backgroundColor: "#FFFFFF",
+      backgroundColor: colors.surface,
     },
+
     commentSectionHeader: {
       paddingHorizontal: 12,
       paddingTop: 12,
       paddingBottom: 8,
       borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: "#E4E6EB",
+      borderTopColor: colors.border,
+      backgroundColor: colors.surface,
     },
+
     commentSectionTitle: {
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 14,
       fontFamily: "Poppins_700Bold",
     },
+
     loadingContainer: {
       paddingVertical: 30,
     },
+
     emptyContainer: {
       alignItems: "center",
       paddingVertical: 48,
       paddingHorizontal: 20,
+      backgroundColor: colors.surface,
     },
+
     emptyTitle: {
       marginTop: 10,
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 15,
       fontFamily: "Poppins_700Bold",
     },
+
     emptyText: {
       marginTop: 4,
-      color: "#65676B",
+      color: colors.muted,
       textAlign: "center",
       fontSize: 13,
       lineHeight: 20,
       fontFamily: "Poppins_400Regular",
     },
+
     commentBlock: {
       paddingHorizontal: 12,
       marginBottom: 12,
     },
+
     commentRow: {
       flexDirection: "row",
       alignItems: "flex-start",
       gap: 8,
     },
+
     avatar: {
       borderRadius: 999,
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
-      backgroundColor: "#E4E6EB",
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
     },
+
     avatarImage: {
       width: "100%",
       height: "100%",
     },
+
     avatarInitial: {
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 13,
       fontFamily: "Poppins_700Bold",
     },
+
     commentBody: {
       flex: 1,
     },
+
     commentBubble: {
       alignSelf: "flex-start",
       maxWidth: "96%",
       borderRadius: 18,
       paddingHorizontal: 12,
       paddingVertical: 8,
-      backgroundColor: "#F0F2F5",
+      backgroundColor: colors.surfaceSecondary,
     },
+
     commentAuthor: {
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 12,
       fontFamily: "Poppins_700Bold",
     },
+
     commentText: {
       marginTop: 2,
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 14,
       lineHeight: 20,
       fontFamily: "Poppins_400Regular",
     },
+
     commentActions: {
       marginTop: 4,
       marginLeft: 12,
@@ -840,28 +828,33 @@ function createStyles(colors: Colors) {
       alignItems: "center",
       gap: 12,
     },
+
     commentActionText: {
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 12,
       fontFamily: "Poppins_700Bold",
     },
+
     commentTime: {
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 12,
       fontFamily: "Poppins_400Regular",
     },
+
     commentReactionCount: {
       marginLeft: "auto",
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 12,
       fontFamily: "Poppins_500Medium",
     },
+
     replyContainer: {
       marginLeft: 45,
       marginTop: 8,
       gap: 8,
       position: "relative",
     },
+
     replyThreadLine: {
       position: "absolute",
       left: -22,
@@ -869,36 +862,42 @@ function createStyles(colors: Colors) {
       bottom: 8,
       width: 2,
       borderRadius: 999,
-      backgroundColor: "#DADDE1",
+      backgroundColor: colors.border,
     },
+
     replyRow: {
       flexDirection: "row",
       alignItems: "flex-start",
       gap: 7,
     },
+
     replyBody: {
       flex: 1,
     },
+
     replyBubble: {
       alignSelf: "flex-start",
       maxWidth: "96%",
       borderRadius: 16,
       paddingHorizontal: 10,
       paddingVertical: 7,
-      backgroundColor: "#F0F2F5",
+      backgroundColor: colors.surfaceSecondary,
     },
+
     replyAuthor: {
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 11,
       fontFamily: "Poppins_700Bold",
     },
+
     replyText: {
       marginTop: 1,
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 13,
       lineHeight: 18,
       fontFamily: "Poppins_400Regular",
     },
+
     replyActions: {
       marginTop: 3,
       marginLeft: 10,
@@ -906,47 +905,55 @@ function createStyles(colors: Colors) {
       alignItems: "center",
       gap: 10,
     },
+
     replyActionText: {
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 11,
       fontFamily: "Poppins_700Bold",
     },
+
     replyTime: {
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 11,
       fontFamily: "Poppins_400Regular",
     },
+
     replyReactionCount: {
       marginLeft: "auto",
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 11,
       fontFamily: "Poppins_500Medium",
     },
+
     viewRepliesButton: {
       marginLeft: 34,
       alignSelf: "flex-start",
       paddingVertical: 2,
     },
+
     viewMoreReplies: {
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 12,
       fontFamily: "Poppins_600SemiBold",
     },
+
     hideReplies: {
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 12,
       fontFamily: "Poppins_600SemiBold",
     },
+
     inputOuter: {
       position: "absolute",
       left: 0,
       right: 0,
       bottom: 0,
       borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: "#E4E6EB",
-      backgroundColor: "#FFFFFF",
+      borderTopColor: colors.border,
+      backgroundColor: colors.surface,
       paddingBottom: Platform.OS === "ios" ? 22 : 18,
     },
+
     replyingBar: {
       paddingHorizontal: 14,
       paddingTop: 8,
@@ -955,13 +962,16 @@ function createStyles(colors: Colors) {
       alignItems: "center",
       justifyContent: "space-between",
       gap: 10,
+      backgroundColor: colors.surface,
     },
+
     replyingText: {
       flex: 1,
-      color: "#65676B",
+      color: colors.muted,
       fontSize: 12,
       fontFamily: "Poppins_500Medium",
     },
+
     inputBar: {
       paddingHorizontal: 10,
       paddingTop: 8,
@@ -969,27 +979,30 @@ function createStyles(colors: Colors) {
       alignItems: "flex-end",
       gap: 8,
     },
+
     inputWrapper: {
       flex: 1,
       minHeight: MIN_INPUT_HEIGHT,
       maxHeight: MAX_INPUT_HEIGHT,
       borderRadius: 22,
-      backgroundColor: "#F0F2F5",
+      backgroundColor: colors.surfaceSecondary,
       justifyContent: "center",
       overflow: "hidden",
     },
+
     input: {
       minHeight: MIN_INPUT_HEIGHT,
       maxHeight: MAX_INPUT_HEIGHT,
       paddingHorizontal: 14,
       paddingTop: Platform.OS === "ios" ? 11 : 9,
       paddingBottom: Platform.OS === "ios" ? 11 : 9,
-      color: "#050505",
+      color: colors.foreground,
       fontSize: 14,
       lineHeight: 20,
       fontFamily: "Poppins_400Regular",
       includeFontPadding: false,
     },
+
     sendButton: {
       width: 42,
       height: 42,
@@ -999,8 +1012,9 @@ function createStyles(colors: Colors) {
       backgroundColor: colors.accent,
       marginBottom: 0,
     },
+
     sendButtonDisabled: {
-      backgroundColor: "#F0F2F5",
+      backgroundColor: colors.surfaceSecondary,
     },
   });
 }

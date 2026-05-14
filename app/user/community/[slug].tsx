@@ -14,38 +14,23 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "heroui-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useAppTheme } from "@/hooks/useAppTheme";
-import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { useSession } from "@/api/better-auth-client";
+import CommentPostModal from "@/components/post/CommentsModal";
+import CommunityPostCard from "@/components/post/CommunityPostCard";
+import PostMediaViewer from "@/components/post/PostMediaViewer";
+import { useAppTheme } from "@/hooks/useAppTheme";
+import { usePostInteractions } from "@/hooks/media/usePostInteractions";
+import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
 import {
   useGetCommunityAccessQuery,
   useGetCommunityBySlugQuery,
   useGetCommunityMembersQuery,
   useJoinCommunityMutation,
 } from "@/store/api/communityApi";
-import {
-  useGetCommunityPostsQuery,
-  useLikePostMutation,
-  useSharePostMutation,
-  useUnlikePostMutation,
-} from "@/store/api/postApi";
-import type { CommunityPostMediaType, PostMedia } from "@/types/post";
+import { useGetCommunityPostsQuery } from "@/store/api/postApi";
 import type { CommunityMemberItem } from "@/types/community";
-import CommunityPostCard from "@/components/post/CommunityPostCard";
-import PostMediaViewer from "@/components/post/PostMediaViewer";
-
-type ViewerInputMedia = {
-  id?: string;
-  type: CommunityPostMediaType;
-  url: string;
-  sortOrder?: number;
-};
-
-type MediaViewerState = {
-  visible: boolean;
-  media: PostMedia[];
-  index: number;
-};
+import type { CommunityPost } from "@/types/post";
 
 export default function CommunityDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
@@ -56,15 +41,35 @@ export default function CommunityDetailScreen() {
   const [isJoining, setIsJoining] = useState(false);
 
   const [postCursor, setPostCursor] = useState<string | undefined>(undefined);
-  const [postItems, setPostItems] = useState<any[]>([]);
+  const [postItems, setPostItems] = useState<CommunityPost[]>([]);
 
   const [memberPage, setMemberPage] = useState(1);
   const [memberItems, setMemberItems] = useState<CommunityMemberItem[]>([]);
 
-  const [viewer, setViewer] = useState<MediaViewerState>({
-    visible: false,
-    media: [],
-    index: 0,
+  const { viewer, openViewer, closeViewer } = usePostMediaViewer();
+
+  const {
+    commentPost,
+    activeCommentPost,
+    comments,
+    commentInput,
+    setCommentInput,
+
+    isLoadingComments,
+    isFetchingComments,
+    isCreatingComment,
+    isCreatingReply,
+
+    openComments,
+    closeComments,
+    handleLikePost,
+    handleSharePost,
+    handleCreateComment,
+    refetchComments,
+  } = usePostInteractions({
+    posts: postItems,
+    setPosts: setPostItems,
+    sessionUser: session?.user,
   });
 
   const {
@@ -131,7 +136,6 @@ export default function CommunityDetailScreen() {
     isLoading: postsLoading,
     isFetching: postsFetching,
     error: postsError,
-    refetch: refetchPosts,
   } = useGetCommunityPostsQuery(
     {
       communityId: community?.id ?? "",
@@ -146,9 +150,6 @@ export default function CommunityDetailScreen() {
   );
 
   const [joinCommunity] = useJoinCommunityMutation();
-  const [likePost] = useLikePostMutation();
-  const [unlikePost] = useUnlikePostMutation();
-  const [sharePost] = useSharePostMutation();
 
   const coverUrl = toAbsoluteFileUrl(community?.coverImage);
   const avatarUrl = toAbsoluteFileUrl(community?.avatarImage);
@@ -164,6 +165,7 @@ export default function CommunityDetailScreen() {
     if (isOwner) return "Owner";
     if (isModerator) return "Moderator";
     if (isJoined) return "Joined";
+
     return null;
   }, [isOwner, isModerator, isJoined]);
 
@@ -173,7 +175,9 @@ export default function CommunityDetailScreen() {
 
     setMemberPage(1);
     setMemberItems([]);
-  }, [community?.id]);
+
+    closeComments();
+  }, [community?.id, closeComments]);
 
   useEffect(() => {
     if (!postsResponse) return;
@@ -211,7 +215,7 @@ export default function CommunityDetailScreen() {
     });
   }, [membersResponse, memberPage]);
 
-  const handleJoin = async () => {
+  const handleJoin = useCallback(async () => {
     if (!community?.id) return;
 
     try {
@@ -222,101 +226,27 @@ export default function CommunityDetailScreen() {
       setMemberPage(1);
       setMemberItems([]);
 
-      await Promise.allSettled([
-        refetchCommunity(),
-        refetchAccess(),
-        refetchPosts(),
-      ]);
+      await Promise.allSettled([refetchCommunity(), refetchAccess()]);
     } catch (error) {
       console.log("Join community failed:", error);
     } finally {
       setIsJoining(false);
     }
-  };
-
-  const handleLikePost = useCallback(
-    async (post: {
-      id: string;
-      communityId: string;
-      isLikedByMe?: boolean;
-    }) => {
-      try {
-        if (post.isLikedByMe) {
-          await unlikePost({
-            communityId: post.communityId,
-            postId: post.id,
-          }).unwrap();
-        } else {
-          await likePost({
-            communityId: post.communityId,
-            postId: post.id,
-          }).unwrap();
-        }
-      } catch (error) {
-        console.log("Like/unlike failed:", error);
-      }
-    },
-    [likePost, unlikePost],
-  );
-
-  const handleSharePost = useCallback(
-    async (post: { id: string; communityId: string }) => {
-      try {
-        await sharePost({
-          communityId: post.communityId,
-          postId: post.id,
-          body: {
-            platform: "copy_link",
-          },
-        }).unwrap();
-      } catch (error) {
-        console.log("Share post failed:", error);
-      }
-    },
-    [sharePost],
-  );
-
-  const normalizeViewerMedia = useCallback(
-    (media: ViewerInputMedia[]): PostMedia[] => {
-      return media.map((item, index) => ({
-        id: item.id ?? `${item.url}-${index}`,
-        type: item.type,
-        url: item.url,
-        sortOrder: item.sortOrder ?? index,
-      }));
-    },
-    [],
-  );
-
-  const openViewer = useCallback(
-    (media: ViewerInputMedia[], startIndex: number = 0) => {
-      setViewer({
-        visible: true,
-        media: normalizeViewerMedia(media),
-        index: startIndex,
-      });
-    },
-    [normalizeViewerMedia],
-  );
-
-  const closeViewer = useCallback(() => {
-    setViewer((prev) => ({
-      ...prev,
-      visible: false,
-    }));
-  }, []);
+  }, [community?.id, joinCommunity, refetchCommunity, refetchAccess]);
 
   const loadMorePosts = useCallback(() => {
     if (tab !== "posts") return;
     if (postsLoading || postsFetching) return;
     if (!postsResponse?.meta?.hasMore) return;
     if (!postsResponse?.meta?.nextCursor) return;
+    if (postCursor === postsResponse.meta.nextCursor) return;
 
     setPostCursor(postsResponse.meta.nextCursor ?? undefined);
   }, [
     tab,
     postsLoading,
     postsFetching,
+    postCursor,
     postsResponse?.meta?.hasMore,
     postsResponse?.meta?.nextCursor,
   ]);
@@ -360,6 +290,10 @@ export default function CommunityDetailScreen() {
     },
     [tab, loadMorePosts, loadMoreMembers],
   );
+
+  const handleAuthorPress = useCallback((authorId: string) => {
+    console.log("Open author:", authorId);
+  }, []);
 
   if (isPending || communityLoading || accessLoading) {
     return (
@@ -665,13 +599,9 @@ export default function CommunityDetailScreen() {
                               post={post}
                               disableMediaPlayback={viewer.visible}
                               onPressLike={handleLikePost}
-                              onPressComment={(item) => {
-                                console.log("Comment pressed:", item.id);
-                              }}
+                              onPressComment={openComments}
                               onPressShare={handleSharePost}
-                              onPressAuthor={(authorId) => {
-                                console.log("Open author:", authorId);
-                              }}
+                              onPressAuthor={handleAuthorPress}
                               onPressMedia={openViewer}
                             />
                           ))}
@@ -850,6 +780,25 @@ export default function CommunityDetailScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      <CommentPostModal
+        visible={!!commentPost}
+        post={activeCommentPost}
+        comments={comments}
+        isLoading={(isLoadingComments || isFetchingComments) && comments.length === 0}
+        isCreating={isCreatingComment || isCreatingReply}
+        inputValue={commentInput}
+        onChangeInput={setCommentInput}
+        onClose={closeComments}
+        onSubmit={handleCreateComment}
+        onPressMedia={openViewer}
+        onPressPostLike={handleLikePost}
+        onPressPostShare={handleSharePost}
+        onRefreshComments={() => {
+          void refetchComments();
+        }}
+        colors={colors}
+      />
 
       <PostMediaViewer
         visible={viewer.visible}

@@ -388,6 +388,7 @@ getCommunityModerators: builder.query<
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
         { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityModerators" as const, id: communityId },
         { type: "CommunityAccess" as const, id: communityId },
         { type: "MyCommunity" as const, id: "LIST" },
       ],
@@ -404,6 +405,7 @@ getCommunityModerators: builder.query<
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
         { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityModerators" as const, id: communityId },
         { type: "CommunityAccess" as const, id: communityId },
       ],
     }),
@@ -418,6 +420,7 @@ getCommunityModerators: builder.query<
       }),
       invalidatesTags: (_result, _error, { communityId }) => [
         { type: "CommunityMembers" as const, id: communityId },
+        { type: "CommunityModerators" as const, id: communityId },
         { type: "CommunityAccess" as const, id: communityId },
         { type: "MyCommunity" as const, id: "LIST" },
       ],
