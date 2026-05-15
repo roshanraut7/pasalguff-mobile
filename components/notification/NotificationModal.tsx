@@ -39,6 +39,21 @@ function getNotificationIcon(type?: string) {
     case "COMMENT_REPLY":
     case "POST_REPLY":
       return "return-down-forward-outline";
+       case "POST_COMMENT":
+      return "chatbubble-ellipses-outline";
+
+    case "COMMENT_REPLY":
+    case "POST_REPLY":
+      return "return-down-forward-outline";
+
+    case "COMMUNITY_MEMBER_BANNED":
+      return "ban-outline";
+
+    case "COMMUNITY_MEMBER_UNBANNED":
+      return "refresh-outline";
+
+    case "COMMUNITY_MEMBER_REMOVED":
+      return "person-remove-outline";
 
     default:
       return "notifications-outline";
@@ -244,9 +259,9 @@ export default function NotificationModal({
 
                   <Text style={styles.emptyTitle}>No notifications yet</Text>
 
-                  <Text style={styles.emptyText}>
-                    Comments and replies on your posts will appear here.
-                  </Text>
+                <Text style={styles.emptyText}>
+  Community updates, comments, replies and account activity will appear here.
+</Text>
                 </View>
               )
             }

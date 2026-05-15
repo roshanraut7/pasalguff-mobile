@@ -25,9 +25,9 @@ import { toAbsoluteFileUrl } from "@/lib/file-url";
 import {
   useGetCommunityAccessQuery,
   useGetCommunityBySlugQuery,
-  useGetCommunityMembersQuery,
   useJoinCommunityMutation,
 } from "@/store/api/communityApi";
+import { useGetCommunityMembersQuery} from "@/store/api/communityMemberManagementApi"
 import { useGetCommunityPostsQuery } from "@/store/api/postApi";
 import type { CommunityMemberItem } from "@/types/community";
 import type { CommunityPost } from "@/types/post";

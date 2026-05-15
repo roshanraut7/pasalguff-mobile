@@ -2,28 +2,25 @@ import { baseApi } from "./baseApi";
 
 import type {
   AssignCommunityModeratorPayload,
-  BanCommunityMemberPayload,
   CommunityAccessItem,
   CommunityIdTargetUserPayload,
   CommunityItem,
   CommunityJoinRequestItem,
   CommunityListQuery,
   CommunityMemberItem,
+  CommunityModeratorsResponse,
   CommunityStatus,
   CommunityStatusResponse,
   CreateCommunityPayload,
   JoinCommunityPayload,
   JoinRequestListQuery,
-  MemberListQuery,
+  ModeratorListQuery,
   PaginatedResponse,
-  CommunityMembersResponse,
   ReviewCommunityJoinRequestPayload,
   TransferCommunityAdminPayload,
   UpdateCommunityPayload,
-   CommunityModeratorsResponse,
-  ModeratorListQuery,
   UpdateModeratorPermissionsPayload,
-  CommunityDashboardOverviewResponse 
+  CommunityDashboardOverviewResponse,
 } from "@/types/community";
 
 export const communityApi = baseApi.injectEndpoints({
@@ -282,97 +279,27 @@ export const communityApi = baseApi.injectEndpoints({
     }),
 
     /* =========================================================
-       MEMBERS
-       ========================================================= */
-
- getCommunityMembers: builder.query<
-  CommunityMembersResponse,
-  MemberListQuery
->({
-  query: ({ communityId, page = 1, limit = 20, search, status }) => ({
-    url: `/communities/${communityId}/members`,
-    method: "GET",
-    params: {
-      page,
-      limit,
-      ...(search ? { search } : {}),
-      ...(status ? { status } : {}),
-    },
-  }),
-  providesTags: (_result, _error, { communityId }) => [
-    { type: "CommunityMembers" as const, id: communityId },
-  ],
-}),
-
-getCommunityModerators: builder.query<
-  CommunityModeratorsResponse,
-  ModeratorListQuery
->({
-  query: ({ communityId, page = 1, limit = 20, search, status }) => ({
-    url: `/communities/${communityId}/moderators`,
-    method: "GET",
-    params: {
-      page,
-      limit,
-      ...(search ? { search } : {}),
-      ...(status ? { status } : {}),
-    },
-  }),
-  providesTags: (_result, _error, { communityId }) => [
-    { type: "CommunityModerators" as const, id: communityId },
-  ],
-}),
-
-    removeCommunityMember: builder.mutation<
-      CommunityMemberItem,
-      CommunityIdTargetUserPayload
-    >({
-      query: ({ communityId, targetUserId }) => ({
-        url: `/communities/${communityId}/members/${targetUserId}`,
-        method: "DELETE",
-      }),
-      invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers" as const, id: communityId },
-        { type: "Community" as const, id: communityId },
-        { type: "Community" as const, id: "LIST" },
-        { type: "MyCommunity" as const, id: "LIST" },
-      ],
-    }),
-
-    banCommunityMember: builder.mutation<unknown, BanCommunityMemberPayload>({
-      query: ({ communityId, targetUserId, reason }) => ({
-        url: `/communities/${communityId}/members/${targetUserId}/ban`,
-        method: "PATCH",
-        body: reason ? { reason } : {},
-      }),
-      invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers" as const, id: communityId },
-        { type: "CommunityJoinRequests" as const, id: communityId },
-        { type: "Community" as const, id: communityId },
-        { type: "Community" as const, id: "LIST" },
-        { type: "MyCommunity" as const, id: "LIST" },
-      ],
-    }),
-
-    unbanCommunityMember: builder.mutation<
-      CommunityMemberItem,
-      CommunityIdTargetUserPayload
-    >({
-      query: ({ communityId, targetUserId }) => ({
-        url: `/communities/${communityId}/members/${targetUserId}/unban`,
-        method: "PATCH",
-      }),
-      invalidatesTags: (_result, _error, { communityId }) => [
-        { type: "CommunityMembers" as const, id: communityId },
-        { type: "Community" as const, id: communityId },
-        { type: "Community" as const, id: "LIST" },
-        { type: "MyCommunity" as const, id: "LIST" },
-      ],
-    }),
-
-    /* =========================================================
        MODERATORS
        ========================================================= */
+
+    getCommunityModerators: builder.query<
+      CommunityModeratorsResponse,
+      ModeratorListQuery
+    >({
+      query: ({ communityId, page = 1, limit = 20, search, status }) => ({
+        url: `/communities/${communityId}/moderators`,
+        method: "GET",
+        params: {
+          page,
+          limit,
+          ...(search ? { search } : {}),
+          ...(status ? { status } : {}),
+        },
+      }),
+      providesTags: (_result, _error, { communityId }) => [
+        { type: "CommunityModerators" as const, id: communityId },
+      ],
+    }),
 
     assignCommunityModerator: builder.mutation<
       CommunityMemberItem,
@@ -425,23 +352,23 @@ getCommunityModerators: builder.query<
         { type: "MyCommunity" as const, id: "LIST" },
       ],
     }),
-     /* =========================================================
-       User-Community admin dashboard view
+
+    /* =========================================================
+       USER-COMMUNITY ADMIN DASHBOARD
        ========================================================= */
-       
 
     getCommunityDashboardOverview: builder.query<
-  CommunityDashboardOverviewResponse,
-  string
->({
-  query: (communityId) => ({
-    url: `/communities/${communityId}/dashboard/overview`,
-    method: "GET",
-  }),
-  providesTags: (_result, _error, communityId) => [
-    { type: "Community" as const, id: communityId },
-  ],
-}),
+      CommunityDashboardOverviewResponse,
+      string
+    >({
+      query: (communityId) => ({
+        url: `/communities/${communityId}/dashboard/overview`,
+        method: "GET",
+      }),
+      providesTags: (_result, _error, communityId) => [
+        { type: "Community" as const, id: communityId },
+      ],
+    }),
 
     /* =========================================================
        ADMIN TRANSFER
@@ -467,7 +394,6 @@ getCommunityModerators: builder.query<
   }),
 });
 
-
 export const {
   useGetExploreCommunitiesQuery,
   useGetMyCommunitiesQuery,
@@ -481,22 +407,17 @@ export const {
 
   useJoinCommunityMutation,
   useLeaveCommunityMutation,
+
   useGetMyJoinRequestQuery,
   useCancelMyJoinRequestMutation,
-
-  useGetCommunityMembersQuery,
   useGetCommunityJoinRequestsQuery,
   useReviewCommunityJoinRequestMutation,
 
+  useGetCommunityModeratorsQuery,
   useAssignCommunityModeratorMutation,
   useUpdateModeratorPermissionsMutation,
   useRemoveModeratorMutation,
 
-  useRemoveCommunityMemberMutation,
-  useBanCommunityMemberMutation,
-  useUnbanCommunityMemberMutation,
-  useGetCommunityModeratorsQuery,
-
   useTransferCommunityAdminMutation,
-  useGetCommunityDashboardOverviewQuery 
+  useGetCommunityDashboardOverviewQuery,
 } = communityApi;

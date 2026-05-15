@@ -4,10 +4,10 @@ import { Avatar, SearchField } from "heroui-native";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  Easing,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -24,8 +24,13 @@ type AppHeaderProps = {
 
 function getInitials(name?: string | null) {
   if (!name) return "U";
+
   const parts = name.trim().split(" ").filter(Boolean);
-  if (parts.length === 1) return parts[0]?.charAt(0).toUpperCase() || "U";
+
+  if (parts.length === 1) {
+    return parts[0]?.charAt(0).toUpperCase() || "U";
+  }
+
   return `${parts[0]?.charAt(0) ?? ""}${parts[1]?.charAt(0) ?? ""}`.toUpperCase();
 }
 
@@ -40,19 +45,25 @@ export default function AppHeader({
   userName,
   avatarUrl,
   onAvatarPress,
+  notificationCount = 0,
   onFriendsPress,
   onNotificationPress,
 }: AppHeaderProps) {
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
+
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const searchFlex = useSharedValue(0);
   const searchOpacity = useSharedValue(0);
 
+  const safeNotificationCount = Math.max(0, notificationCount);
+
   const toggleSearch = () => {
     const opening = !isSearchOpen;
+
     setIsSearchOpen(opening);
+
     searchFlex.value = withTiming(opening ? 1 : 0, TIMING_CONFIG);
     searchOpacity.value = withTiming(opening ? 1 : 0, TIMING_CONFIG);
   };
@@ -81,7 +92,6 @@ export default function AppHeader({
           gap: 10,
         }}
       >
-        {/* Avatar */}
         <Pressable onPress={onAvatarPress}>
           <Avatar
             alt={userName ?? "User"}
@@ -95,6 +105,7 @@ export default function AppHeader({
             {avatarUrl ? (
               <Avatar.Image key={avatarUrl} source={{ uri: avatarUrl }} />
             ) : null}
+
             <Avatar.Fallback>
               <Text
                 style={{
@@ -109,9 +120,8 @@ export default function AppHeader({
           </Avatar>
         </Pressable>
 
-        {/* Animated Search Field */}
         <Animated.View style={[{ minWidth: 0 }, animatedSearchStyle]}>
-          {isSearchOpen && (
+          {isSearchOpen ? (
             <SearchField value={searchValue} onChange={onSearchChange}>
               <SearchField.Group>
                 <SearchField.SearchIcon />
@@ -119,13 +129,11 @@ export default function AppHeader({
                 <SearchField.ClearButton />
               </SearchField.Group>
             </SearchField>
-          )}
+          ) : null}
         </Animated.View>
 
-        {/* Spacer when search is closed */}
-        {!isSearchOpen && <View style={{ flex: 1 }} />}
+        {!isSearchOpen ? <View style={{ flex: 1 }} /> : null}
 
-        {/* Search Toggle Button */}
         <Pressable onPress={toggleSearch} style={{ padding: 4 }}>
           <Ionicons
             name={isSearchOpen ? "close-outline" : "search-outline"}
@@ -134,7 +142,6 @@ export default function AppHeader({
           />
         </Pressable>
 
-        {/* Divider */}
         <View
           style={{
             width: 1,
@@ -143,7 +150,6 @@ export default function AppHeader({
           }}
         />
 
-        {/* Friends + Notification Group */}
         <View
           style={{
             flexDirection: "row",
@@ -152,19 +158,57 @@ export default function AppHeader({
           }}
         >
           <Pressable onPress={onFriendsPress} style={{ padding: 4 }}>
-            <Ionicons
-              name="people-outline"
-              size={22}
-              color={colors.accent}
-            />
+            <Ionicons name="people-outline" size={22} color={colors.accent} />
           </Pressable>
 
-          <Pressable onPress={onNotificationPress} style={{ padding: 4 }}>
+          <Pressable
+            onPress={onNotificationPress}
+            style={{
+              padding: 4,
+              position: "relative",
+            }}
+          >
             <Ionicons
-              name="notifications-outline"
+              name={
+                safeNotificationCount > 0
+                  ? "notifications"
+                  : "notifications-outline"
+              }
               size={22}
               color={colors.accent}
             />
+
+            {safeNotificationCount > 0 ? (
+              <View
+                style={{
+                  position: "absolute",
+                  top: -3,
+                  right: -5,
+                  minWidth: 17,
+                  height: 17,
+                  borderRadius: 999,
+                  paddingHorizontal: 4,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: colors.danger,
+                  borderWidth: 1,
+                  borderColor: colors.background,
+                }}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: "#FFFFFF",
+                    fontSize: 9,
+                    fontFamily: "Poppins_700Bold",
+                  }}
+                >
+                  {safeNotificationCount > 99
+                    ? "99+"
+                    : String(safeNotificationCount)}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
         </View>
       </View>

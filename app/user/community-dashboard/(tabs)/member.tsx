@@ -20,7 +20,12 @@ import {
   getMemberInitials,
   type MemberAction,
 } from "@/components/column/user-community/member.columns";
-import { useGetCommunityMembersQuery } from "@/store/api/communityApi";
+import {
+  useBanCommunityMemberMutation,
+  useGetCommunityMembersQuery,
+  useRemoveCommunityMemberMutation,
+  useUnbanCommunityMemberMutation,
+} from "@/store/api/communityMemberManagementApi";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import type { CommunityMemberItem } from "@/types/community";
 
@@ -29,6 +34,41 @@ type MemberStatusFilter = "ACTIVE" | "LEFT" | "BANNED";
 function getParamValue(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? "";
   return value ?? "";
+}
+
+function getErrorMessage(error: unknown) {
+  if (typeof error !== "object" || error === null) {
+    return "Something went wrong. Please try again.";
+  }
+
+  const apiError = error as {
+    data?: {
+      message?: string | string[];
+      error?: string;
+    };
+    error?: string;
+    status?: number | string;
+  };
+
+  const message = apiError.data?.message;
+
+  if (Array.isArray(message)) {
+    return message.join("\n");
+  }
+
+  if (typeof message === "string") {
+    return message;
+  }
+
+  if (typeof apiError.data?.error === "string") {
+    return apiError.data.error;
+  }
+
+  if (typeof apiError.error === "string") {
+    return apiError.error;
+  }
+
+  return "Something went wrong. Please try again.";
 }
 
 export default function MemberScreen() {
@@ -75,6 +115,17 @@ export default function MemberScreen() {
   });
 
   const statusFilter = activeFilters.status as MemberStatusFilter;
+
+  const [banCommunityMember, { isLoading: isBanning }] =
+    useBanCommunityMemberMutation();
+
+  const [unbanCommunityMember, { isLoading: isUnbanning }] =
+    useUnbanCommunityMemberMutation();
+
+  const [removeCommunityMember, { isLoading: isRemoving }] =
+    useRemoveCommunityMemberMutation();
+
+  const isActionLoading = isBanning || isUnbanning || isRemoving;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -160,22 +211,130 @@ export default function MemberScreen() {
     setSelectedMember(null);
   }
 
-  function handleMemberAction(action: MemberAction) {
-    if (!selectedMember) return;
+  async function runMemberMutation(
+    action: Extract<MemberAction, "ban" | "unban" | "remove">,
+    member: CommunityMemberItem,
+  ) {
+    if (!communityId) return;
 
-    const memberName = selectedMember.user.name ?? "Unknown User";
+    const memberName = member.user.name ?? "Unknown User";
 
-    const actionLabel: Record<MemberAction, string> = {
-      view: "View profile",
-      message: "Message",
-      ban: "Ban member",
-      unban: "Unban member",
-      remove: "Remove member",
+    try {
+      if (action === "ban") {
+        await banCommunityMember({
+          communityId,
+          targetUserId: member.userId,
+          reason: "Banned by community admin",
+        }).unwrap();
+
+        Alert.alert("Member banned", `${memberName} has been banned.`);
+      }
+
+      if (action === "unban") {
+        await unbanCommunityMember({
+          communityId,
+          targetUserId: member.userId,
+          reason: "Unbanned by community admin",
+        }).unwrap();
+
+        Alert.alert("Member unbanned", `${memberName} can join again.`);
+      }
+
+      if (action === "remove") {
+        await removeCommunityMember({
+          communityId,
+          targetUserId: member.userId,
+          reason: "Removed by community admin",
+        }).unwrap();
+
+        Alert.alert("Member removed", `${memberName} has been removed.`);
+      }
+
+      /**
+       * RTK invalidates tags, but explicit refetch gives instant table update
+       * on the current screen.
+       */
+      await refetch();
+    } catch (mutationError) {
+      Alert.alert("Action failed", getErrorMessage(mutationError));
+    }
+  }
+
+  function confirmMemberAction(
+    action: Extract<MemberAction, "ban" | "unban" | "remove">,
+    member: CommunityMemberItem,
+  ) {
+    const memberName = member.user.name ?? "Unknown User";
+
+    const actionConfig: Record<
+      Extract<MemberAction, "ban" | "unban" | "remove">,
+      {
+        title: string;
+        message: string;
+        confirmText: string;
+        confirmStyle: "default" | "destructive";
+      }
+    > = {
+      ban: {
+        title: "Ban member?",
+        message: `Are you sure you want to ban ${memberName}? This user will not be able to join this community again until you unban them.`,
+        confirmText: "Ban",
+        confirmStyle: "destructive",
+      },
+      unban: {
+        title: "Unban member?",
+        message: `Are you sure you want to unban ${memberName}? This user will be allowed to join/request again.`,
+        confirmText: "Unban",
+        confirmStyle: "default",
+      },
+      remove: {
+        title: "Remove member?",
+        message: `Are you sure you want to remove ${memberName}? This will remove them from the community, but they can join again later.`,
+        confirmText: "Remove",
+        confirmStyle: "destructive",
+      },
     };
+
+    const config = actionConfig[action];
 
     closeActionSheet();
 
-    Alert.alert(actionLabel[action], `${actionLabel[action]}: ${memberName}`);
+    Alert.alert(config.title, config.message, [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: config.confirmText,
+        style: config.confirmStyle,
+        onPress: () => {
+          void runMemberMutation(action, member);
+        },
+      },
+    ]);
+  }
+
+  function handleMemberAction(action: MemberAction) {
+    if (!selectedMember || isActionLoading) return;
+
+    const member = selectedMember;
+    const memberName = member.user.name ?? "Unknown User";
+
+    if (action === "view") {
+      closeActionSheet();
+      Alert.alert("View profile", `View profile: ${memberName}`);
+      return;
+    }
+
+    if (action === "message") {
+      closeActionSheet();
+      Alert.alert("Message", `Message: ${memberName}`);
+      return;
+    }
+
+    if (action === "ban" || action === "unban" || action === "remove") {
+      confirmMemberAction(action, member);
+    }
   }
 
   if (!communityId) {
@@ -204,7 +363,12 @@ export default function MemberScreen() {
             <Text style={styles.title}>Community Members</Text>
 
             <Text style={styles.subtitle}>
-              {membersResponse?.meta?.total ?? 0} joined members
+              {membersResponse?.meta?.total ?? 0}{" "}
+              {statusFilter === "ACTIVE"
+                ? "active members"
+                : statusFilter === "BANNED"
+                  ? "banned members"
+                  : "left members"}
             </Text>
           </View>
 
@@ -223,7 +387,11 @@ export default function MemberScreen() {
 
         {error ? (
           <View style={styles.errorBox}>
-            <Ionicons name="alert-circle-outline" size={22} color={colors.danger} />
+            <Ionicons
+              name="alert-circle-outline"
+              size={22}
+              color={colors.danger}
+            />
 
             <View style={{ flex: 1 }}>
               <Text style={styles.errorTitle}>Failed to load members</Text>
@@ -250,10 +418,10 @@ export default function MemberScreen() {
           emptySubtitle={
             error
               ? "Tap refresh and try again."
-              : "No joined members matched this search."
+              : "No members matched this search."
           }
           isLoading={isLoading}
-          isFetching={isFetching}
+          isFetching={isFetching || isActionLoading}
           pagination={{
             page,
             pageSize,
@@ -312,9 +480,11 @@ export default function MemberScreen() {
 
             <Pressable
               onPress={closeActionSheet}
+              disabled={isActionLoading}
               style={({ pressed }) => [
                 styles.closeButton,
                 pressed && { opacity: 0.7 },
+                isActionLoading && { opacity: 0.45 },
               ]}
             >
               <Ionicons name="close" size={21} color={colors.foreground} />
@@ -325,20 +495,23 @@ export default function MemberScreen() {
             <GridAction
               icon="person-outline"
               label="View profile"
+              disabled={isActionLoading}
               onPress={() => handleMemberAction("view")}
             />
 
             <GridAction
               icon="chatbubble-outline"
               label="Message"
+              disabled={isActionLoading}
               onPress={() => handleMemberAction("message")}
             />
 
             {canManageMembers && selectedMember?.status === "ACTIVE" ? (
               <GridAction
                 icon="ban-outline"
-                label="Ban"
+                label={isBanning ? "Banning..." : "Ban"}
                 danger
+                disabled={isActionLoading}
                 onPress={() => handleMemberAction("ban")}
               />
             ) : null}
@@ -346,17 +519,29 @@ export default function MemberScreen() {
             {canManageMembers && selectedMember?.status === "BANNED" ? (
               <GridAction
                 icon="refresh-outline"
-                label="Unban"
+                label={isUnbanning ? "Unbanning..." : "Unban"}
+                disabled={isActionLoading}
                 onPress={() => handleMemberAction("unban")}
               />
             ) : null}
 
-            {canManageMembers ? (
+            {canManageMembers && selectedMember?.status === "ACTIVE" ? (
               <GridAction
                 icon="trash-outline"
-                label="Remove"
+                label={isRemoving ? "Removing..." : "Remove"}
                 danger
+                disabled={isActionLoading}
                 onPress={() => handleMemberAction("remove")}
+              />
+            ) : null}
+
+            {canManageMembers && selectedMember?.status === "LEFT" ? (
+              <GridAction
+                icon="ban-outline"
+                label={isBanning ? "Banning..." : "Ban"}
+                danger
+                disabled={isActionLoading}
+                onPress={() => handleMemberAction("ban")}
               />
             ) : null}
           </View>
@@ -369,19 +554,23 @@ export default function MemberScreen() {
     icon,
     label,
     danger,
+    disabled,
     onPress,
   }: {
     icon: keyof typeof Ionicons.glyphMap;
     label: string;
     danger?: boolean;
+    disabled?: boolean;
     onPress: () => void;
   }) {
     return (
       <Pressable
         onPress={onPress}
+        disabled={disabled}
         style={({ pressed }) => [
           styles.gridAction,
           pressed && { opacity: 0.65 },
+          disabled && { opacity: 0.45 },
         ]}
       >
         <Ionicons
