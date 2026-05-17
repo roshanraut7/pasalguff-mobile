@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -110,6 +111,8 @@ export default function MemberScreen() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+
   const [activeFilters, setActiveFilters] = useState<Record<string, string>>({
     status: "ACTIVE",
   });
@@ -199,6 +202,16 @@ export default function MemberScreen() {
   function handlePageSizeChange(nextPageSize: number) {
     setPageSize(nextPageSize);
     setPage(0);
+  }
+
+  async function handlePullRefresh() {
+    setIsPullRefreshing(true);
+
+    try {
+      await refetch();
+    } finally {
+      setIsPullRefreshing(false);
+    }
   }
 
   function openActionSheet(member: CommunityMemberItem) {
@@ -357,6 +370,14 @@ export default function MemberScreen() {
         style={styles.root}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isPullRefreshing}
+            onRefresh={handlePullRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
       >
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
@@ -371,18 +392,6 @@ export default function MemberScreen() {
                   : "left members"}
             </Text>
           </View>
-
-          <Pressable
-            onPress={() => refetch()}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed && { opacity: 0.75 },
-            ]}
-          >
-            <Ionicons name="refresh-outline" size={18} color={colors.accent} />
-
-            <Text style={styles.retryText}>Refresh</Text>
-          </Pressable>
         </View>
 
         {error ? (
@@ -417,7 +426,7 @@ export default function MemberScreen() {
           emptyTitle={error ? "Failed to load members" : "No members found"}
           emptySubtitle={
             error
-              ? "Tap refresh and try again."
+              ? "Pull down to refresh and try again."
               : "No members matched this search."
           }
           isLoading={isLoading}
@@ -652,24 +661,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       lineHeight: 20,
       textAlign: "center",
       fontFamily: "Poppins_400Regular",
-    },
-
-    retryButton: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 7,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 999,
-      paddingHorizontal: 13,
-      paddingVertical: 9,
-      backgroundColor: colors.surfaceSecondary,
-    },
-
-    retryText: {
-      color: colors.accent,
-      fontSize: 13,
-      fontFamily: "Poppins_600SemiBold",
     },
 
     errorBox: {

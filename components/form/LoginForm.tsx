@@ -38,6 +38,19 @@ export default function LoginForm() {
     try {
       setServerError("");
       setIsSubmitting(true);
+      const testUrl = "http://192.168.1.77:3000/api/auth/get-session";
+
+try {
+  console.log("APP FETCH TEST START:", testUrl);
+
+  const response = await fetch(testUrl);
+  const text = await response.text();
+
+  console.log("APP FETCH TEST STATUS:", response.status);
+  console.log("APP FETCH TEST TEXT:", text);
+} catch (err) {
+  console.log("APP FETCH TEST FAILED:", err);
+}
 
       const result = await signInWithEmail({
         email: values.email.trim().toLowerCase(),

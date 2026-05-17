@@ -28,6 +28,7 @@ import {
 import {
   useAssignCommunityModeratorMutation,
   useGetCommunityModeratorsQuery,
+  useRemoveModeratorMutation,
   useUpdateModeratorPermissionsMutation,
 } from "@/store/api/communityApi";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
@@ -148,6 +149,8 @@ export default function ModeratorScreen() {
 
   const [updateModeratorPermissions, { isLoading: isUpdatingPermissions }] =
     useUpdateModeratorPermissionsMutation();
+    const [removeModerator, { isLoading: isRemovingModerator }] =
+  useRemoveModeratorMutation();
 
   const isSubmittingPermissionForm =
     isAssigningModerator || isUpdatingPermissions;
@@ -318,42 +321,90 @@ export default function ModeratorScreen() {
   }
 
   function handleModeratorAction(action: ModeratorAction) {
-    if (!selectedModerator) return;
+  if (!selectedModerator) return;
 
-    const moderator = selectedModerator;
-    const moderatorName = moderator.user.name ?? "Unknown User";
+  const moderator = selectedModerator;
+  const moderatorName = moderator.user.name ?? "Unknown User";
 
-    const actionLabel: Record<ModeratorAction, string> = {
-      view: "View profile",
-      message: "Message",
-      editPermissions: "Edit permissions",
-      activity: "View activity",
-      suspend: "Suspend moderator",
-      reactivate: "Reactivate moderator",
-      remove: "Remove moderator",
-    };
+  const actionLabel: Record<ModeratorAction, string> = {
+    view: "View profile",
+    message: "Message",
+    editPermissions: "Edit permissions",
+    activity: "View activity",
+    suspend: "Suspend moderator",
+    reactivate: "Reactivate moderator",
+    remove: "Remove moderator",
+  };
 
-    closeActionSheet();
+  closeActionSheet();
 
-    if (action === "editPermissions") {
-      openEditPermissionForm(moderator);
-      return;
-    }
-
-    if (action === "activity") {
-      router.push({
-        pathname: "/pages/moderator-activity",
-        params: {
-          moderatorId: moderator.id,
-          userId: moderator.userId,
-          communityId: moderator.communityId,
-        },
-      });
-      return;
-    }
-
-    Alert.alert(actionLabel[action], `${actionLabel[action]}: ${moderatorName}`);
+  if (action === "editPermissions") {
+    openEditPermissionForm(moderator);
+    return;
   }
+
+  if (action === "activity") {
+    router.push({
+      pathname: "/pages/moderator-activity",
+      params: {
+        moderatorId: moderator.id,
+        userId: moderator.userId,
+        communityId: moderator.communityId,
+      },
+    });
+    return;
+  }
+
+  if (action === "remove") {
+    const targetUserId = moderator.userId ?? moderator.user?.id;
+
+    if (!communityId) {
+      Alert.alert("Missing community", "Community ID was not found.");
+      return;
+    }
+
+    if (!targetUserId) {
+      Alert.alert("Missing moderator", "Moderator user ID was not found.");
+      return;
+    }
+
+    Alert.alert(
+      "Remove moderator",
+      `Are you sure you want to remove ${moderatorName} as a moderator? They will stay in the community as a normal member.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await removeModerator({
+                communityId,
+                targetUserId,
+              }).unwrap();
+
+              Alert.alert(
+                "Moderator removed",
+                `${moderatorName} is now a normal community member.`,
+              );
+
+              refetch();
+            } catch (removeError) {
+              Alert.alert("Action failed", getApiErrorMessage(removeError));
+            }
+          },
+        },
+      ],
+    );
+
+    return;
+  }
+
+  Alert.alert(actionLabel[action], `${actionLabel[action]}: ${moderatorName}`);
+}
 
   if (!communityId) {
     return (

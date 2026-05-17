@@ -383,11 +383,8 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     backButton: {
       width: 38,
       height: 38,
-      borderRadius: 19,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.surface,
-      borderWidth: 1,
       borderColor: colors.border,
     },
     newChatButton: {

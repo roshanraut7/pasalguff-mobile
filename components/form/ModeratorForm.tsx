@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { z } from "zod/v4";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { useGetCommunityMembersQuery } from "@/store/api/communityApi";
+import { useGetCommunityMembersQuery } from "@/store/api/communityMemberManagementApi";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import type { CommunityMemberItem } from "@/types/community";
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -86,7 +85,6 @@ export default function PostScreen() {
     isLoading,
     isFetching,
     error,
-    refetch,
   } = useGetCommunityPostsTableQuery(
     {
       communityId,
@@ -198,18 +196,6 @@ export default function PostScreen() {
 
           <Text style={styles.subtitle}>{totalPosts} community posts</Text>
         </View>
-
-        <Pressable
-          onPress={() => refetch()}
-          style={({ pressed }) => [
-            styles.refreshButton,
-            pressed && { opacity: 0.75 },
-          ]}
-        >
-          <Ionicons name="refresh-outline" size={18} color={colors.accent} />
-
-          <Text style={styles.refreshText}>Refresh</Text>
-        </Pressable>
       </View>
 
       {error ? (
@@ -244,7 +230,7 @@ export default function PostScreen() {
         emptyTitle={error ? "Failed to load posts" : "No posts found"}
         emptySubtitle={
           error
-            ? "Tap refresh and try again."
+            ? "Please check your connection and try again later."
             : "No community posts matched this search."
         }
         isLoading={isLoading}
@@ -296,24 +282,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       color: colors.muted,
       fontSize: 13,
       fontFamily: "Poppins_400Regular",
-    },
-
-    refreshButton: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 7,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 999,
-      paddingHorizontal: 13,
-      paddingVertical: 9,
-      backgroundColor: colors.surfaceSecondary,
-    },
-
-    refreshText: {
-      color: colors.accent,
-      fontSize: 13,
-      fontFamily: "Poppins_600SemiBold",
     },
 
     centerWrap: {

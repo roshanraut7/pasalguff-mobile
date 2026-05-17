@@ -227,10 +227,6 @@ export default function CommunityDashboardTabsLayout() {
                   {
                     width: 42,
                     height: 42,
-                    borderRadius: 21,
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
                     alignItems: "center",
                     justifyContent: "center",
                     marginTop: 2,

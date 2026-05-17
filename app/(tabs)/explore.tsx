@@ -9,10 +9,13 @@ import { router } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
   LayoutChangeEvent,
   ListRenderItem,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   RefreshControl,
   ScrollView,
   Text,
@@ -20,6 +23,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { SearchField } from "heroui-native";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useGetCategoriesQuery } from "@/store/api/category.api";
@@ -32,6 +36,7 @@ import {
 import type { CategoryRow } from "@/store/api/category.api";
 import type { CommunityItem } from "@/types/community";
 import CommunityCard from "@/components/common/communityCard";
+import CreateCommunityForm from "@/components/form/CreateCommunityForm";
 
 const COMMUNITY_PAGE_LIMIT = 20;
 const CATEGORY_PAGE_LIMIT = 50;
@@ -44,9 +49,344 @@ const ALL_CATEGORY: CategoryPillItem = {
   slug: "all",
 };
 
+type ExploreHeaderProps = {
+  colors: ReturnType<typeof useAppTheme>["colors"];
+
+  selectedCategoryId: string;
+  categoryPills: CategoryPillItem[];
+
+  searchValue: string;
+  activeSearchText: string;
+  isSearchVisible: boolean;
+
+  categoriesLoading: boolean;
+  categoriesFetching: boolean;
+  categoriesError: unknown;
+  categoryPage: number;
+  hasMoreCategories: boolean;
+  showCategoryNextButton: boolean;
+
+  onOpenSearch: () => void;
+  onCloseSearch: () => void;
+  onSearchChange: (value: string) => void;
+  onOpenCreateCommunity: () => void;
+
+  onSelectCategory: (categoryId: string) => void;
+  onCategoryContainerLayout: (event: LayoutChangeEvent) => void;
+  onCategoryScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onCategoryContentSizeChange: (width: number) => void;
+  onSlideRight: () => void;
+  onLoadMoreCategories: () => void;
+
+  categoryScrollRef: React.RefObject<ScrollView | null>;
+};
+
+const ExploreHeader = React.memo(function ExploreHeader({
+  colors,
+
+  selectedCategoryId,
+  categoryPills,
+
+  searchValue,
+  activeSearchText,
+  isSearchVisible,
+
+  categoriesLoading,
+  categoriesFetching,
+  categoriesError,
+  categoryPage,
+  hasMoreCategories,
+  showCategoryNextButton,
+
+  onOpenSearch,
+  onCloseSearch,
+  onSearchChange,
+  onOpenCreateCommunity,
+
+  onSelectCategory,
+  onCategoryContainerLayout,
+  onCategoryScroll,
+  onCategoryContentSizeChange,
+  onSlideRight,
+  onLoadMoreCategories,
+
+  categoryScrollRef,
+}: ExploreHeaderProps) {
+  return (
+    <View style={{ paddingTop: 16, paddingBottom: 12 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: isSearchVisible ? 10 : 0,
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 90 }}>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: colors.foreground,
+              fontSize: 26,
+              fontFamily: "Poppins_700Bold",
+            }}
+          >
+            Explore
+          </Text>
+        </View>
+
+        {isSearchVisible ? (
+          <>
+            <View
+              style={{
+                flex: 1.45,
+                minWidth: 170,
+              }}
+            >
+              <SearchField value={searchValue} onChange={onSearchChange}>
+                <SearchField.Group
+                  style={{
+                  }}
+                >
+                  <SearchField.SearchIcon
+                    iconProps={{
+                      size: 16,
+                      color: colors.muted,
+                    }}
+                  />
+
+                  <SearchField.Input
+                    autoFocus
+                    placeholder="Search communities"
+                    returnKeyType="search"
+                    style={{
+                      color: colors.foreground,
+                      fontSize: 13,
+                      fontFamily: "Poppins_400Regular",
+                    }}
+                    placeholderTextColor={colors.placeholder}
+                  />
+
+                  <SearchField.ClearButton
+                    iconProps={{
+                      size: 14,
+                      color: colors.muted,
+                    }}
+                  />
+                </SearchField.Group>
+              </SearchField>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={onCloseSearch}
+              style={{
+                height: 42,
+                width: 42,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="close" size={20} color={colors.foreground} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={onOpenCreateCommunity}
+              style={{
+                height: 44,
+                width: 44,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="add" size={24} color={colors.accent} />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={onOpenSearch}
+              style={{
+                height: 44,
+                width: 34,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="search-outline" size={22} color={colors.accent} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={onOpenCreateCommunity}
+              style={{
+                height: 44,
+                width: 34,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="add" size={24} color={colors.accent} />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      <View
+        style={{
+          marginTop: 20,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <View style={{ flex: 1 }} onLayout={onCategoryContainerLayout}>
+          {categoriesLoading && categoryPage === 1 ? (
+            <View style={{ paddingVertical: 12 }}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          ) : categoriesError ? (
+            <Text
+              style={{
+                color: colors.danger,
+                fontSize: 13,
+                fontFamily: "Poppins_500Medium",
+              }}
+            >
+              Failed to load categories
+            </Text>
+          ) : (
+            <ScrollView
+              ref={categoryScrollRef}
+              horizontal
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={onCategoryScroll}
+              scrollEventThrottle={16}
+              onContentSizeChange={onCategoryContentSizeChange}
+              contentContainerStyle={{
+                gap: 10,
+                paddingRight: 4,
+              }}
+            >
+              {categoryPills.map((category) => {
+                const isActive = selectedCategoryId === category.id;
+
+                return (
+                  <TouchableOpacity
+                    key={category.id}
+                    activeOpacity={0.85}
+                    onPress={() => onSelectCategory(category.id)}
+                    style={{
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: isActive ? colors.accent : colors.border,
+                      backgroundColor: isActive
+                        ? colors.accent
+                        : colors.surface,
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                    }}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        color: isActive
+                          ? colors.accentForeground
+                          : colors.foreground,
+                        fontSize: 13,
+                        fontFamily: "Poppins_500Medium",
+                      }}
+                    >
+                      {category.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {hasMoreCategories ? (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  disabled={categoriesFetching}
+                  onPress={onLoadMoreCategories}
+                  style={{
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    opacity: categoriesFetching ? 0.7 : 1,
+                  }}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: colors.accent,
+                      fontSize: 13,
+                      fontFamily: "Poppins_600SemiBold",
+                    }}
+                  >
+                    {categoriesFetching ? "Loading..." : "More"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </ScrollView>
+          )}
+        </View>
+
+        {showCategoryNextButton ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={onSlideRight}
+            style={{
+              height: 38,
+              width: 38,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
+            }}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={colors.accent}
+            />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <View style={{ marginTop: 24 }}>
+        <Text
+          style={{
+            color: colors.foreground,
+            fontSize: 20,
+            fontFamily: "Poppins_700Bold",
+          }}
+        >
+          Communities
+        </Text>
+      </View>
+    </View>
+  );
+});
+
 export default function ExploreScreen() {
   const categoryScrollRef = useRef<ScrollView>(null);
   const currentScrollX = useRef(0);
+
+  const didMountSearchRef = useRef(false);
+  const didMountCategoryRef = useRef(false);
 
   const { colors } = useAppTheme();
 
@@ -55,32 +395,46 @@ export default function ExploreScreen() {
     null,
   );
 
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
+  const [debouncedSearchValue, setDebouncedSearchValue] = useState("");
+
+  const [isCreateCommunityVisible, setIsCreateCommunityVisible] =
+    useState(false);
+
   const [categoryContainerWidth, setCategoryContainerWidth] = useState(0);
   const [categoryContentWidth, setCategoryContentWidth] = useState(0);
 
-  /**
-   * Community pagination state.
-   */
   const [page, setPage] = useState(1);
   const [communities, setCommunities] = useState<CommunityItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
 
-  /**
-   * Category pagination state.
-   *
-   * Backend max limit is 50, so we load categories page by page.
-   */
   const [categoryPage, setCategoryPage] = useState(1);
   const [categoryItems, setCategoryItems] = useState<CategoryRow[]>([]);
   const [hasMoreCategories, setHasMoreCategories] = useState(true);
 
-  /**
-   * Pull refresh state.
-   *
-   * Do not use isFetching directly for RefreshControl, because normal API fetching
-   * can show the white pull-refresh spinner unexpectedly.
-   */
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+
+  const activeSearchText = debouncedSearchValue.trim();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const nextSearch = searchValue.trim();
+
+      if (!didMountSearchRef.current) {
+        didMountSearchRef.current = true;
+        setDebouncedSearchValue(nextSearch);
+        return;
+      }
+
+      setDebouncedSearchValue(nextSearch);
+      setPage(1);
+      setCommunities([]);
+      setHasMore(true);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchValue]);
 
   const {
     data: categoriesResponse,
@@ -96,9 +450,6 @@ export default function ExploreScreen() {
       sortBy: "sortOrder",
       sortDirection: "asc",
     },
-    {
-      refetchOnMountOrArgChange: true,
-    },
   );
 
   const {
@@ -111,22 +462,17 @@ export default function ExploreScreen() {
     {
       page,
       limit: COMMUNITY_PAGE_LIMIT,
+      ...(activeSearchText ? { search: activeSearchText } : {}),
       ...(selectedCategoryId !== "all"
         ? { categoryId: selectedCategoryId }
         : {}),
       sortBy: "newest",
-    },
-    {
-      refetchOnMountOrArgChange: true,
     },
   );
 
   const [joinCommunity] = useJoinCommunityMutation();
   const [leaveCommunity] = useLeaveCommunityMutation();
 
-  /**
-   * Append paginated categories.
-   */
   useEffect(() => {
     if (!categoriesResponse) return;
 
@@ -154,18 +500,17 @@ export default function ExploreScreen() {
     return [ALL_CATEGORY, ...categoryItems];
   }, [categoryItems]);
 
-  /**
-   * Reset community pagination when selected category changes.
-   */
   useEffect(() => {
+    if (!didMountCategoryRef.current) {
+      didMountCategoryRef.current = true;
+      return;
+    }
+
     setPage(1);
     setCommunities([]);
     setHasMore(true);
   }, [selectedCategoryId]);
 
-  /**
-   * Append paginated communities.
-   */
   useEffect(() => {
     if (!communitiesResponse) return;
 
@@ -195,43 +540,87 @@ export default function ExploreScreen() {
   const showCategoryNextButton =
     categoryContentWidth > categoryContainerWidth + 8;
 
-  const handleCategoryScroll = (
-    event: NativeSyntheticEvent<NativeScrollEvent>,
-  ) => {
-    currentScrollX.current = event.nativeEvent.contentOffset.x;
-  };
+  const handleOpenSearch = useCallback(() => {
+    setIsSearchVisible(true);
+  }, []);
 
-  const handleCategoryContainerLayout = (event: LayoutChangeEvent) => {
-    setCategoryContainerWidth(event.nativeEvent.layout.width);
-  };
+  const handleCloseSearch = useCallback(() => {
+    setIsSearchVisible(false);
+    setSearchValue("");
+    setDebouncedSearchValue("");
+    setPage(1);
+    setCommunities([]);
+    setHasMore(true);
+  }, []);
 
-  const handleSlideRight = () => {
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchValue(value);
+  }, []);
+
+  const handleOpenCreateCommunity = useCallback(() => {
+    setIsCreateCommunityVisible(true);
+  }, []);
+
+  const handleCloseCreateCommunity = useCallback(() => {
+    setIsCreateCommunityVisible(false);
+  }, []);
+
+  const handleCreateCommunitySuccess = useCallback(() => {
+    setIsCreateCommunityVisible(false);
+    setPage(1);
+    setCommunities([]);
+    setHasMore(true);
+    refetchCommunities();
+  }, [refetchCommunities]);
+
+  const handleSelectCategory = useCallback(
+    (categoryId: string) => {
+      if (selectedCategoryId !== categoryId) {
+        setSelectedCategoryId(categoryId);
+      }
+    },
+    [selectedCategoryId],
+  );
+
+  const handleCategoryScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      currentScrollX.current = event.nativeEvent.contentOffset.x;
+    },
+    [],
+  );
+
+  const handleCategoryContainerLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      setCategoryContainerWidth(event.nativeEvent.layout.width);
+    },
+    [],
+  );
+
+  const handleCategoryContentSizeChange = useCallback((width: number) => {
+    setCategoryContentWidth(width);
+  }, []);
+
+  const handleSlideRight = useCallback(() => {
     categoryScrollRef.current?.scrollTo({
       x: currentScrollX.current + 180,
       animated: true,
     });
-  };
+  }, []);
 
-  const handleLoadMoreCategories = () => {
+  const handleLoadMoreCategories = useCallback(() => {
     if (categoriesFetching || !hasMoreCategories) return;
 
     setCategoryPage((prev) => prev + 1);
-  };
+  }, [categoriesFetching, hasMoreCategories]);
 
   const handleRefresh = useCallback(async () => {
     try {
       setIsPullRefreshing(true);
 
-      /**
-       * Reset categories.
-       */
       setCategoryPage(1);
       setCategoryItems([]);
       setHasMoreCategories(true);
 
-      /**
-       * Reset communities.
-       */
       setPage(1);
       setCommunities([]);
       setHasMore(true);
@@ -335,195 +724,8 @@ export default function ExploreScreen() {
     );
   };
 
-  const renderHeader = () => {
-    return (
-      <View style={{ paddingTop: 16, paddingBottom: 12 }}>
-        <View>
-          <Text
-            style={{
-              color: colors.foreground,
-              fontSize: 26,
-              fontFamily: "Poppins_700Bold",
-            }}
-          >
-            Explore
-          </Text>
-
-          <Text
-            style={{
-              marginTop: 4,
-              color: colors.muted,
-              fontSize: 14,
-              lineHeight: 22,
-              fontFamily: "Poppins_400Regular",
-            }}
-          >
-            Discover categories and communities.
-          </Text>
-        </View>
-
-        <View
-          style={{
-            marginTop: 20,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <View style={{ flex: 1 }} onLayout={handleCategoryContainerLayout}>
-            {categoriesLoading && categoryPage === 1 ? (
-              <View style={{ paddingVertical: 12 }}>
-                <ActivityIndicator size="small" color={colors.accent} />
-              </View>
-            ) : categoriesError ? (
-              <Text
-                style={{
-                  color: colors.danger,
-                  fontSize: 13,
-                  fontFamily: "Poppins_500Medium",
-                }}
-              >
-                Failed to load categories
-              </Text>
-            ) : (
-              <ScrollView
-                ref={categoryScrollRef}
-                horizontal
-                nestedScrollEnabled
-                showsHorizontalScrollIndicator={false}
-                onScroll={handleCategoryScroll}
-                scrollEventThrottle={16}
-                onContentSizeChange={(width) => setCategoryContentWidth(width)}
-                contentContainerStyle={{
-                  gap: 10,
-                  paddingRight: 4,
-                }}
-              >
-                {categoryPills.map((category) => {
-                  const isActive = selectedCategoryId === category.id;
-
-                  return (
-                    <TouchableOpacity
-                      key={category.id}
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        if (selectedCategoryId !== category.id) {
-                          setSelectedCategoryId(category.id);
-                        }
-                      }}
-                      style={{
-                        borderRadius: 999,
-                        borderWidth: 1,
-                        borderColor: isActive ? colors.accent : colors.border,
-                        backgroundColor: isActive
-                          ? colors.accent
-                          : colors.surface,
-                        paddingHorizontal: 16,
-                        paddingVertical: 10,
-                      }}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        style={{
-                          color: isActive
-                            ? colors.accentForeground
-                            : colors.foreground,
-                          fontSize: 13,
-                          fontFamily: "Poppins_500Medium",
-                        }}
-                      >
-                        {category.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-
-                {hasMoreCategories ? (
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    disabled={categoriesFetching}
-                    onPress={handleLoadMoreCategories}
-                    style={{
-                      borderRadius: 999,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      backgroundColor: colors.surfaceSecondary,
-                      paddingHorizontal: 16,
-                      paddingVertical: 10,
-                      opacity: categoriesFetching ? 0.7 : 1,
-                    }}
-                  >
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        color: colors.accent,
-                        fontSize: 13,
-                        fontFamily: "Poppins_600SemiBold",
-                      }}
-                    >
-                      {categoriesFetching ? "Loading..." : "More"}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-              </ScrollView>
-            )}
-          </View>
-
-          {showCategoryNextButton ? (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={handleSlideRight}
-              style={{
-                height: 38,
-                width: 38,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-              }}
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={colors.accent}
-              />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        <View style={{ marginTop: 24 }}>
-          <Text
-            style={{
-              color: colors.foreground,
-              fontSize: 20,
-              fontFamily: "Poppins_700Bold",
-            }}
-          >
-            Communities
-          </Text>
-
-          <Text
-            style={{
-              marginTop: 4,
-              color: colors.muted,
-              fontSize: 13,
-              lineHeight: 20,
-              fontFamily: "Poppins_400Regular",
-            }}
-          >
-            {selectedCategoryId === "all"
-              ? "All active communities are shown here."
-              : "Communities for the selected category are shown here."}
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
   const renderEmpty = () => {
-    if (isInitialLoading) {
+    if (isInitialLoading || (communitiesFetching && page === 1)) {
       return (
         <View style={{ paddingVertical: 40 }}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -588,7 +790,9 @@ export default function ExploreScreen() {
             fontFamily: "Poppins_400Regular",
           }}
         >
-          There are no communities in this category yet.
+          {activeSearchText
+            ? `No communities matched "${activeSearchText}".`
+            : "There are no communities in this category yet."}
         </Text>
       </View>
     );
@@ -605,30 +809,123 @@ export default function ExploreScreen() {
   };
 
   return (
-    <FlatList
-      style={{ flex: 1, backgroundColor: colors.background }}
-      data={communities}
-      keyExtractor={(item) => item.id}
-      renderItem={renderCommunity}
-      ListHeaderComponent={renderHeader}
-      ListEmptyComponent={renderEmpty}
-      ListFooterComponent={renderFooter}
-      contentContainerStyle={{
-        paddingHorizontal: 18,
-        paddingBottom: 140,
-      }}
-      showsVerticalScrollIndicator={false}
-      onEndReached={handleLoadMore}
-      onEndReachedThreshold={0.5}
-      refreshControl={
-        <RefreshControl
-          refreshing={isPullRefreshing}
-          onRefresh={handleRefresh}
-          tintColor={colors.accent}
-          colors={[colors.accent]}
-          progressBackgroundColor={colors.surface}
-        />
-      }
-    />
+    <>
+      <FlatList
+        style={{ flex: 1, backgroundColor: colors.background }}
+        data={communities}
+        keyExtractor={(item) => item.id}
+        renderItem={renderCommunity}
+        ListHeaderComponent={
+          <ExploreHeader
+            colors={colors}
+            selectedCategoryId={selectedCategoryId}
+            categoryPills={categoryPills}
+            searchValue={searchValue}
+            activeSearchText={activeSearchText}
+            isSearchVisible={isSearchVisible}
+            categoriesLoading={categoriesLoading}
+            categoriesFetching={categoriesFetching}
+            categoriesError={categoriesError}
+            categoryPage={categoryPage}
+            hasMoreCategories={hasMoreCategories}
+            showCategoryNextButton={showCategoryNextButton}
+            onOpenSearch={handleOpenSearch}
+            onCloseSearch={handleCloseSearch}
+            onSearchChange={handleSearchChange}
+            onOpenCreateCommunity={handleOpenCreateCommunity}
+            onSelectCategory={handleSelectCategory}
+            onCategoryContainerLayout={handleCategoryContainerLayout}
+            onCategoryScroll={handleCategoryScroll}
+            onCategoryContentSizeChange={handleCategoryContentSizeChange}
+            onSlideRight={handleSlideRight}
+            onLoadMoreCategories={handleLoadMoreCategories}
+            categoryScrollRef={categoryScrollRef}
+          />
+        }
+        ListEmptyComponent={renderEmpty}
+        ListFooterComponent={renderFooter}
+        contentContainerStyle={{
+          paddingHorizontal: 18,
+          paddingBottom: 140,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        refreshControl={
+          <RefreshControl
+            refreshing={isPullRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+            progressBackgroundColor={colors.surface}
+          />
+        }
+      />
+
+      <Modal
+        visible={isCreateCommunityVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={handleCloseCreateCommunity}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: colors.background }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View
+            style={{
+              paddingHorizontal: 18,
+              paddingTop: Platform.OS === "ios" ? 60 : 28,
+              paddingBottom: 12,
+              backgroundColor: colors.background,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "flex-end",
+              }}
+            >
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleCloseCreateCommunity}
+                style={{
+                  height: 42,
+                  width: 42,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  // borderRadius: 999,
+                  // backgroundColor: colors.surface,s
+                  // borderWidth: 1,
+                  // borderColor: colors.border,
+                }}
+              >
+                <Ionicons name="close" size={20} color={colors.accent} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{
+              paddingHorizontal: 18,
+              paddingTop: 18,
+              paddingBottom: 40,
+            }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <CreateCommunityForm
+              submitLabel="Create Community"
+              onSuccess={handleCreateCommunitySuccess}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
   );
 }

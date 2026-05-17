@@ -1,7 +1,7 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -51,10 +51,11 @@ export default function CommunityDashboardScreen() {
     getParamValue(localParams.id) ||
     getParamValue(globalParams.id);
 
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+
   const {
     data: dashboard,
     isLoading,
-    isFetching,
     error,
     refetch,
   } = useGetCommunityDashboardOverviewQuery(communityId, {
@@ -91,6 +92,16 @@ export default function CommunityDashboardScreen() {
   const hasChartData =
     memberGrowthData.length > 0 || postGrowthData.length > 0;
 
+  async function handlePullRefresh() {
+    setIsPullRefreshing(true);
+
+    try {
+      await refetch();
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }
+
   if (!communityId) {
     return (
       <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
@@ -124,6 +135,14 @@ export default function CommunityDashboardScreen() {
       style={[styles.root, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={isPullRefreshing}
+          onRefresh={handlePullRefresh}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+        />
+      }
     >
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
@@ -137,28 +156,6 @@ export default function CommunityDashboardScreen() {
               : "Here is your community overview."}
           </Text>
         </View>
-
-        <Pressable
-          onPress={() => refetch()}
-          style={({ pressed }) => [
-            styles.refreshButton,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-            pressed && { opacity: 0.75 },
-          ]}
-        >
-          {isFetching ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <Ionicons name="refresh-outline" size={18} color={colors.accent} />
-          )}
-
-          <Text style={[styles.refreshText, { color: colors.accent }]}>
-            Refresh
-          </Text>
-        </Pressable>
       </View>
 
       {error ? (
@@ -224,13 +221,15 @@ export default function CommunityDashboardScreen() {
           },
         ]}
       >
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-          Growth Overview
-        </Text>
+        <View style={styles.chartHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+            Growth Overview
+          </Text>
 
-        <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>
-          Real monthly member and post growth for this community.
-        </Text>
+          <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>
+            Real monthly member and post growth for this community.
+          </Text>
+        </View>
 
         {!hasChartData ? (
           <View
@@ -256,8 +255,8 @@ export default function CommunityDashboardScreen() {
               height={230}
               width={320}
               spacing={68}
-              initialSpacing={16}
-              endSpacing={18}
+              initialSpacing={0}
+              endSpacing={0}
               thickness={3}
               thickness2={3}
               color={colors.accent}
@@ -352,21 +351,6 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
 
-  refreshButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-  },
-
-  refreshText: {
-    fontSize: 13,
-    fontFamily: "Poppins_600SemiBold",
-  },
-
   errorBox: {
     borderWidth: 1,
     borderRadius: 18,
@@ -396,8 +380,12 @@ const styles = StyleSheet.create({
   chartCard: {
     borderRadius: 24,
     borderWidth: 1,
-    padding: 16,
     overflow: "hidden",
+  },
+
+  chartHeader: {
+    padding: 16,
+    paddingBottom: 0,
   },
 
   sectionTitle: {
@@ -414,11 +402,14 @@ const styles = StyleSheet.create({
 
   chartWrap: {
     marginTop: 16,
+    marginHorizontal: 0,
+    paddingHorizontal: 0,
     overflow: "hidden",
   },
 
   emptyChartBox: {
     marginTop: 16,
+    marginHorizontal: 16,
     height: 220,
     borderRadius: 22,
     borderWidth: 1,
@@ -434,6 +425,8 @@ const styles = StyleSheet.create({
 
   legendRow: {
     marginTop: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 18,

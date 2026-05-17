@@ -15,12 +15,10 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { KeyboardAvoidingView, Platform } from "react-native";
+import { KeyboardAvoidingView, Platform, Text } from "react-native";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { PaperProvider } from "react-native-paper";
 import { buildPaperTheme } from "@/constants/paper-theme";
-
-// import { testFirebaseNotificationSetup } from "@/lib/firebase-notification-test";
 import NotificationBootstrap from "@/components/NotificationBootstrap";
 
 import {
@@ -33,10 +31,6 @@ import {
 function AppContent() {
   const insets = useSafeAreaInsets();
   const { navigationTheme, statusBarStyle, colors, isDark } = useAppTheme();
-
-  // useEffect(() => {
-  //   testFirebaseNotificationSetup();
-  // }, []);
 
   const paperTheme = useMemo(
     () => buildPaperTheme(colors, isDark),
@@ -84,7 +78,6 @@ function AppContent() {
               <Stack.Screen name="admin" />
               <Stack.Screen name="modal" options={{ presentation: "modal" }} />
             </Stack>
-
             <StatusBar style={statusBarStyle} />
           </ThemeProvider>
         </BottomSheetModalProvider>
@@ -102,12 +95,12 @@ export default function RootLayout() {
   });
 
   if (!fontsLoaded) return null;
-
   return (
     <SafeAreaProvider>
       <Provider store={store}>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <AppContent />
+          
         </GestureHandlerRootView>
       </Provider>
     </SafeAreaProvider>
