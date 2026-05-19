@@ -291,9 +291,45 @@ export default function CommunityDetailScreen() {
     [tab, loadMorePosts, loadMoreMembers],
   );
 
-  const handleAuthorPress = useCallback((authorId: string) => {
-    console.log("Open author:", authorId);
-  }, []);
+const handleAuthorPress = useCallback(
+  (authorId: string) => {
+    if (!authorId || !community?.id) return;
+
+    if (authorId === session?.user?.id) {
+      return;
+    }
+
+    router.push({
+      pathname: "/user/profile/[userId]",
+      params: {
+        userId: authorId,
+        sourceCommunityId: community.id,
+      },
+    });
+  },
+  [community?.id, session?.user?.id],
+);
+
+const handleMemberPress = useCallback(
+  (memberUserId?: string | null) => {
+    if (!memberUserId || !community?.id) return;
+
+    if (memberUserId === session?.user?.id) {
+      return;
+    }
+
+    router.push({
+      pathname: "/user/profile/[userId]",
+      params: {
+        userId: memberUserId,
+        sourceCommunityId: community.id,
+      },
+    });
+  },
+  [community?.id, session?.user?.id],
+);
+
+
 
   if (isPending || communityLoading || accessLoading) {
     return (
@@ -738,12 +774,13 @@ export default function CommunityDetailScreen() {
 
                             return (
                               <MemberRow
-                                key={member.id}
-                                member={member}
-                                memberAvatar={memberAvatar}
-                                canManageMembers={canManageMembers}
-                                colors={colors}
-                              />
+  key={member.id}
+  member={member}
+  memberAvatar={memberAvatar}
+  canManageMembers={canManageMembers}
+  colors={colors}
+  onPressProfile={() => handleMemberPress(member.user.id)}
+/>
                             );
                           })}
 
@@ -849,20 +886,23 @@ function InlineStat({
     </View>
   );
 }
-
 function MemberRow({
   member,
   memberAvatar,
   canManageMembers,
   colors,
+  onPressProfile,
 }: {
   member: CommunityMemberItem;
   memberAvatar: string | null;
   canManageMembers: boolean;
   colors: ReturnType<typeof useAppTheme>["colors"];
+  onPressProfile: () => void;
 }) {
   return (
-    <View
+    <Pressable
+      onPress={onPressProfile}
+      android_ripple={{ color: colors.surfaceSecondary }}
       className="flex-row items-center rounded-[20px] border border-border bg-surface px-4 py-3"
       style={{ width: "100%" }}
     >
@@ -917,10 +957,11 @@ function MemberRow({
           </Text>
         ) : null}
       </View>
-    </View>
+
+      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+    </Pressable>
   );
 }
-
 function InfoRow({
   icon,
   label,

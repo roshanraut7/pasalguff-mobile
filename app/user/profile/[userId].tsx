@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -11,12 +11,20 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, Tabs } from "heroui-native";
 
+import { useSession } from "@/api/better-auth-client";
+import CommunityPostCard from "@/components/post/CommunityPostCard";
+import CommentPostModal from "@/components/post/CommentsModal";
+import PostMediaViewer from "@/components/post/PostMediaViewer";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { usePostInteractions } from "@/hooks/media/usePostInteractions";
+import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
+
+import { useCreateDirectChatMutation } from "@/store/api/chatApi";
 
 import {
   useAcceptFriendRequestMutation,
@@ -35,10 +43,11 @@ import type {
   PublicProfilePost,
   PublicUserProfile,
 } from "@/types/friend";
+import type { CommunityPost } from "@/types/post";
 
-type TabKey = "posts" | "communities" | "friends";
+type TabKey = "posts" | "about" | "communities" | "friends";
 
-type ActiveItem = PublicProfilePost | PublicProfileCommunity | FriendUser;
+type ActiveItem = CommunityPost | PublicProfileCommunity | FriendUser;
 
 function getInitials(name?: string | null) {
   if (!name) return "U";
@@ -53,7 +62,7 @@ function getInitials(name?: string | null) {
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return "";
+  if (!value) return "-";
 
   return new Date(value).toLocaleDateString("en-GB", {
     day: "2-digit",
@@ -62,25 +71,68 @@ function formatDate(value?: string | null) {
   });
 }
 
-function toPlainText(value?: string | null) {
-  if (!value) return "No content";
+function friendshipLabel(profile: PublicUserProfile) {
+  const friendship = profile.friendship;
 
-  const text = value
-    .replace(/<style[^>]*>.*?<\/style>/gis, " ")
-    .replace(/<script[^>]*>.*?<\/script>/gis, " ")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\s+/g, " ")
-    .trim();
+  if (!friendship) return "Not friends";
 
-  return text || "No content";
+  if (friendship.status === "ACCEPTED") return "Friends";
+
+  if (friendship.status === "PENDING" && friendship.direction === "INCOMING") {
+    return "Friend request received";
+  }
+
+  if (friendship.status === "PENDING" && friendship.direction === "OUTGOING") {
+    return "Friend request sent";
+  }
+
+  return friendship.status;
+}
+
+function mapPublicPostToCommunityPost(
+  post: PublicProfilePost,
+  profile: PublicUserProfile,
+  userId: string,
+): CommunityPost {
+  const community = post.community as PublicProfilePost["community"] & {
+    id?: string | null;
+    slug?: string | null;
+  };
+
+  return {
+    id: post.id,
+    communityId: community.id ?? "",
+    authorId: userId,
+
+    content: post.content ?? "",
+    linkUrl: null,
+
+    createdAt: post.createdAt,
+    updatedAt: post.createdAt,
+    publishedAt: post.publishedAt ?? post.createdAt,
+
+    author: {
+      id: userId,
+      name: profile.displayName,
+      firstName: null,
+      lastName: null,
+      businessName: profile.businessName ?? null,
+      image: profile.image ?? null,
+    },
+
+    community: {
+      id: community.id ?? "",
+      name: post.community.name,
+      slug: community.slug ?? "",
+    },
+
+    media: post.media ?? [],
+
+    isLikedByMe: Boolean((post as any).isLikedByMe),
+    likeCount: post.engagement?.likeCount ?? 0,
+    commentCount: post.engagement?.commentCount ?? 0,
+    shareCount: post.engagement?.shareCount ?? 0,
+  } as unknown as CommunityPost;
 }
 
 function IconButtonContent({
@@ -96,43 +148,6 @@ function IconButtonContent({
     <View style={styles.buttonContent}>
       <Ionicons name={icon} size={16} color={color} />
       {label ? <Button.Label>{label}</Button.Label> : null}
-    </View>
-  );
-}
-
-function ProfileAvatar({
-  image,
-  name,
-}: {
-  image?: string | null;
-  name?: string | null;
-}) {
-  const { colors } = useAppTheme();
-  const imageUrl = toAbsoluteFileUrl(image);
-
-  if (imageUrl) {
-    return (
-      <Image
-        source={{ uri: imageUrl }}
-        style={styles.avatarImage}
-        resizeMode="cover"
-      />
-    );
-  }
-
-  return (
-    <View
-      style={[
-        styles.avatarFallback,
-        {
-          backgroundColor: colors.surfaceSecondary,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <Text style={[styles.avatarFallbackText, { color: colors.accent }]}>
-        {getInitials(name)}
-      </Text>
     </View>
   );
 }
@@ -161,6 +176,43 @@ function CoverImage({ image }: { image?: string | null }) {
         },
       ]}
     />
+  );
+}
+
+function ProfileAvatar({
+  image,
+  name,
+}: {
+  image?: string | null;
+  name?: string | null;
+}) {
+  const { colors } = useAppTheme();
+  const imageUrl = toAbsoluteFileUrl(image);
+
+  if (imageUrl) {
+    return (
+      <Image
+        source={{ uri: imageUrl }}
+        style={styles.avatarImage}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.avatarFallback,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <Text style={[styles.avatarFallbackText, { color: colors.accent }]}>
+        {getInitials(name)}
+      </Text>
+    </View>
   );
 }
 
@@ -323,120 +375,67 @@ function ProfileActionButtons({
   );
 }
 
-function PostCard({ post }: { post: PublicProfilePost }) {
-  const { colors } = useAppTheme();
-
-  const firstImage = post.media?.find((item) => item.type === "IMAGE");
-  const imageUrl = toAbsoluteFileUrl(firstImage?.url);
-
-  return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <View style={styles.cardHeaderRow}>
-        <View style={{ flex: 1 }}>
-          <Text
-            numberOfLines={1}
-            style={[styles.cardTitle, { color: colors.foreground }]}
-          >
-            {post.community.name}
-          </Text>
-
-          <Text style={[styles.cardMeta, { color: colors.muted }]}>
-            {formatDate(post.publishedAt ?? post.createdAt)}
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.visibilityPill,
-            {
-              backgroundColor: colors.surfaceSecondary,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <Text style={[styles.visibilityText, { color: colors.accent }]}>
-            {post.community.visibility}
-          </Text>
-        </View>
-      </View>
-
-      <Text
-        numberOfLines={3}
-        style={[styles.postText, { color: colors.foreground }]}
-      >
-        {toPlainText(post.content)}
-      </Text>
-
-      {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.postImage} />
-      ) : null}
-
-      <View style={styles.engagementRow}>
-        <Text style={[styles.engagementText, { color: colors.muted }]}>
-          Likes {post.engagement.likeCount}
-        </Text>
-
-        <Text style={[styles.engagementText, { color: colors.muted }]}>
-          Comments {post.engagement.commentCount}
-        </Text>
-
-        <Text style={[styles.engagementText, { color: colors.muted }]}>
-          Shares {post.engagement.shareCount}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function CommunityCard({ community }: { community: PublicProfileCommunity }) {
+function CommunityListCard({
+  community,
+}: {
+  community: PublicProfileCommunity;
+}) {
   const { colors } = useAppTheme();
   const imageUrl = toAbsoluteFileUrl(community.avatarImage);
 
   return (
     <Pressable
       onPress={() => router.push(`/user/community/${community.slug}`)}
-      style={[
-        styles.card,
-        styles.rowCard,
+      style={({ pressed }) => [
+        styles.communityCard,
         {
           backgroundColor: colors.surface,
           borderColor: colors.border,
+          opacity: pressed ? 0.86 : 1,
         },
       ]}
     >
       {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.smallAvatar} />
+        <Image source={{ uri: imageUrl }} style={styles.communityAvatar} />
       ) : (
         <View
           style={[
-            styles.smallAvatarFallback,
+            styles.communityAvatarFallback,
             {
               backgroundColor: colors.surfaceSecondary,
               borderColor: colors.border,
             },
           ]}
         >
-          <Text style={[styles.smallInitials, { color: colors.accent }]}>
+          <Text style={[styles.communityInitials, { color: colors.accent }]}>
             {getInitials(community.name)}
           </Text>
         </View>
       )}
 
-      <View style={{ flex: 1 }}>
-        <Text
-          numberOfLines={1}
-          style={[styles.cardTitle, { color: colors.foreground }]}
-        >
-          {community.name}
-        </Text>
+      <View style={styles.communityInfo}>
+        <View style={styles.communityTitleRow}>
+          <Text
+            numberOfLines={1}
+            style={[styles.cardTitle, { color: colors.foreground }]}
+          >
+            {community.name}
+          </Text>
+
+          <View
+            style={[
+              styles.smallPill,
+              {
+                backgroundColor: colors.surfaceSecondary,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.smallPillText, { color: colors.accent }]}>
+              {community.visibility}
+            </Text>
+          </View>
+        </View>
 
         {community.description ? (
           <Text
@@ -447,9 +446,25 @@ function CommunityCard({ community }: { community: PublicProfileCommunity }) {
           </Text>
         ) : null}
 
-        <Text style={[styles.cardMeta, { color: colors.muted }]}>
-          {community.memberCount} members · {community.postCount} posts
-        </Text>
+        <View style={styles.communityStatsRow}>
+          <View style={styles.miniStat}>
+            <Ionicons name="people-outline" size={13} color={colors.accent} />
+            <Text style={[styles.miniStatText, { color: colors.muted }]}>
+              {community.memberCount} members
+            </Text>
+          </View>
+
+          <View style={styles.miniStat}>
+            <Ionicons
+              name="document-text-outline"
+              size={13}
+              color={colors.accent}
+            />
+            <Text style={[styles.miniStatText, { color: colors.muted }]}>
+              {community.postCount} posts
+            </Text>
+          </View>
+        </View>
       </View>
 
       <Ionicons name="chevron-forward" size={18} color={colors.muted} />
@@ -464,12 +479,12 @@ function FriendCard({ friend }: { friend: FriendUser }) {
   return (
     <Pressable
       onPress={() => router.push(`/user/profile/${friend.id}`)}
-      style={[
-        styles.card,
-        styles.rowCard,
+      style={({ pressed }) => [
+        styles.friendCard,
         {
           backgroundColor: colors.surface,
           borderColor: colors.border,
+          opacity: pressed ? 0.86 : 1,
         },
       ]}
     >
@@ -514,6 +529,82 @@ function FriendCard({ friend }: { friend: FriendUser }) {
   );
 }
 
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  const { colors } = useAppTheme();
+
+  return (
+    <View
+      style={[
+        styles.infoRow,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.infoIconWrap,
+          {
+            backgroundColor: colors.surfaceSecondary,
+          },
+        ]}
+      >
+        <Ionicons name={icon} size={18} color={colors.accent} />
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.infoLabel, { color: colors.muted }]}>{label}</Text>
+
+        <Text
+          numberOfLines={3}
+          style={[styles.infoValue, { color: colors.foreground }]}
+        >
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function AboutSection({ profile }: { profile: PublicUserProfile }) {
+  return (
+    <View style={styles.aboutWrap}>
+      <InfoRow
+        icon="storefront-outline"
+        label="Business Name"
+        value={profile.businessName || "-"}
+      />
+
+      <InfoRow
+        icon="briefcase-outline"
+        label="Business Type"
+        value={profile.businessType || "-"}
+      />
+
+      <InfoRow
+        icon="person-add-outline"
+        label="Friendship"
+        value={friendshipLabel(profile)}
+      />
+
+      <InfoRow
+        icon="calendar-outline"
+        label="Joined"
+        value={formatDate(profile.createdAt)}
+      />
+    </View>
+  );
+}
+
 function EmptyState({
   title,
   text,
@@ -548,11 +639,22 @@ function EmptyState({
 
 export default function PublicProfileScreen() {
   const { colors } = useAppTheme();
-  const { userId } = useLocalSearchParams<{ userId: string }>();
+  const { data: session } = useSession();
+
+  const { userId, sourceCommunityId } = useLocalSearchParams<{
+    userId: string;
+    sourceCommunityId?: string;
+  }>();
 
   const [activeTab, setActiveTab] = useState<TabKey>("posts");
+  const [postItems, setPostItems] = useState<CommunityPost[]>([]);
+
+  const { viewer, openViewer, closeViewer } = usePostMediaViewer();
 
   const safeUserId = String(userId ?? "");
+  const safeSourceCommunityId = sourceCommunityId
+    ? String(sourceCommunityId)
+    : "";
 
   const {
     data: profile,
@@ -624,17 +726,62 @@ export default function PublicProfileScreen() {
   const [cancelFriendRequest, { isLoading: isCancellingRequest }] =
     useCancelFriendRequestMutation();
 
+  const [createDirectChat, { isLoading: isCreatingChat }] =
+    useCreateDirectChatMutation();
+
+  const {
+    commentPost,
+    activeCommentPost,
+    comments,
+    commentInput,
+    setCommentInput,
+
+    isLoadingComments,
+    isFetchingComments,
+    isCreatingComment,
+    isCreatingReply,
+
+    openComments,
+    closeComments,
+    handleLikePost,
+    handleSharePost,
+    handleCreateComment,
+    refetchComments,
+  } = usePostInteractions({
+    posts: postItems,
+    setPosts: setPostItems,
+    sessionUser: session?.user,
+  });
+
+  useEffect(() => {
+    if (!profile || !postsData?.data) {
+      setPostItems([]);
+      return;
+    }
+
+    const mappedPosts = postsData.data.map((post) =>
+      mapPublicPostToCommunityPost(post, profile, safeUserId),
+    );
+
+    setPostItems(mappedPosts);
+  }, [profile, postsData?.data, safeUserId]);
+
   const isFriendActionLoading =
     isSendingRequest ||
     isAcceptingRequest ||
     isRejectingRequest ||
-    isCancellingRequest;
+    isCancellingRequest ||
+    isCreatingChat;
 
   const tabs = useMemo(
     () => [
       {
         key: "posts" as const,
         label: `Posts ${postsData?.meta?.total ?? 0}`,
+      },
+      {
+        key: "about" as const,
+        label: "About",
       },
       {
         key: "communities" as const,
@@ -653,26 +800,42 @@ export default function PublicProfileScreen() {
   );
 
   const activeData = useMemo<ActiveItem[]>(() => {
-    if (activeTab === "posts") return postsData?.data ?? [];
+    if (activeTab === "posts") return postItems;
     if (activeTab === "communities") return communitiesData?.data ?? [];
-    return mutualFriendsData?.data ?? [];
-  }, [activeTab, postsData?.data, communitiesData?.data, mutualFriendsData?.data]);
+    if (activeTab === "friends") return mutualFriendsData?.data ?? [];
+
+    return [];
+  }, [
+    activeTab,
+    postItems,
+    communitiesData?.data,
+    mutualFriendsData?.data,
+  ]);
 
   const activeLoading =
     activeTab === "posts"
       ? postsLoading
       : activeTab === "communities"
         ? communitiesLoading
-        : mutualFriendsLoading;
+        : activeTab === "friends"
+          ? mutualFriendsLoading
+          : false;
 
   const activeFetching =
     activeTab === "posts"
       ? postsFetching
       : activeTab === "communities"
         ? communitiesFetching
-        : mutualFriendsFetching;
+        : activeTab === "friends"
+          ? mutualFriendsFetching
+          : false;
 
   const handleRefresh = async () => {
+    if (activeTab === "about") {
+      await refetchProfile();
+      return;
+    }
+
     await Promise.all([
       refetchProfile(),
       activeTab === "posts"
@@ -757,14 +920,41 @@ export default function PublicProfileScreen() {
     }
   };
 
-  const handleMessagePress = () => {
-    Alert.alert("Message", "Message feature will be added next.");
+  const handleMessagePress = async () => {
+    if (!safeUserId || isCreatingChat) return;
+
+    try {
+      const chat = await createDirectChat({
+        targetUserId: safeUserId,
+        body: safeSourceCommunityId
+          ? {
+              sourceCommunityId: safeSourceCommunityId,
+            }
+          : {},
+      }).unwrap();
+
+      router.push(`/messages/${chat.id}`);
+    } catch (error: any) {
+      console.log("Create direct chat failed:", JSON.stringify(error, null, 2));
+
+      Alert.alert(
+        "Could not open chat",
+        error?.data?.message ?? "You may not be allowed to message this user.",
+      );
+    }
   };
 
   if (profileLoading) {
     return (
       <SafeAreaView
-        style={[styles.root, styles.center, { backgroundColor: colors.background }]}
+        edges={["top"]}
+        style={[
+          styles.root,
+          styles.center,
+          {
+            backgroundColor: colors.background,
+          },
+        ]}
       >
         <ActivityIndicator size="large" color={colors.accent} />
       </SafeAreaView>
@@ -774,7 +964,14 @@ export default function PublicProfileScreen() {
   if (profileError || !profile) {
     return (
       <SafeAreaView
-        style={[styles.root, styles.center, { backgroundColor: colors.background }]}
+        edges={["top"]}
+        style={[
+          styles.root,
+          styles.center,
+          {
+            backgroundColor: colors.background,
+          },
+        ]}
       >
         <Ionicons name="alert-circle-outline" size={34} color={colors.danger} />
 
@@ -800,11 +997,27 @@ export default function PublicProfileScreen() {
 
   const renderItem = ({ item }: { item: ActiveItem }) => {
     if (activeTab === "posts") {
-      return <PostCard post={item as PublicProfilePost} />;
+      const post = item as CommunityPost;
+
+      return (
+        <CommunityPostCard
+          post={post}
+          disableMediaPlayback={viewer.visible || !!commentPost}
+          onPressMedia={openViewer}
+          onPressAuthor={(authorId) => {
+            if (!authorId || authorId === safeUserId) return;
+
+            router.push(`/user/profile/${authorId}`);
+          }}
+          onPressLike={handleLikePost}
+          onPressComment={openComments}
+          onPressShare={handleSharePost}
+        />
+      );
     }
 
     if (activeTab === "communities") {
-      return <CommunityCard community={item as PublicProfileCommunity} />;
+      return <CommunityListCard community={item as PublicProfileCommunity} />;
     }
 
     return <FriendCard friend={item as FriendUser} />;
@@ -817,6 +1030,10 @@ export default function PublicProfileScreen() {
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
       );
+    }
+
+    if (activeTab === "about") {
+      return <AboutSection profile={profile} />;
     }
 
     if (activeTab === "posts") {
@@ -853,42 +1070,49 @@ export default function PublicProfileScreen() {
       <View style={styles.coverSection}>
         <CoverImage image={profile.coverImage} />
 
+        <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={22} color="#ffffff" />
+        </Pressable>
+
         <View style={styles.avatarFloatingWrap}>
-          <View style={styles.avatarOuter}>
+          <View
+            style={[
+              styles.avatarOuter,
+              {
+                backgroundColor: colors.background,
+              },
+            ]}
+          >
             <ProfileAvatar image={profile.image} name={profile.displayName} />
           </View>
         </View>
       </View>
 
       <View style={styles.profileInfoSection}>
-        <View style={styles.profileInfoRow}>
-          <View style={styles.profileInfoLeft}>
-            <Text
-              numberOfLines={1}
-              style={[styles.profileName, { color: colors.foreground }]}
-            >
-              {profile.displayName}
-            </Text>
+        <Text
+          numberOfLines={1}
+          style={[styles.profileName, { color: colors.foreground }]}
+        >
+          {profile.displayName}
+        </Text>
 
-            {profile.businessName ? (
-              <Text
-                numberOfLines={1}
-                style={[styles.profileEmail, { color: colors.muted }]}
-              >
-                {profile.businessName}
-              </Text>
-            ) : null}
+        {profile.businessName ? (
+          <Text
+            numberOfLines={1}
+            style={[styles.profileSubText, { color: colors.muted }]}
+          >
+            {profile.businessName}
+          </Text>
+        ) : null}
 
-            {profile.businessType ? (
-              <Text
-                numberOfLines={1}
-                style={[styles.profileBusinessType, { color: colors.muted }]}
-              >
-                {profile.businessType}
-              </Text>
-            ) : null}
-          </View>
-        </View>
+        {profile.businessType ? (
+          <Text
+            numberOfLines={1}
+            style={[styles.profileBusinessType, { color: colors.muted }]}
+          >
+            {profile.businessType}
+          </Text>
+        ) : null}
 
         <ProfileActionButtons
           profile={profile}
@@ -905,7 +1129,7 @@ export default function PublicProfileScreen() {
             style={[
               styles.profileBadge,
               {
-                backgroundColor: colors.surfaceSecondary,
+                backgroundColor: colors.surface,
                 borderColor: colors.border,
               },
             ]}
@@ -923,45 +1147,93 @@ export default function PublicProfileScreen() {
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as TabKey)}
         variant="secondary"
-        style={styles.tabsRoot}
+        style={[
+          styles.tabsRoot,
+          {
+            borderBottomColor: colors.border,
+          },
+        ]}
       >
         <Tabs.List>
-          <Tabs.Indicator />
+          <Tabs.ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            scrollAlign="start"
+            contentContainerStyle={styles.tabsScrollContent}
+          >
+            <Tabs.Indicator />
 
-          {tabs.map((tab) => (
-            <Tabs.Trigger key={tab.key} value={tab.key} style={styles.tabTrigger}>
-              <Tabs.Label>{tab.label}</Tabs.Label>
-            </Tabs.Trigger>
-          ))}
+            {tabs.map((tabItem) => (
+              <Tabs.Trigger key={tabItem.key} value={tabItem.key}>
+                <Tabs.Label>{tabItem.label}</Tabs.Label>
+              </Tabs.Trigger>
+            ))}
+          </Tabs.ScrollView>
         </Tabs.List>
       </Tabs>
     </View>
   );
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
-      <FlatList
-        style={styles.scroll}
-        data={activeData}
-        keyExtractor={(item, index) =>
-          "id" in item ? item.id : `${activeTab}-${index}`
-        }
-        renderItem={renderItem}
-        ListHeaderComponent={listHeader}
-        ListEmptyComponent={renderEmpty}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={(activeFetching || profileFetching) && !activeLoading}
-            onRefresh={handleRefresh}
-            tintColor={colors.accent}
-            colors={[colors.accent]}
-            progressBackgroundColor={colors.surface}
-          />
-        }
+    <>
+      <SafeAreaView
+        edges={["top"]}
+        style={[
+          styles.root,
+          {
+            backgroundColor: colors.background,
+          },
+        ]}
+      >
+        <FlatList
+          style={styles.scroll}
+          data={activeData}
+          keyExtractor={(item, index) =>
+            "id" in item ? item.id : `${activeTab}-${index}`
+          }
+          renderItem={renderItem}
+          ListHeaderComponent={listHeader}
+          ListEmptyComponent={renderEmpty}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={(activeFetching || profileFetching) && !activeLoading}
+              onRefresh={handleRefresh}
+              tintColor={colors.accent}
+              colors={[colors.accent]}
+              progressBackgroundColor={colors.surface}
+            />
+          }
+        />
+      </SafeAreaView>
+
+      <CommentPostModal
+        visible={!!commentPost}
+        post={activeCommentPost}
+        comments={comments}
+        isLoading={(isLoadingComments || isFetchingComments) && comments.length === 0}
+        isCreating={isCreatingComment || isCreatingReply}
+        inputValue={commentInput}
+        onChangeInput={setCommentInput}
+        onClose={closeComments}
+        onSubmit={handleCreateComment}
+        onPressMedia={openViewer}
+        onPressPostLike={handleLikePost}
+        onPressPostShare={handleSharePost}
+        onRefreshComments={() => {
+          void refetchComments();
+        }}
+        colors={colors}
       />
-    </SafeAreaView>
+
+      <PostMediaViewer
+        visible={viewer.visible}
+        media={viewer.media}
+        initialIndex={viewer.index}
+        onClose={closeViewer}
+      />
+    </>
   );
 }
 
@@ -1010,19 +1282,37 @@ const styles = StyleSheet.create({
 
   coverImage: {
     width: "100%",
-    height: 240,
+    height: 220,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
   },
 
   coverFallback: {
     width: "100%",
-    height: 240,
+    height: 220,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
     borderBottomWidth: 1,
+  },
+
+  backButton: {
+    position: "absolute",
+    left: 20,
+    top: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.25)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
   },
 
   avatarFloatingWrap: {
     position: "absolute",
-    left: 32,
-    bottom: -54,
+    left: 24,
+    bottom: -56,
   },
 
   avatarOuter: {
@@ -1030,7 +1320,6 @@ const styles = StyleSheet.create({
     height: 116,
     borderRadius: 58,
     padding: 4,
-    backgroundColor: "#ffffff",
   },
 
   avatarImage: {
@@ -1054,20 +1343,9 @@ const styles = StyleSheet.create({
   },
 
   profileInfoSection: {
-    paddingTop: 66,
+    paddingTop: 68,
     paddingHorizontal: 32,
     paddingBottom: 20,
-  },
-
-  profileInfoRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-
-  profileInfoLeft: {
-    flex: 1,
   },
 
   profileName: {
@@ -1076,7 +1354,7 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_700Bold",
   },
 
-  profileEmail: {
+  profileSubText: {
     marginTop: 4,
     fontSize: 16,
     lineHeight: 22,
@@ -1100,11 +1378,13 @@ const styles = StyleSheet.create({
   profileActionButton: {
     flex: 1,
     minHeight: 44,
+    borderRadius: 999,
   },
 
   profileActionIconButton: {
     width: 56,
     minHeight: 44,
+    borderRadius: 999,
   },
 
   buttonContent: {
@@ -1139,11 +1419,13 @@ const styles = StyleSheet.create({
 
   tabsRoot: {
     borderBottomWidth: 1,
-    borderBottomColor: "#bbf7d0",
   },
 
-  tabTrigger: {
-    minWidth: 120,
+  tabsScrollContent: {
+    flexDirection: "row",
+    gap: 28,
+    paddingLeft: 20,
+    paddingRight: 28,
   },
 
   loadingWrap: {
@@ -1152,74 +1434,85 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  card: {
+  communityCard: {
     marginHorizontal: 16,
     marginTop: 14,
     borderWidth: 1,
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 14,
-  },
-
-  cardHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-  },
-
-  cardTitle: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontFamily: "Poppins_700Bold",
-  },
-
-  cardMeta: {
-    marginTop: 3,
-    fontSize: 12,
-    lineHeight: 17,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  postText: {
-    marginTop: 10,
-    fontSize: 14,
-    lineHeight: 21,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  postImage: {
-    marginTop: 12,
-    width: "100%",
-    height: 190,
-    borderRadius: 16,
-  },
-
-  engagementRow: {
-    marginTop: 12,
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 12,
   },
 
-  engagementText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Poppins_500Medium",
+  communityAvatar: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
   },
 
-  visibilityPill: {
+  communityAvatarFallback: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  communityInitials: {
+    fontSize: 18,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  communityInfo: {
+    flex: 1,
+  },
+
+  communityTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  smallPill: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
 
-  visibilityText: {
-    fontSize: 11,
-    lineHeight: 14,
+  smallPillText: {
+    fontSize: 10,
+    lineHeight: 13,
     fontFamily: "Poppins_600SemiBold",
   },
 
-  rowCard: {
+  communityStatsRow: {
+    marginTop: 7,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
+  miniStat: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+
+  miniStatText: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Poppins_500Medium",
+  },
+
+  friendCard: {
+    marginHorizontal: 16,
+    marginTop: 14,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -1243,6 +1536,55 @@ const styles = StyleSheet.create({
   smallInitials: {
     fontSize: 18,
     fontFamily: "Poppins_700Bold",
+  },
+
+  cardTitle: {
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  cardMeta: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: "Poppins_400Regular",
+  },
+
+  aboutWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    gap: 12,
+  },
+
+  infoRow: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  infoIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  infoLabel: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: "Poppins_500Medium",
+  },
+
+  infoValue: {
+    marginTop: 3,
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: "Poppins_600SemiBold",
   },
 
   emptyCard: {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -18,11 +18,23 @@ import dayjs from "dayjs";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useSession } from "@/api/better-auth-client";
-import { type Chat, useGetMyChatsQuery } from "@/store/api/chatApi";
+import {
+  type Chat,
+  type ChatMessage,
+  useGetMyChatsQuery,
+} from "@/store/api/chatApi";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 
 const RAW_API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ?? process.env.EXPO_PUBLIC_AUTH_URL ?? "";
+
+type UnreadMap = Record<string, number>;
+
+type NewMessagePayload = {
+  chatId: string;
+  message?: ChatMessage;
+  chat?: Chat;
+};
 
 function getSocketOrigin() {
   const rawBase = RAW_API_BASE_URL.trim();
@@ -35,12 +47,49 @@ function getSocketOrigin() {
 
   return cleanedBase.endsWith("/") ? cleanedBase.slice(0, -1) : cleanedBase;
 }
+ 
+function sortChatsByUpdatedAt(items: Chat[]) {
+  return [...items].sort((a, b) => {
+    const bTime = new Date(b.updatedAt).getTime();
+    const aTime = new Date(a.updatedAt).getTime();
+
+    return bTime - aTime;
+  });
+}
+
+function getServerUnreadCount(chat: Chat) {
+  const rawUnread =
+    (chat as any).unreadCount ??
+    (chat as any).unreadMessageCount ??
+    (chat as any).unreadMessages ??
+    0;
+
+  const count = Number(rawUnread);
+
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+function mergeChatsWithLocalUnread(chats: Chat[], localUnread: UnreadMap) {
+  return sortChatsByUpdatedAt(chats).map((chat) => {
+    const serverUnread = getServerUnreadCount(chat);
+    const localCount = localUnread[chat.id] ?? 0;
+
+    return {
+      chat,
+      unreadCount: Math.max(serverUnread, localCount),
+    };
+  });
+}
 
 export default function MessagesScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [search, setSearch] = useState("");
   const [presenceTick, setPresenceTick] = useState(0);
+
+  const [localChats, setLocalChats] = useState<Chat[]>([]);
+  const [localUnread, setLocalUnread] = useState<UnreadMap>({});
 
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
@@ -54,6 +103,10 @@ export default function MessagesScreen() {
   } = useGetMyChatsQuery();
 
   useEffect(() => {
+    setLocalChats(sortChatsByUpdatedAt(chats));
+  }, [chats]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       setPresenceTick((value) => value + 1);
     }, 60 * 1000);
@@ -62,6 +115,60 @@ export default function MessagesScreen() {
       clearInterval(interval);
     };
   }, []);
+
+  const clearUnreadForChat = useCallback((chatId: string) => {
+    setLocalUnread((prev) => {
+      if (!prev[chatId]) return prev;
+
+      const next = { ...prev };
+      delete next[chatId];
+
+      return next;
+    });
+  }, []);
+
+  const updateChatInstantly = useCallback(
+    (payload: NewMessagePayload) => {
+      const incomingChatId = payload.chatId;
+      const incomingMessage = payload.message;
+
+      if (!incomingChatId) return;
+
+      setLocalChats((prev) => {
+        const existingIndex = prev.findIndex((item) => item.id === incomingChatId);
+
+        if (payload.chat) {
+          const withoutCurrent = prev.filter((item) => item.id !== incomingChatId);
+          return sortChatsByUpdatedAt([payload.chat, ...withoutCurrent]);
+        }
+
+        if (existingIndex === -1) {
+          void refetch();
+          return prev;
+        }
+
+        const existingChat = prev[existingIndex];
+
+        const updatedChat: Chat = {
+          ...existingChat,
+          lastMessage: incomingMessage ?? existingChat.lastMessage ?? null,
+          updatedAt: incomingMessage?.createdAt ?? new Date().toISOString(),
+        };
+
+        const withoutCurrent = prev.filter((item) => item.id !== incomingChatId);
+
+        return sortChatsByUpdatedAt([updatedChat, ...withoutCurrent]);
+      });
+
+      if (incomingMessage && incomingMessage.senderId !== currentUserId) {
+        setLocalUnread((prev) => ({
+          ...prev,
+          [incomingChatId]: (prev[incomingChatId] ?? 0) + 1,
+        }));
+      }
+    },
+    [currentUserId, refetch],
+  );
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -82,9 +189,29 @@ export default function MessagesScreen() {
       },
     });
 
-    const handleRefresh = async () => {
+    const handleNewMessage = async (payload: NewMessagePayload) => {
       if (!mounted) return;
-      await refetch();
+
+      updateChatInstantly(payload);
+
+      try {
+        await refetch();
+      } catch (error) {
+        console.log("Message list refetch failed:", error);
+      }
+
+      setPresenceTick((value) => value + 1);
+    };
+
+    const handleSoftRefresh = async () => {
+      if (!mounted) return;
+
+      try {
+        await refetch();
+      } catch (error) {
+        console.log("Messages list refresh failed:", error);
+      }
+
       setPresenceTick((value) => value + 1);
     };
 
@@ -96,12 +223,10 @@ export default function MessagesScreen() {
       console.log("Backend socket connected:", payload);
     });
 
-    socket.on("message:new", handleRefresh);
-    socket.on("message:delivered", handleRefresh);
-    socket.on("chat:read", handleRefresh);
-
-    // Important for Online / Active now / Active 2m ago in the list
-    socket.on("presence:update", handleRefresh);
+    socket.on("message:new", handleNewMessage);
+    socket.on("message:delivered", handleSoftRefresh);
+    socket.on("chat:read", handleSoftRefresh);
+    socket.on("presence:update", handleSoftRefresh);
 
     socket.on("connect_error", (error) => {
       console.log("Messages list socket connect error:", error.message);
@@ -116,23 +241,27 @@ export default function MessagesScreen() {
 
       socket.off("connect");
       socket.off("connected");
-      socket.off("message:new", handleRefresh);
-      socket.off("message:delivered", handleRefresh);
-      socket.off("chat:read", handleRefresh);
-      socket.off("presence:update", handleRefresh);
+      socket.off("message:new", handleNewMessage);
+      socket.off("message:delivered", handleSoftRefresh);
+      socket.off("chat:read", handleSoftRefresh);
+      socket.off("presence:update", handleSoftRefresh);
       socket.off("connect_error");
       socket.off("disconnect");
 
       socket.disconnect();
     };
-  }, [currentUserId, refetch]);
+  }, [currentUserId, refetch, updateChatInstantly]);
+
+  const chatRows = useMemo(() => {
+    return mergeChatsWithLocalUnread(localChats, localUnread);
+  }, [localChats, localUnread]);
 
   const filteredChats = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    if (!q) return chats;
+    if (!q) return chatRows;
 
-    return chats.filter((chat) => {
+    return chatRows.filter(({ chat }) => {
       const name =
         chat.otherUser?.name || chat.otherUser?.businessName || "Unknown User";
 
@@ -144,7 +273,15 @@ export default function MessagesScreen() {
         lastMessage.toLowerCase().includes(q)
       );
     });
-  }, [search, chats]);
+  }, [search, chatRows]);
+
+  const handleOpenChat = useCallback(
+    (chatId: string) => {
+      clearUnreadForChat(chatId);
+      router.push(`/messages/${chatId}`);
+    },
+    [clearUnreadForChat],
+  );
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -177,7 +314,7 @@ export default function MessagesScreen() {
           </SearchField>
         </View>
 
-        {isLoading ? (
+        {isLoading && localChats.length === 0 ? (
           <View style={styles.centerWrap}>
             <ActivityIndicator />
             <Text style={styles.emptyText}>Loading messages...</Text>
@@ -206,14 +343,15 @@ export default function MessagesScreen() {
                 </Text>
               </View>
             ) : (
-              filteredChats.map((chat, index) => (
+              filteredChats.map(({ chat, unreadCount }, index) => (
                 <ConversationRow
                   key={chat.id}
                   chat={chat}
+                  unreadCount={unreadCount}
                   styles={styles}
                   showBorder={index !== filteredChats.length - 1}
                   presenceTick={presenceTick}
-                  onPress={() => router.push(`/messages/${chat.id}`)}
+                  onPress={() => handleOpenChat(chat.id)}
                 />
               ))
             )}
@@ -226,12 +364,14 @@ export default function MessagesScreen() {
 
 function ConversationRow({
   chat,
+  unreadCount,
   styles,
   showBorder,
   presenceTick,
   onPress,
 }: {
   chat: Chat;
+  unreadCount: number;
   styles: ReturnType<typeof createStyles>;
   showBorder: boolean;
   presenceTick: number;
@@ -243,11 +383,16 @@ function ConversationRow({
   const avatar = getAvatarUrl(name, chat.otherUser?.image);
 
   const lastMessage = getLastMessagePreview(chat);
+  const isUnread = unreadCount > 0;
 
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.row, showBorder && styles.rowBorder]}
+      style={[
+        styles.row,
+        showBorder && styles.rowBorder,
+        isUnread && styles.rowUnread,
+      ]}
     >
       <View style={styles.avatarWrap}>
         <Image source={{ uri: avatar }} style={styles.avatar} />
@@ -257,7 +402,10 @@ function ConversationRow({
 
       <View style={styles.rowMiddle}>
         <View style={styles.rowNameLine}>
-          <Text numberOfLines={1} style={styles.rowName}>
+          <Text
+            numberOfLines={1}
+            style={[styles.rowName, isUnread && styles.rowNameUnread]}
+          >
             {name}
           </Text>
 
@@ -266,7 +414,11 @@ function ConversationRow({
           ) : null}
         </View>
 
-        <Text numberOfLines={1} ellipsizeMode="tail" style={styles.rowMessage}>
+        <Text
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          style={[styles.rowMessage, isUnread && styles.rowMessageUnread]}
+        >
           {lastMessage}
         </Text>
 
@@ -276,9 +428,17 @@ function ConversationRow({
       </View>
 
       <View style={styles.rowRight}>
-        <Text style={styles.rowTime}>{formatChatTime(chat.updatedAt)}</Text>
+        <Text style={[styles.rowTime, isUnread && styles.rowTimeUnread]}>
+          {formatChatTime(chat.updatedAt)}
+        </Text>
 
-        {chat.lastMessage?.status === "DELIVERED" ? (
+        {isUnread ? (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadBadgeText}>
+              {unreadCount > 99 ? "99+" : String(unreadCount)}
+            </Text>
+          </View>
+        ) : chat.lastMessage?.status === "DELIVERED" ? (
           <Ionicons name="checkmark-done" size={16} color="#16a34a" />
         ) : chat.lastMessage ? (
           <Ionicons name="checkmark" size={16} color="#94a3b8" />
@@ -369,17 +529,20 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       flex: 1,
       backgroundColor: colors.background,
     },
+
     container: {
       flex: 1,
       backgroundColor: colors.background,
       paddingHorizontal: 16,
       paddingTop: 8,
     },
+
     topRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
     },
+
     backButton: {
       width: 38,
       height: 38,
@@ -387,6 +550,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       justifyContent: "center",
       borderColor: colors.border,
     },
+
     newChatButton: {
       width: 38,
       height: 38,
@@ -395,32 +559,47 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       justifyContent: "center",
       backgroundColor: colors.accent,
     },
+
     title: {
       fontSize: 22,
       fontWeight: "800",
       color: colors.foreground,
     },
+
     subtitle: {
       marginTop: 8,
       fontSize: 14,
       color: colors.muted,
     },
+
     searchWrap: {
       marginTop: 16,
       marginBottom: 12,
     },
+
     listContent: {
       paddingBottom: 28,
     },
+
     row: {
       flexDirection: "row",
       alignItems: "center",
       paddingVertical: 14,
+      paddingHorizontal: 2,
+      borderRadius: 16,
     },
+
+    rowUnread: {
+      backgroundColor: colors.surfaceSecondary,
+      paddingHorizontal: 8,
+      marginHorizontal: -6,
+    },
+
     rowBorder: {
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
+
     avatarWrap: {
       width: 52,
       height: 52,
@@ -428,11 +607,13 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       backgroundColor: colors.surfaceSecondary,
       position: "relative",
     },
+
     avatar: {
       width: "100%",
       height: "100%",
       borderRadius: 26,
     },
+
     onlineDot: {
       position: "absolute",
       right: 1,
@@ -444,46 +625,87 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       borderWidth: 2,
       borderColor: colors.background,
     },
+
     rowMiddle: {
       flex: 1,
       marginLeft: 12,
       minWidth: 0,
     },
+
     rowNameLine: {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
     },
+
     rowName: {
       flex: 1,
       fontSize: 15,
       fontWeight: "700",
       color: colors.foreground,
     },
+
+    rowNameUnread: {
+      fontWeight: "900",
+    },
+
     onlineText: {
       fontSize: 11,
       fontWeight: "700",
       color: colors.success,
     },
+
     rowMessage: {
       marginTop: 4,
       fontSize: 13,
       color: colors.muted,
     },
+
+    rowMessageUnread: {
+      color: colors.foreground,
+      fontWeight: "800",
+    },
+
     rowPresence: {
       marginTop: 3,
       fontSize: 11,
       color: colors.muted,
     },
+
     rowRight: {
       alignItems: "flex-end",
+      justifyContent: "center",
       gap: 8,
       marginLeft: 8,
+      minWidth: 46,
     },
+
     rowTime: {
       fontSize: 12,
       color: colors.muted,
     },
+
+    rowTimeUnread: {
+      color: colors.accent,
+      fontWeight: "800",
+    },
+
+    unreadBadge: {
+      minWidth: 22,
+      height: 22,
+      borderRadius: 11,
+      paddingHorizontal: 6,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.accent,
+    },
+
+    unreadBadgeText: {
+      color: colors.accentForeground,
+      fontSize: 11,
+      fontWeight: "900",
+    },
+
     centerWrap: {
       flex: 1,
       alignItems: "center",
@@ -491,18 +713,21 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       paddingVertical: 60,
       paddingHorizontal: 20,
     },
+
     emptyTitle: {
       fontSize: 17,
       fontWeight: "700",
       color: colors.foreground,
       textAlign: "center",
     },
+
     emptyText: {
       marginTop: 8,
       fontSize: 13,
       color: colors.muted,
       textAlign: "center",
     },
+
     retryButton: {
       marginTop: 14,
       paddingHorizontal: 16,
@@ -510,6 +735,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       borderRadius: 14,
       backgroundColor: colors.accent,
     },
+
     retryText: {
       color: colors.accentForeground,
       fontWeight: "700",

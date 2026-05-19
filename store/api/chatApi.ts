@@ -58,6 +58,7 @@ export type Chat = {
   otherUser?: ChatUser | null;
   members: ChatMember[];
   lastMessage?: ChatMessage | null;
+  unreadCount?: number;
 };
 
 export type GetMessagesResponse = {
