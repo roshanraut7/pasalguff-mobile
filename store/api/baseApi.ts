@@ -81,6 +81,7 @@ export const baseApi = createApi({
     "Profile",
     "AdminCommunities",
     "Notifications",
+    "CommunityGuidelines",
 
     /**
      * Post feed / post detail / my posts.

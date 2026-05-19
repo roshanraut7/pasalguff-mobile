@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
 
 import { useSession } from "@/api/better-auth-client";
 import CommentPostModal from "@/components/post/CommentsModal";
@@ -160,7 +161,9 @@ export default function HomeScreen() {
   ]);
 
   const handleAuthorPress = useCallback((authorId: string) => {
-    console.log("Author pressed:", authorId);
+    if (!authorId) return;
+
+    router.push(`/user/profile/${authorId}`);
   }, []);
 
   const renderPostItem = useCallback(
@@ -195,9 +198,11 @@ export default function HomeScreen() {
         refreshing={refreshing}
         onRefresh={handleRefresh}
         tintColor={colors.accent}
+        colors={[colors.accent]}
+        progressBackgroundColor={colors.surface}
       />
     ),
-    [refreshing, handleRefresh, colors.accent],
+    [refreshing, handleRefresh, colors.accent, colors.surface],
   );
 
   const emptyComponent = useMemo(() => {
@@ -311,14 +316,17 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={refreshControl}
           onEndReached={loadMorePosts}
-          onEndReachedThreshold={0.5}
+          onEndReachedThreshold={0.7}
           ListEmptyComponent={emptyComponent}
           ListFooterComponent={footerComponent}
-          removeClippedSubviews
-          initialNumToRender={4}
-          maxToRenderPerBatch={4}
-          updateCellsBatchingPeriod={80}
-          windowSize={5}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          scrollEventThrottle={16}
+          removeClippedSubviews={false}
+          initialNumToRender={5}
+          maxToRenderPerBatch={6}
+          updateCellsBatchingPeriod={50}
+          windowSize={9}
         />
       </SafeAreaView>
 
@@ -326,7 +334,9 @@ export default function HomeScreen() {
         visible={!!commentPost}
         post={activeCommentPost}
         comments={comments}
-        isLoading={(isLoadingComments || isFetchingComments) && comments.length === 0}
+        isLoading={
+          (isLoadingComments || isFetchingComments) && comments.length === 0
+        }
         isCreating={isCreatingComment || isCreatingReply}
         inputValue={commentInput}
         onChangeInput={setCommentInput}

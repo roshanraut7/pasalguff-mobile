@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "heroui-native";
+import { Accordion, Tabs } from "heroui-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSession } from "@/api/better-auth-client";
@@ -27,7 +27,11 @@ import {
   useGetCommunityBySlugQuery,
   useJoinCommunityMutation,
 } from "@/store/api/communityApi";
-import { useGetCommunityMembersQuery} from "@/store/api/communityMemberManagementApi"
+import { useGetCommunityMembersQuery } from "@/store/api/communityMemberManagementApi";
+import {
+  useGetCommunityGuidelinesQuery,
+  type CommunityGuidelineItem,
+} from "@/store/api/communityGuidelinesApi";
 import { useGetCommunityPostsQuery } from "@/store/api/postApi";
 import type { CommunityMemberItem } from "@/types/community";
 import type { CommunityPost } from "@/types/post";
@@ -148,6 +152,21 @@ export default function CommunityDetailScreen() {
       refetchOnMountOrArgChange: true,
     },
   );
+
+  const canLoadGuidelines =
+    !!session?.user && !!community?.id && Boolean(canViewContent);
+
+  const {
+    data: guidelinesResponse,
+    isLoading: guidelinesLoading,
+    isFetching: guidelinesFetching,
+    error: guidelinesError,
+  } = useGetCommunityGuidelinesQuery(community?.id ?? "", {
+    skip: !canLoadGuidelines,
+    refetchOnMountOrArgChange: true,
+  });
+
+  const guidelineItems = guidelinesResponse?.data ?? [];
 
   const [joinCommunity] = useJoinCommunityMutation();
 
@@ -291,45 +310,43 @@ export default function CommunityDetailScreen() {
     [tab, loadMorePosts, loadMoreMembers],
   );
 
-const handleAuthorPress = useCallback(
-  (authorId: string) => {
-    if (!authorId || !community?.id) return;
+  const handleAuthorPress = useCallback(
+    (authorId: string) => {
+      if (!authorId || !community?.id) return;
 
-    if (authorId === session?.user?.id) {
-      return;
-    }
+      if (authorId === session?.user?.id) {
+        return;
+      }
 
-    router.push({
-      pathname: "/user/profile/[userId]",
-      params: {
-        userId: authorId,
-        sourceCommunityId: community.id,
-      },
-    });
-  },
-  [community?.id, session?.user?.id],
-);
+      router.push({
+        pathname: "/user/profile/[userId]",
+        params: {
+          userId: authorId,
+          sourceCommunityId: community.id,
+        },
+      });
+    },
+    [community?.id, session?.user?.id],
+  );
 
-const handleMemberPress = useCallback(
-  (memberUserId?: string | null) => {
-    if (!memberUserId || !community?.id) return;
+  const handleMemberPress = useCallback(
+    (memberUserId?: string | null) => {
+      if (!memberUserId || !community?.id) return;
 
-    if (memberUserId === session?.user?.id) {
-      return;
-    }
+      if (memberUserId === session?.user?.id) {
+        return;
+      }
 
-    router.push({
-      pathname: "/user/profile/[userId]",
-      params: {
-        userId: memberUserId,
-        sourceCommunityId: community.id,
-      },
-    });
-  },
-  [community?.id, session?.user?.id],
-);
-
-
+      router.push({
+        pathname: "/user/profile/[userId]",
+        params: {
+          userId: memberUserId,
+          sourceCommunityId: community.id,
+        },
+      });
+    },
+    [community?.id, session?.user?.id],
+  );
 
   if (isPending || communityLoading || accessLoading) {
     return (
@@ -709,21 +726,85 @@ const handleMemberPress = useCallback(
                     </View>
                   </Tabs.Content>
 
-                  <Tabs.Content value="guidelines">
-                    <View className="bg-background px-5 pt-2">
-                      <Text
-                        className="text-muted"
-                        style={{
-                          fontSize: 14,
-                          lineHeight: 22,
-                          fontFamily: "Poppins_400Regular",
-                        }}
-                      >
-                        Guidelines API is not added yet, so this tab is only a UI
-                        placeholder for now.
-                      </Text>
-                    </View>
-                  </Tabs.Content>
+<Tabs.Content value="guidelines">
+  <View className="bg-background px-5 pt-2">
+    {!canViewContent && community.visibility === "PRIVATE" ? (
+      <Text
+        className="text-muted"
+        style={{
+          fontSize: 14,
+          lineHeight: 22,
+          fontFamily: "Poppins_400Regular",
+        }}
+      >
+        Join this private community to view guidelines.
+      </Text>
+    ) : guidelinesLoading ||
+      (guidelinesFetching && guidelineItems.length === 0) ? (
+      <View className="py-6">
+        <ActivityIndicator size="small" color={colors.accent} />
+      </View>
+    ) : guidelinesError ? (
+      <Text
+        style={{
+          color: colors.danger,
+          fontSize: 14,
+          fontFamily: "Poppins_500Medium",
+        }}
+      >
+        Failed to load guidelines.
+      </Text>
+    ) : guidelineItems.length === 0 ? (
+      <View className="rounded-[22px] bg-surface px-4 py-5">
+        <Text
+          className="text-foreground"
+          style={{
+            fontSize: 16,
+            fontFamily: "Poppins_700Bold",
+          }}
+        >
+          No guidelines yet
+        </Text>
+
+        <Text
+          className="mt-1 text-muted"
+          style={{
+            fontSize: 14,
+            lineHeight: 22,
+            fontFamily: "Poppins_400Regular",
+          }}
+        >
+          Community guidelines will appear here once the admin adds them.
+        </Text>
+      </View>
+    ) : (
+      <Accordion
+        selectionMode="single"
+        variant="surface"
+        defaultValue={guidelineItems[0]?.id}
+        className="overflow-hidden rounded-[22px]"
+        styles={{
+          container: {
+            borderRadius: 22,
+            overflow: "hidden",
+          },
+          separator: {
+            height: 1,
+          },
+        }}
+      >
+        {guidelineItems.map((guideline, index) => (
+          <GuidelineAccordionItem
+            key={guideline.id}
+            guideline={guideline}
+            index={index}
+            colors={colors}
+          />
+        ))}
+      </Accordion>
+    )}
+  </View>
+</Tabs.Content>
 
                   <Tabs.Content value="members">
                     <View className="bg-background px-5 pt-2">
@@ -774,13 +855,15 @@ const handleMemberPress = useCallback(
 
                             return (
                               <MemberRow
-  key={member.id}
-  member={member}
-  memberAvatar={memberAvatar}
-  canManageMembers={canManageMembers}
-  colors={colors}
-  onPressProfile={() => handleMemberPress(member.user.id)}
-/>
+                                key={member.id}
+                                member={member}
+                                memberAvatar={memberAvatar}
+                                canManageMembers={canManageMembers}
+                                colors={colors}
+                                onPressProfile={() =>
+                                  handleMemberPress(member.user.id)
+                                }
+                              />
                             );
                           })}
 
@@ -822,7 +905,9 @@ const handleMemberPress = useCallback(
         visible={!!commentPost}
         post={activeCommentPost}
         comments={comments}
-        isLoading={(isLoadingComments || isFetchingComments) && comments.length === 0}
+        isLoading={
+          (isLoadingComments || isFetchingComments) && comments.length === 0
+        }
         isCreating={isCreatingComment || isCreatingReply}
         inputValue={commentInput}
         onChangeInput={setCommentInput}
@@ -886,6 +971,67 @@ function InlineStat({
     </View>
   );
 }
+function GuidelineAccordionItem({
+  guideline,
+  index,
+  colors,
+}: {
+  guideline: CommunityGuidelineItem;
+  index: number;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  return (
+    <Accordion.Item value={guideline.id}>
+      <Accordion.Trigger className="px-4 py-4">
+        <View className="flex-row items-center" style={{ flex: 1 }}>
+          <View className="mr-3 h-[30px] w-[30px] items-center justify-center rounded-full bg-segment">
+            <Text
+              style={{
+                color: colors.accent,
+                fontSize: 13,
+                fontFamily: "Poppins_700Bold",
+              }}
+            >
+              {index + 1}
+            </Text>
+          </View>
+
+          <Text
+            className="text-foreground"
+            numberOfLines={2}
+            style={{
+              flex: 1,
+              fontSize: 14,
+              lineHeight: 21,
+              fontFamily: "Poppins_600SemiBold",
+            }}
+          >
+            {guideline.title}
+          </Text>
+        </View>
+
+        <Accordion.Indicator />
+      </Accordion.Trigger>
+
+      <Accordion.Content>
+        <Text
+          className="text-muted"
+          style={{
+            paddingLeft: 47,
+            paddingRight: 16,
+            paddingBottom: 16,
+            fontSize: 13,
+            lineHeight: 21,
+            fontFamily: "Poppins_400Regular",
+          }}
+        >
+          {guideline.description || "No description provided."}
+        </Text>
+      </Accordion.Content>
+    </Accordion.Item>
+  );
+}
+
 function MemberRow({
   member,
   memberAvatar,
@@ -962,6 +1108,7 @@ function MemberRow({
     </Pressable>
   );
 }
+
 function InfoRow({
   icon,
   label,

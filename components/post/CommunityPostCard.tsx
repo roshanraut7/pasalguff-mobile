@@ -62,16 +62,23 @@ type CommunityPostCardProps = {
 
 function getAuthorName(author: CommunityPost["author"]) {
   const full = `${author.firstName ?? ""} ${author.lastName ?? ""}`.trim();
+
   if (full) return full;
   if (author.name?.trim()) return author.name.trim();
   if (author.businessName?.trim()) return author.businessName.trim();
+
   return "Unknown user";
 }
 
 function getInitials(name: string) {
   const parts = name.split(" ").filter(Boolean);
+
   if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0]?.charAt(0)?.toUpperCase() || "U";
+
+  if (parts.length === 1) {
+    return parts[0]?.charAt(0)?.toUpperCase() || "U";
+  }
+
   return `${parts[0]?.charAt(0) ?? ""}${parts[1]?.charAt(0) ?? ""}`.toUpperCase();
 }
 
@@ -84,17 +91,22 @@ function formatCount(value?: number | null) {
 
   if (count <= 0) return "";
   if (count < 1000) return `${count}`;
-  if (count < 1_000_000) return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
+  if (count < 1_000_000) {
+    return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
+  }
+
   return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
 }
 
 function actionLabel(label: string, value?: number | null) {
   const count = formatCount(value);
+
   return count ? `${label} ${count}` : label;
 }
 
 function htmlToPlainText(html?: string | null) {
   if (!html) return "";
+
   return html
     .replace(/<\/li>/gi, "\n")
     .replace(/<li[^>]*>/gi, "• ")
@@ -104,7 +116,7 @@ function htmlToPlainText(html?: string | null) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
-// Reaction button component used for like, comment, and share actions. It changes appearance based on active state and handles press interactions.
+
 const ReactionButton = memo(function ReactionButton({
   icon,
   label,
@@ -133,6 +145,7 @@ const ReactionButton = memo(function ReactionButton({
         size={18}
         color={active ? colors.accent : colors.muted}
       />
+
       <Text
         numberOfLines={1}
         style={[styles.reactionText, active && styles.reactionTextActive]}
@@ -142,7 +155,7 @@ const ReactionButton = memo(function ReactionButton({
     </Pressable>
   );
 });
-// Media tap handling with single vs double tap detection
+
 const MediaTapLayer = memo(function MediaTapLayer({
   children,
   onSingleTap,
@@ -153,7 +166,9 @@ const MediaTapLayer = memo(function MediaTapLayer({
   onDoubleTap?: () => void;
 }) {
   const lastTapRef = useRef(0);
-  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   useEffect(() => {
     return () => {
@@ -171,8 +186,10 @@ const MediaTapLayer = memo(function MediaTapLayer({
         clearTimeout(singleTapTimeoutRef.current);
         singleTapTimeoutRef.current = null;
       }
+
       lastTapRef.current = 0;
       onDoubleTap?.();
+
       return;
     }
 
@@ -191,7 +208,6 @@ const MediaTapLayer = memo(function MediaTapLayer({
   );
 });
 
-//ImageSlide and VideoSlide components for rendering media in the carousel, with tap handling for like and media actions
 const ImageSlide = memo(function ImageSlide({
   uri,
   onSingleTap,
@@ -217,7 +233,6 @@ const ImageSlide = memo(function ImageSlide({
   );
 });
 
-// For videos, we use the expo-video player and control playback based on whether the slide is active. Taps are handled similarly to images.
 const VideoSlide = memo(function VideoSlide({
   uri,
   active,
@@ -255,7 +270,7 @@ const VideoSlide = memo(function VideoSlide({
     </MediaTapLayer>
   );
 });
-// The PostMediaCarousel component renders a carousel of media items (images/videos) for a post. It handles the logic for displaying dots for multiple media, and the heart animation on double tap.
+
 const PostMediaCarousel = memo(function PostMediaCarousel({
   media,
   disabled,
@@ -282,7 +297,7 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
           ...item,
           url: toAbsoluteFileUrl(item.url) ?? item.url,
         })),
-    [media]
+    [media],
   );
 
   const carouselWidth = screenWidth;
@@ -298,16 +313,18 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
 
   const triggerHeart = useCallback(() => {
     onDoubleTapLike?.();
+
     heartOpacity.value = 1;
     heartScale.value = 0.72;
 
     heartScale.value = withSequence(
       withSpring(1.08, { damping: 10, stiffness: 180 }),
-      withTiming(1, { duration: 120 })
+      withTiming(1, { duration: 120 }),
     );
+
     heartOpacity.value = withSequence(
       withTiming(1, { duration: 70 }),
-      withTiming(0, { duration: 420 })
+      withTiming(0, { duration: 420 }),
     );
   }, [heartOpacity, heartScale, onDoubleTapLike]);
 
@@ -324,6 +341,16 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
         data={normalizedMedia}
         scrollAnimationDuration={300}
         onSnapToItem={setIndex}
+        /**
+         * SCROLL FIX:
+         * This makes the carousel respond only to horizontal swipes.
+         * Vertical swipes now pass back to the parent FlatList.
+         */
+        onConfigurePanGesture={(gesture) => {
+          "worklet";
+          gesture.activeOffsetX([-12, 12]);
+          gesture.failOffsetY([-8, 8]);
+        }}
         renderItem={({ item, index: mediaIndex }) =>
           item.type === "VIDEO" ? (
             <VideoSlide
@@ -344,7 +371,10 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
         }
       />
 
-      <Animated.View pointerEvents="none" style={[styles.heartOverlay, heartStyle]}>
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.heartOverlay, heartStyle]}
+      >
         <Ionicons name="heart" size={88} color="#ffffff" />
       </Animated.View>
 
@@ -391,6 +421,7 @@ export default function CommunityPostCard({
 
   const htmlSource = useMemo(() => {
     if (!post.content?.trim()) return null;
+
     return { html: `<div>${post.content}</div>` };
   }, [post.content]);
 
@@ -398,9 +429,7 @@ export default function CommunityPostCard({
 
   const toggleLike = useCallback(() => {
     onPressLike?.(post);
-
-  },[onPressLike, post]);
-
+  }, [onPressLike, post]);
 
   const handleDoubleTapLike = useCallback(() => {
     if (liked) return;
@@ -408,16 +437,17 @@ export default function CommunityPostCard({
     onPressLike?.(post);
   }, [liked, onPressLike, post]);
 
- const handleShare = useCallback(() => {
-  onPressShare?.(post);
-}, [onPressShare, post]);
-
+  const handleShare = useCallback(() => {
+    onPressShare?.(post);
+  }, [onPressShare, post]);
 
   const handleOpenLink = useCallback(async (_event: unknown, href?: string) => {
     if (!href) return;
 
     const finalUrl =
-      /^https?:\/\//i.test(href) || /^mailto:/i.test(href) || /^tel:/i.test(href)
+      /^https?:\/\//i.test(href) ||
+      /^mailto:/i.test(href) ||
+      /^tel:/i.test(href)
         ? href
         : `https://${href}`;
 
@@ -442,9 +472,15 @@ export default function CommunityPostCard({
   return (
     <Surface variant="default" style={styles.card}>
       <View style={styles.header}>
-        <Pressable onPress={() => onPressAuthor?.(post.author.id)} style={styles.authorRow}>
+        <Pressable
+          onPress={() => onPressAuthor?.(post.author.id)}
+          style={styles.authorRow}
+        >
           <Avatar alt="" size="md" variant="soft" color="accent">
-            {authorImage ? <Avatar.Image source={{ uri: authorImage }} /> : null}
+            {authorImage ? (
+              <Avatar.Image source={{ uri: authorImage }} />
+            ) : null}
+
             <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
           </Avatar>
 
@@ -459,9 +495,11 @@ export default function CommunityPostCard({
                   <Text numberOfLines={1} style={styles.communityName}>
                     {post.community.name}
                   </Text>
+
                   <Text style={styles.subMetaDot}>•</Text>
                 </>
               )}
+
               <Text style={styles.timeText}>{getPostTime(post)}</Text>
             </View>
           </View>
@@ -472,12 +510,17 @@ export default function CommunityPostCard({
             <Menu>
               <Menu.Trigger asChild>
                 <Pressable style={styles.moreButton}>
-                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+                  <Ionicons
+                    name="ellipsis-horizontal"
+                    size={20}
+                    color={colors.muted}
+                  />
                 </Pressable>
               </Menu.Trigger>
 
               <Menu.Portal>
                 <Menu.Overlay />
+
                 <Menu.Content
                   presentation="popover"
                   placement="bottom"
@@ -490,7 +533,12 @@ export default function CommunityPostCard({
                     variant="danger"
                     className="flex-row items-center gap-3"
                   >
-                    <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                    <Ionicons
+                      name="trash-outline"
+                      size={18}
+                      color={colors.danger}
+                    />
+
                     <Menu.ItemTitle>Delete post</Menu.ItemTitle>
                   </Menu.Item>
                 </Menu.Content>
@@ -499,7 +547,11 @@ export default function CommunityPostCard({
           </View>
         ) : (
           <Pressable style={styles.moreButton}>
-            <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={20}
+              color={colors.muted}
+            />
           </Pressable>
         )}
       </View>
@@ -549,7 +601,10 @@ export default function CommunityPostCard({
           )}
 
           {shouldCollapse && (
-            <Pressable onPress={() => setExpanded((prev) => !prev)} style={styles.seeMoreWrap}>
+            <Pressable
+              onPress={() => setExpanded((prev) => !prev)}
+              style={styles.seeMoreWrap}
+            >
               <Text style={styles.seeMoreText}>
                 {expanded ? "See less" : "See more"}
               </Text>
@@ -564,6 +619,7 @@ export default function CommunityPostCard({
           onPress={() => handleOpenLink(null, post.linkUrl ?? undefined)}
         >
           <Ionicons name="link-outline" size={16} color={colors.link} />
+
           <Text numberOfLines={1} style={styles.linkText}>
             {post.linkUrl}
           </Text>
@@ -590,6 +646,7 @@ export default function CommunityPostCard({
           colors={colors}
           styles={styles}
         />
+
         <ReactionButton
           icon="chatbubble-outline"
           label={actionLabel("Comment", post.commentCount)}
@@ -597,6 +654,7 @@ export default function CommunityPostCard({
           colors={colors}
           styles={styles}
         />
+
         <ReactionButton
           icon="share-social-outline"
           label={actionLabel("Share", post.shareCount)}
@@ -609,19 +667,31 @@ export default function CommunityPostCard({
       <Dialog isOpen={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <Dialog.Portal>
           <Dialog.Overlay />
+
           <Dialog.Content className="mx-5 rounded-[24px] bg-surface px-5 py-5">
             <View style={styles.dialogContent}>
               <Dialog.Title>Delete post</Dialog.Title>
+
               <Dialog.Description>
-                Are you sure you want to delete this post? This action cannot be undone.
+                Are you sure you want to delete this post? This action cannot be
+                undone.
               </Dialog.Description>
 
               <View style={styles.deleteWarningRow}>
-                <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color={colors.danger}
+                />
+
                 <View style={styles.deleteWarningTextWrap}>
-                  <Text style={styles.deleteWarningTitle}>Permanent action</Text>
+                  <Text style={styles.deleteWarningTitle}>
+                    Permanent action
+                  </Text>
+
                   <Text style={styles.deleteWarningText}>
-                    The post will be removed from your profile and community feed.
+                    The post will be removed from your profile and community
+                    feed.
                   </Text>
                 </View>
               </View>
@@ -645,6 +715,7 @@ export default function CommunityPostCard({
                     size={16}
                     color={colors.dangerForeground}
                   />
+
                   <Text style={styles.dialogDeleteText}>
                     {isDeleting ? "Deleting..." : "Delete"}
                   </Text>
@@ -679,6 +750,7 @@ function createStyles(colors: AppColors) {
       elevation: 0,
       backgroundColor: colors.surface,
     },
+
     header: {
       width: "100%",
       flexDirection: "row",
@@ -686,43 +758,52 @@ function createStyles(colors: AppColors) {
       justifyContent: "space-between",
       paddingHorizontal: 12,
     },
+
     authorRow: {
       width: "86%",
       flexDirection: "row",
       alignItems: "center",
     },
+
     authorMeta: {
       width: "78%",
       marginLeft: 8,
     },
+
     authorName: {
       fontSize: 15,
       color: colors.foreground,
       fontFamily: "Poppins_600SemiBold",
     },
+
     subMetaRow: {
       flexDirection: "row",
       alignItems: "center",
       marginTop: 1,
     },
+
     communityName: {
       maxWidth: 130,
       fontSize: 12,
       color: colors.muted,
       fontFamily: "Poppins_400Regular",
     },
+
     subMetaDot: {
       marginHorizontal: 6,
       color: colors.placeholder,
     },
+
     timeText: {
       fontSize: 12,
       color: colors.muted,
       fontFamily: "Poppins_400Regular",
     },
+
     moreWrap: {
       position: "relative",
     },
+
     moreButton: {
       width: 32,
       height: 32,
@@ -737,15 +818,18 @@ function createStyles(colors: AppColors) {
       paddingHorizontal: 12,
       paddingBottom: 2,
     },
+
     previewText: {
       color: colors.foreground,
       fontSize: 15,
       lineHeight: 24,
       fontFamily: "Poppins_400Regular",
     },
+
     seeMoreWrap: {
       marginTop: 6,
     },
+
     seeMoreText: {
       color: colors.link,
       fontSize: 13,
@@ -758,6 +842,7 @@ function createStyles(colors: AppColors) {
       lineHeight: 24,
       fontFamily: "Poppins_400Regular",
     },
+
     htmlParagraph: {
       marginTop: 0,
       marginBottom: 8,
@@ -766,29 +851,35 @@ function createStyles(colors: AppColors) {
       lineHeight: 24,
       fontFamily: "Poppins_400Regular",
     },
+
     htmlSpan: {
       color: colors.foreground,
       fontSize: 15,
       lineHeight: 24,
       fontFamily: "Poppins_400Regular",
     },
+
     htmlStrong: {
       color: colors.foreground,
       fontFamily: "Poppins_600SemiBold",
     },
+
     htmlEm: {
       color: colors.foreground,
       fontStyle: "italic",
     },
+
     htmlUnderline: {
       color: colors.foreground,
       textDecorationLine: "underline",
     },
+
     htmlList: {
       marginTop: 0,
       marginBottom: 8,
       paddingLeft: 18,
     },
+
     htmlListItem: {
       color: colors.foreground,
       fontSize: 15,
@@ -796,10 +887,12 @@ function createStyles(colors: AppColors) {
       marginBottom: 4,
       fontFamily: "Poppins_400Regular",
     },
+
     htmlLink: {
       color: colors.link,
       textDecorationLine: "underline",
     },
+
     htmlH1: {
       fontSize: 28,
       lineHeight: 36,
@@ -807,6 +900,7 @@ function createStyles(colors: AppColors) {
       color: colors.foreground,
       marginBottom: 8,
     },
+
     htmlH2: {
       fontSize: 24,
       lineHeight: 32,
@@ -814,6 +908,7 @@ function createStyles(colors: AppColors) {
       color: colors.foreground,
       marginBottom: 8,
     },
+
     htmlH3: {
       fontSize: 20,
       lineHeight: 28,
@@ -821,6 +916,7 @@ function createStyles(colors: AppColors) {
       color: colors.foreground,
       marginBottom: 8,
     },
+
     htmlH4: {
       fontSize: 18,
       lineHeight: 26,
@@ -828,6 +924,7 @@ function createStyles(colors: AppColors) {
       color: colors.foreground,
       marginBottom: 8,
     },
+
     htmlH5: {
       fontSize: 16,
       lineHeight: 24,
@@ -835,6 +932,7 @@ function createStyles(colors: AppColors) {
       color: colors.foreground,
       marginBottom: 8,
     },
+
     htmlH6: {
       fontSize: 15,
       lineHeight: 22,
@@ -855,6 +953,7 @@ function createStyles(colors: AppColors) {
       alignItems: "center",
       gap: 8,
     },
+
     linkText: {
       width: "92%",
       color: colors.link,
@@ -870,11 +969,13 @@ function createStyles(colors: AppColors) {
       position: "relative",
       marginTop: 4,
     },
+
     slideMedia: {
       width: "100%",
       height: "100%",
       backgroundColor: colors.surface,
     },
+
     heartOverlay: {
       position: "absolute",
       top: "50%",
@@ -883,6 +984,7 @@ function createStyles(colors: AppColors) {
       marginTop: -44,
       zIndex: 20,
     },
+
     dotsRow: {
       position: "absolute",
       bottom: 8,
@@ -894,12 +996,14 @@ function createStyles(colors: AppColors) {
       borderRadius: 999,
       backgroundColor: "rgba(0,0,0,0.28)",
     },
+
     dot: {
       width: 7,
       height: 7,
       borderRadius: 999,
       backgroundColor: "rgba(255,255,255,0.55)",
     },
+
     dotActive: {
       backgroundColor: "#ffffff",
       width: 16,
@@ -914,6 +1018,7 @@ function createStyles(colors: AppColors) {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
     },
+
     reactionButton: {
       width: "32.2%",
       minHeight: 36,
@@ -924,14 +1029,17 @@ function createStyles(colors: AppColors) {
       justifyContent: "center",
       gap: 5,
     },
+
     reactionButtonPressed: {
       backgroundColor: colors.segment,
     },
+
     reactionText: {
       color: colors.muted,
       fontSize: 12,
       fontFamily: "Poppins_500Medium",
     },
+
     reactionTextActive: {
       color: colors.accent,
     },
@@ -939,19 +1047,23 @@ function createStyles(colors: AppColors) {
     dialogContent: {
       gap: 14,
     },
+
     deleteWarningRow: {
       flexDirection: "row",
       alignItems: "flex-start",
       gap: 10,
     },
+
     deleteWarningTextWrap: {
       width: "88%",
     },
+
     deleteWarningTitle: {
       color: colors.danger,
       fontSize: 15,
       fontFamily: "Poppins_600SemiBold",
     },
+
     deleteWarningText: {
       marginTop: 2,
       color: colors.muted,
@@ -959,12 +1071,14 @@ function createStyles(colors: AppColors) {
       lineHeight: 22,
       fontFamily: "Poppins_400Regular",
     },
+
     dialogActions: {
       flexDirection: "row",
       justifyContent: "flex-end",
       gap: 10,
       marginTop: 4,
     },
+
     dialogButton: {
       minHeight: 42,
       borderRadius: 14,
@@ -974,17 +1088,21 @@ function createStyles(colors: AppColors) {
       justifyContent: "center",
       gap: 6,
     },
+
     dialogCancelButton: {
       backgroundColor: colors.surfaceSecondary,
     },
+
     dialogDeleteButton: {
       backgroundColor: colors.danger,
     },
+
     dialogCancelText: {
       color: colors.foreground,
       fontSize: 14,
       fontFamily: "Poppins_600SemiBold",
     },
+
     dialogDeleteText: {
       color: colors.dangerForeground,
       fontSize: 14,
