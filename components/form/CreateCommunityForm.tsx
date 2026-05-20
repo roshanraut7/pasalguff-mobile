@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Keyboard,
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { router } from "expo-router";
@@ -19,7 +19,6 @@ import {
   Input,
   Label,
   Menu,
-  SearchField,
   TextField,
 } from "heroui-native";
 
@@ -62,7 +61,6 @@ export default function CreateCommunityForm({
   const [debouncedCategorySearch, setDebouncedCategorySearch] = useState("");
   const [selectedCategorySnapshot, setSelectedCategorySnapshot] =
     useState<CategoryRow | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -71,21 +69,6 @@ export default function CreateCommunityForm({
 
     return () => clearTimeout(timer);
   }, [categorySearch]);
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardDidShow", () => {
-      setKeyboardVisible(true);
-    });
-
-    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
-      setKeyboardVisible(false);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   const {
     data: categoriesResponse,
@@ -498,7 +481,7 @@ export default function CreateCommunityForm({
                         fontFamily: "Poppins_400Regular",
                       }}
                     >
-                      {categoriesLoading
+                      {categoriesLoading && categories.length === 0
                         ? "Loading categories..."
                         : selectedCategory?.name || "Select a category"}
                     </Text>
@@ -516,30 +499,77 @@ export default function CreateCommunityForm({
 
                   <Menu.Content
                     presentation="popover"
-                    placement={keyboardVisible ? "top" : "bottom"}
+                    placement="bottom"
                     align="center"
                     width={300}
                     className="rounded-3xl border border-border bg-surface p-3"
                   >
-                    <View className="mb-2">
-                      <SearchField
+                    <View
+                      style={{
+                        marginBottom: 8,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        borderRadius: 14,
+                        backgroundColor: colors.background,
+                        paddingHorizontal: 12,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <Ionicons
+                        name="search-outline"
+                        size={16}
+                        color={colors.muted}
+                      />
+
+                      <TextInput
                         value={categorySearch}
-                        onChange={setCategorySearch}
-                      >
-                        <SearchField.Group className="">
-                          <SearchField.SearchIcon  />
+                        onChangeText={setCategorySearch}
+                        placeholder="Search category..."
+                        placeholderTextColor={colors.placeholder}
+                        autoCorrect={false}
+                        autoCapitalize="none"
+                        style={{
+                          flex: 1,
+                          minHeight: 42,
+                          color: colors.foreground,
+                          fontSize: 14,
+                          fontFamily: "Poppins_400Regular",
+                        }}
+                      />
 
-                          <SearchField.Input
-                            placeholder="Search category..."
-                            className="flex-1"
+                      {categorySearch.length > 0 ? (
+                        <Pressable
+                          onPress={() => {
+                            setCategorySearch("");
+                            setDebouncedCategorySearch("");
+                          }}
+                          hitSlop={10}
+                        >
+                          <Ionicons
+                            name="close-circle"
+                            size={18}
+                            color={colors.muted}
                           />
-
-                          <SearchField.ClearButton />
-                        </SearchField.Group>
-                      </SearchField>
+                        </Pressable>
+                      ) : null}
                     </View>
 
-                    {categoriesLoading || categoriesFetching ? (
+                    {categoriesFetching && categories.length > 0 ? (
+                      <Text
+                        style={{
+                          color: colors.muted,
+                          fontSize: 12,
+                          fontFamily: "Poppins_400Regular",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Searching...
+                      </Text>
+                    ) : null}
+
+                    {categoriesLoading && categories.length === 0 ? (
                       <Menu.Item isDisabled>
                         <View
                           style={{
@@ -559,7 +589,7 @@ export default function CreateCommunityForm({
                               fontFamily: "Poppins_500Medium",
                             }}
                           >
-                            Searching categories...
+                            Loading categories...
                           </Menu.ItemTitle>
                         </View>
                       </Menu.Item>
@@ -587,7 +617,7 @@ export default function CreateCommunityForm({
                       </Menu.Item>
                     ) : (
                       <ScrollView
-                        style={{ maxHeight: keyboardVisible ? 220 : 360 }}
+                        style={{ maxHeight: 320 }}
                         nestedScrollEnabled
                         keyboardShouldPersistTaps="handled"
                         showsVerticalScrollIndicator={false}

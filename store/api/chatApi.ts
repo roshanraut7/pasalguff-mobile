@@ -88,7 +88,6 @@ export type UploadChatFileResponse = {
   mimetype: string;
   size: number;
 };
-
 export const chatApi = baseApi.injectEndpoints({
   overrideExisting: true,
   endpoints: (builder) => ({
@@ -97,7 +96,16 @@ export const chatApi = baseApi.injectEndpoints({
         url: "/chats",
         method: "GET",
       }),
-      providesTags: ["Chat"],
+      providesTags: (result) =>
+        result
+          ? [
+              { type: "Chat" as const, id: "LIST" },
+              ...result.map((chat) => ({
+                type: "Chat" as const,
+                id: chat.id,
+              })),
+            ]
+          : [{ type: "Chat" as const, id: "LIST" }],
     }),
 
     getChat: builder.query<Chat, string>({
@@ -106,7 +114,7 @@ export const chatApi = baseApi.injectEndpoints({
         method: "GET",
       }),
       providesTags: (_result, _error, chatId) => [
-        { type: "Chat", id: chatId },
+        { type: "Chat" as const, id: chatId },
       ],
     }),
 
@@ -120,7 +128,7 @@ export const chatApi = baseApi.injectEndpoints({
         params: { page, limit },
       }),
       providesTags: (_result, _error, arg) => [
-        { type: "Message", id: arg.chatId },
+        { type: "Message" as const, id: arg.chatId },
       ],
     }),
 
@@ -133,7 +141,7 @@ export const chatApi = baseApi.injectEndpoints({
         method: "POST",
         body: body ?? {},
       }),
-      invalidatesTags: ["Chat"],
+      invalidatesTags: [{ type: "Chat", id: "LIST" }],
     }),
 
     sendMessage: builder.mutation<
@@ -146,7 +154,8 @@ export const chatApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: (_result, _error, arg) => [
-        "Chat",
+        { type: "Chat", id: "LIST" },
+        { type: "Chat", id: arg.chatId },
         { type: "Message", id: arg.chatId },
       ],
     }),
@@ -157,6 +166,7 @@ export const chatApi = baseApi.injectEndpoints({
         method: "PATCH",
       }),
       invalidatesTags: (_result, _error, chatId) => [
+        { type: "Chat", id: "LIST" },
         { type: "Chat", id: chatId },
       ],
     }),

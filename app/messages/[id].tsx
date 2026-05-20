@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -13,7 +13,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -24,7 +24,6 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useSession } from "@/api/better-auth-client";
 import {
   type ChatMessage,
-  type MessageType,
   useGetChatMessagesQuery,
   useGetChatQuery,
   useMarkChatReadMutation,
@@ -75,10 +74,20 @@ const DRAWER_ACTIONS: DrawerAction[] = [
 
 const ANDROID_KEYBOARD_EXTRA = 40;
 
-const SOCKET_ORIGIN =
-  process.env.EXPO_PUBLIC_API_URL ??
-  process.env.EXPO_PUBLIC_AUTH_URL ??
-  "";
+const RAW_API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ?? process.env.EXPO_PUBLIC_AUTH_URL ?? "";
+
+function getSocketOrigin() {
+  const rawBase = RAW_API_BASE_URL.trim();
+
+  if (!rawBase) return "";
+
+  const cleanedBase = rawBase
+    .replace(/\/api\/auth\/?$/i, "")
+    .replace(/\/api\/?$/i, "");
+
+  return cleanedBase.endsWith("/") ? cleanedBase.slice(0, -1) : cleanedBase;
+}
 
 export default function ConversationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -97,6 +106,7 @@ export default function ConversationScreen() {
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [presenceTick, setPresenceTick] = useState(0);
   const [pendingUploads, setPendingUploads] = useState<PendingUploadItem[]>([]);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
 
   const scrollRef = useRef<ScrollView | null>(null);
   const drawerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,16 +120,19 @@ export default function ConversationScreen() {
     refetch: refetchChat,
   } = useGetChatQuery(chatId, {
     skip: !chatId,
+    refetchOnMountOrArgChange: true,
   });
 
   const {
     data: messagePage,
     isLoading: messagesLoading,
-    isFetching: messagesFetching,
     refetch: refetchMessages,
   } = useGetChatMessagesQuery(
     { chatId, page: 1, limit: 50 },
-    { skip: !chatId },
+    {
+      skip: !chatId,
+      refetchOnMountOrArgChange: true,
+    },
   );
 
   const [sendMessage, { isLoading: isSending }] = useSendMessageMutation();
@@ -128,6 +141,24 @@ export default function ConversationScreen() {
   const [markChatRead] = useMarkChatReadMutation();
 
   const messages = messagePage?.items ?? [];
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!chatId) return;
+
+      refetchMessages().catch(() => {});
+      refetchChat().catch(() => {});
+      markChatRead(chatId).catch(() => {});
+
+      const timer = setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: false });
+      }, 150);
+
+      return () => {
+        clearTimeout(timer);
+      };
+    }, [chatId, refetchMessages, refetchChat, markChatRead]),
+  );
 
   const otherUserName =
     chat?.otherUser?.name || chat?.otherUser?.businessName || "Chat";
@@ -153,7 +184,9 @@ export default function ConversationScreen() {
   useEffect(() => {
     if (!chatId || !currentUserId) return;
 
-    if (!SOCKET_ORIGIN) {
+    const socketOrigin = getSocketOrigin();
+
+    if (!socketOrigin) {
       console.log(
         "Socket origin missing. Add EXPO_PUBLIC_AUTH_URL or EXPO_PUBLIC_API_URL in .env",
       );
@@ -162,7 +195,7 @@ export default function ConversationScreen() {
 
     let mounted = true;
 
-    const socket = io(`${SOCKET_ORIGIN}/chat`, {
+    const socket = io(`${socketOrigin}/chat`, {
       transports: ["websocket"],
       auth: {
         userId: currentUserId,
@@ -564,11 +597,26 @@ export default function ConversationScreen() {
         (Platform.OS === "android" ? ANDROID_KEYBOARD_EXTRA : 0)
       : Math.max(insets.bottom, 10);
 
+  const handlePullRefresh = useCallback(async () => {
+  if (!chatId) return;
+
+  try {
+    setIsPullRefreshing(true);
+
+    await Promise.all([
+      refetchMessages(),
+      refetchChat(),
+    ]);
+  } finally {
+    setIsPullRefreshing(false);
+  }
+}, [chatId, refetchMessages, refetchChat]);
   const headerStatus = isOtherTyping
     ? "Typing..."
     : `${formatActiveStatus(chat?.otherUser, presenceTick)}${
         chat?.sourceCommunity?.name ? ` • ${chat.sourceCommunity.name}` : ""
       }`;
+    
 
   if (chatLoading) {
     return (
@@ -641,10 +689,10 @@ export default function ConversationScreen() {
           keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={messagesFetching}
-              onRefresh={refetchMessages}
-            />
+           <RefreshControl
+  refreshing={isPullRefreshing}
+  onRefresh={handlePullRefresh}
+/>
           }
         >
           {messagesLoading ? (

@@ -16,7 +16,7 @@
     "android": {
       "package": "com.pasalguff.app",
       "googleServicesFile": "./google-services.json",
-       "usesCleartextTraffic": true,
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -35,17 +35,17 @@
       "expo-router",
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
-     [
-  "expo-build-properties",
-  {
-    "ios": {
-      "useFrameworks": "static"
-    },
-    "android": {
-      "usesCleartextTraffic": true
-    }
-  }
-],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          },
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -80,6 +80,12 @@
       "eas": {
         "projectId": "f046bc29-0ea1-4d7d-a66e-e6e5cc7a3c4a"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f046bc29-0ea1-4d7d-a66e-e6e5cc7a3c4a"
     }
   }
 }

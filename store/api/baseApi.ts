@@ -7,8 +7,7 @@ import {
 } from "@reduxjs/toolkit/query/react";
 import { getAuthCookie } from "@/api/better-auth-client";
 
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? process.env.EXPO_PUBLIC_AUTH_URL!;
+const API_BASE_URL = process.env.EXPO_PUBLIC_AUTH_URL!;
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,

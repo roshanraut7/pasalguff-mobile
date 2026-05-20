@@ -114,7 +114,15 @@ export function AppRichTextEditor({
           },
         ]}
       >
-        <RichText editor={editor} style={styles.richText} />
+        <RichText
+          editor={editor}
+          style={[
+            styles.richText,
+            {
+              minHeight: editorHeight,
+            },
+          ]}
+        />
       </View>
 
       <HtmlWatcher editor={editor} onChangeHtml={onChangeHtml} />
@@ -171,14 +179,16 @@ export function useCreateEditor() {
     avoidIosKeyboard: true,
 
     /**
-     * Important fix:
-     * dynamicHeight true lets the editor grow with content.
-     * This reduces the inner editor scrolling problem.
+     * IMPORTANT:
+     * Keep this true.
+     * This allows the editor to grow when long text is pasted.
+     * Then the parent ScrollView in CreatePostScreen will scroll normally.
      */
     dynamicHeight: true,
 
     editable: true,
     initialContent: "<p></p>",
+
     theme: {
       webview: {
         backgroundColor: palette.card,
@@ -206,11 +216,19 @@ export function useCreateEditor() {
         background: ${palette.card} !important;
         margin: 0 !important;
         padding: 0 !important;
+        width: 100% !important;
+        min-height: 100% !important;
+
+        /*
+          IMPORTANT:
+          Do not make the WebView internally scroll.
+          The editor should grow, and React Native ScrollView should scroll the page.
+        */
         overflow-y: hidden !important;
       }
 
       body {
-        min-height: auto !important;
+        min-height: 100% !important;
       }
 
       .ProseMirror {
@@ -219,9 +237,18 @@ export function useCreateEditor() {
         caret-color: ${palette.text} !important;
         padding: 0 !important;
         margin: 0 !important;
-        min-height: auto !important;
+
+        /*
+          IMPORTANT:
+          Do not use 100vh here.
+          100vh traps long content inside the editor WebView on Android.
+          260px gives an empty editor enough clickable height.
+        */
+        min-height: 260px !important;
+
         outline: none !important;
         overflow: visible !important;
+        box-sizing: border-box !important;
       }
 
       .ProseMirror,
@@ -300,19 +327,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
 
-  /**
-   * Important fix:
-   * No padding here.
-   * This removes the inside spacing around the Description editor body.
-   */
   editorArea: {
     width: "100%",
     padding: 0,
+
+    /**
+     * IMPORTANT:
+     * visible allows the dynamic editor height to expand inside the page ScrollView.
+     */
     overflow: "visible",
   },
 
   richText: {
-    flex: 1,
+    width: "100%",
   },
 
   toolbarStandalone: {

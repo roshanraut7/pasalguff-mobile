@@ -9,13 +9,10 @@ import { router } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
   LayoutChangeEvent,
   ListRenderItem,
-  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Platform,
   RefreshControl,
   ScrollView,
   Text,
@@ -36,7 +33,6 @@ import {
 import type { CategoryRow } from "@/store/api/category.api";
 import type { CommunityItem } from "@/types/community";
 import CommunityCard from "@/components/common/communityCard";
-import CreateCommunityForm from "@/components/form/CreateCommunityForm";
 
 const COMMUNITY_PAGE_LIMIT = 20;
 const CATEGORY_PAGE_LIMIT = 50;
@@ -56,7 +52,6 @@ type ExploreHeaderProps = {
   categoryPills: CategoryPillItem[];
 
   searchValue: string;
-  activeSearchText: string;
   isSearchVisible: boolean;
 
   categoriesLoading: boolean;
@@ -65,6 +60,7 @@ type ExploreHeaderProps = {
   categoryPage: number;
   hasMoreCategories: boolean;
   showCategoryNextButton: boolean;
+  isPullRefreshing: boolean;
 
   onOpenSearch: () => void;
   onCloseSearch: () => void;
@@ -88,7 +84,6 @@ const ExploreHeader = React.memo(function ExploreHeader({
   categoryPills,
 
   searchValue,
-  activeSearchText,
   isSearchVisible,
 
   categoriesLoading,
@@ -97,6 +92,7 @@ const ExploreHeader = React.memo(function ExploreHeader({
   categoryPage,
   hasMoreCategories,
   showCategoryNextButton,
+  isPullRefreshing,
 
   onOpenSearch,
   onCloseSearch,
@@ -112,6 +108,14 @@ const ExploreHeader = React.memo(function ExploreHeader({
 
   categoryScrollRef,
 }: ExploreHeaderProps) {
+  const shouldShowCategoryLoader =
+    categoriesLoading && categoryPage === 1 && categoryPills.length <= 1;
+
+  const shouldShowMoreButton =
+    hasMoreCategories &&
+    !isPullRefreshing &&
+    categoryPills.length > 1;
+
   return (
     <View style={{ paddingTop: 16, paddingBottom: 12 }}>
       <View
@@ -143,10 +147,7 @@ const ExploreHeader = React.memo(function ExploreHeader({
               }}
             >
               <SearchField value={searchValue} onChange={onSearchChange}>
-                <SearchField.Group
-                  style={{
-                  }}
-                >
+                <SearchField.Group>
                   <SearchField.SearchIcon
                     iconProps={{
                       size: 16,
@@ -248,11 +249,11 @@ const ExploreHeader = React.memo(function ExploreHeader({
         }}
       >
         <View style={{ flex: 1 }} onLayout={onCategoryContainerLayout}>
-          {categoriesLoading && categoryPage === 1 ? (
+          {shouldShowCategoryLoader ? (
             <View style={{ paddingVertical: 12 }}>
               <ActivityIndicator size="small" color={colors.accent} />
             </View>
-          ) : categoriesError ? (
+          ) : categoriesError && categoryPills.length <= 1 ? (
             <Text
               style={{
                 color: colors.danger,
@@ -311,7 +312,7 @@ const ExploreHeader = React.memo(function ExploreHeader({
                 );
               })}
 
-              {hasMoreCategories ? (
+              {shouldShowMoreButton ? (
                 <TouchableOpacity
                   activeOpacity={0.85}
                   disabled={categoriesFetching}
@@ -342,7 +343,7 @@ const ExploreHeader = React.memo(function ExploreHeader({
           )}
         </View>
 
-        {showCategoryNextButton ? (
+        {showCategoryNextButton && !isPullRefreshing ? (
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={onSlideRight}
@@ -385,9 +386,6 @@ export default function ExploreScreen() {
   const categoryScrollRef = useRef<ScrollView>(null);
   const currentScrollX = useRef(0);
 
-  const didMountSearchRef = useRef(false);
-  const didMountCategoryRef = useRef(false);
-
   const { colors } = useAppTheme();
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
@@ -398,9 +396,6 @@ export default function ExploreScreen() {
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [debouncedSearchValue, setDebouncedSearchValue] = useState("");
-
-  const [isCreateCommunityVisible, setIsCreateCommunityVisible] =
-    useState(false);
 
   const [categoryContainerWidth, setCategoryContainerWidth] = useState(0);
   const [categoryContentWidth, setCategoryContentWidth] = useState(0);
@@ -414,61 +409,49 @@ export default function ExploreScreen() {
   const [hasMoreCategories, setHasMoreCategories] = useState(true);
 
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [isListTransitioning, setIsListTransitioning] = useState(true);
 
   const activeSearchText = debouncedSearchValue.trim();
 
+  const communityListKey = useMemo(() => {
+    return `${selectedCategoryId}__${activeSearchText}`;
+  }, [selectedCategoryId, activeSearchText]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      const nextSearch = searchValue.trim();
-
-      if (!didMountSearchRef.current) {
-        didMountSearchRef.current = true;
-        setDebouncedSearchValue(nextSearch);
-        return;
-      }
-
-      setDebouncedSearchValue(nextSearch);
-      setPage(1);
-      setCommunities([]);
-      setHasMore(true);
+      setDebouncedSearchValue(searchValue.trim());
     }, 350);
 
     return () => clearTimeout(timer);
   }, [searchValue]);
 
   const {
-    data: categoriesResponse,
+    currentData: categoriesResponse,
     isLoading: categoriesLoading,
     isFetching: categoriesFetching,
     error: categoriesError,
     refetch: refetchCategories,
-  } = useGetCategoriesQuery(
-    {
-      page: categoryPage,
-      limit: CATEGORY_PAGE_LIMIT,
-      status: "ACTIVE",
-      sortBy: "sortOrder",
-      sortDirection: "asc",
-    },
-  );
+  } = useGetCategoriesQuery({
+    page: categoryPage,
+    limit: CATEGORY_PAGE_LIMIT,
+    status: "ACTIVE",
+    sortBy: "sortOrder",
+    sortDirection: "asc",
+  });
 
   const {
-    data: communitiesResponse,
+    currentData: communitiesResponse,
     isLoading: communitiesLoading,
     isFetching: communitiesFetching,
     error: communitiesError,
     refetch: refetchCommunities,
-  } = useGetExploreCommunitiesQuery(
-    {
-      page,
-      limit: COMMUNITY_PAGE_LIMIT,
-      ...(activeSearchText ? { search: activeSearchText } : {}),
-      ...(selectedCategoryId !== "all"
-        ? { categoryId: selectedCategoryId }
-        : {}),
-      sortBy: "newest",
-    },
-  );
+  } = useGetExploreCommunitiesQuery({
+    page,
+    limit: COMMUNITY_PAGE_LIMIT,
+    ...(activeSearchText ? { search: activeSearchText } : {}),
+    ...(selectedCategoryId !== "all" ? { categoryId: selectedCategoryId } : {}),
+    sortBy: "newest",
+  });
 
   const [joinCommunity] = useJoinCommunityMutation();
   const [leaveCommunity] = useLeaveCommunityMutation();
@@ -501,15 +484,19 @@ export default function ExploreScreen() {
   }, [categoryItems]);
 
   useEffect(() => {
-    if (!didMountCategoryRef.current) {
-      didMountCategoryRef.current = true;
-      return;
-    }
-
+    /**
+     * When search text or category changes:
+     * - clear old community list
+     * - show loader
+     * - wait for the new API response
+     *
+     * This prevents the temporary "No communities found" flicker.
+     */
+    setIsListTransitioning(true);
     setPage(1);
     setCommunities([]);
     setHasMore(true);
-  }, [selectedCategoryId]);
+  }, [communityListKey]);
 
   useEffect(() => {
     if (!communitiesResponse) return;
@@ -532,9 +519,24 @@ export default function ExploreScreen() {
     });
 
     setHasMore(meta.page < meta.totalPages);
-  }, [communitiesResponse, page]);
 
-  const isInitialLoading = communitiesLoading && page === 1;
+    if (page === 1) {
+      setIsListTransitioning(false);
+    }
+  }, [communitiesResponse, page, communityListKey]);
+
+  useEffect(() => {
+    if (communitiesError && page === 1) {
+      setIsListTransitioning(false);
+    }
+  }, [communitiesError, page, communityListKey]);
+
+  const isInitialLoading =
+    communitiesLoading && page === 1 && communities.length === 0;
+
+  const isFirstPageFetching =
+    communitiesFetching && page === 1 && communities.length === 0;
+
   const isLoadingMore = communitiesFetching && page > 1;
 
   const showCategoryNextButton =
@@ -548,9 +550,6 @@ export default function ExploreScreen() {
     setIsSearchVisible(false);
     setSearchValue("");
     setDebouncedSearchValue("");
-    setPage(1);
-    setCommunities([]);
-    setHasMore(true);
   }, []);
 
   const handleSearchChange = useCallback((value: string) => {
@@ -558,20 +557,8 @@ export default function ExploreScreen() {
   }, []);
 
   const handleOpenCreateCommunity = useCallback(() => {
-    setIsCreateCommunityVisible(true);
+    router.push("/pages/createCommunity");
   }, []);
-
-  const handleCloseCreateCommunity = useCallback(() => {
-    setIsCreateCommunityVisible(false);
-  }, []);
-
-  const handleCreateCommunitySuccess = useCallback(() => {
-    setIsCreateCommunityVisible(false);
-    setPage(1);
-    setCommunities([]);
-    setHasMore(true);
-    refetchCommunities();
-  }, [refetchCommunities]);
 
   const handleSelectCategory = useCallback(
     (categoryId: string) => {
@@ -608,34 +595,59 @@ export default function ExploreScreen() {
   }, []);
 
   const handleLoadMoreCategories = useCallback(() => {
-    if (categoriesFetching || !hasMoreCategories) return;
+    if (categoriesFetching || !hasMoreCategories || isPullRefreshing) return;
 
     setCategoryPage((prev) => prev + 1);
-  }, [categoriesFetching, hasMoreCategories]);
+  }, [categoriesFetching, hasMoreCategories, isPullRefreshing]);
 
   const handleRefresh = useCallback(async () => {
     try {
       setIsPullRefreshing(true);
 
-      setCategoryPage(1);
-      setCategoryItems([]);
-      setHasMoreCategories(true);
+      currentScrollX.current = 0;
+      categoryScrollRef.current?.scrollTo({
+        x: 0,
+        animated: false,
+      });
 
+      /**
+       * Do not clear categoryItems or communities during pull refresh.
+       * Keep old data visible while fresh data loads.
+       */
+      setCategoryPage(1);
       setPage(1);
-      setCommunities([]);
       setHasMore(true);
 
-      await Promise.all([refetchCategories(), refetchCommunities()]);
+      await Promise.allSettled([
+        refetchCategories().unwrap(),
+        refetchCommunities().unwrap(),
+      ]);
+    } catch (error) {
+      console.log("Explore refresh failed:", error);
     } finally {
       setIsPullRefreshing(false);
     }
   }, [refetchCategories, refetchCommunities]);
 
   const handleLoadMore = useCallback(() => {
-    if (communitiesFetching || !hasMore || communities.length === 0) return;
+    if (
+      communitiesFetching ||
+      isPullRefreshing ||
+      isListTransitioning ||
+      !hasMore ||
+      communities.length === 0
+    ) {
+      return;
+    }
 
     setPage((prev) => prev + 1);
-  }, [communitiesFetching, hasMore, communities.length]);
+  }, [
+    communitiesFetching,
+    isPullRefreshing,
+    isListTransitioning,
+    hasMore,
+    communities.length,
+  ]);
 
   const isCommunityOwner = useCallback((community: CommunityItem) => {
     return community.myRole === "ADMIN" && community.myMemberStatus === "ACTIVE";
@@ -725,7 +737,19 @@ export default function ExploreScreen() {
   };
 
   const renderEmpty = () => {
-    if (isInitialLoading || (communitiesFetching && page === 1)) {
+    /**
+     * Pull refresh already has its own spinner.
+     * So do not show empty state or big loader during pull refresh.
+     */
+    if (isPullRefreshing) {
+      return null;
+    }
+
+    /**
+     * Search/category changed but new API result has not arrived yet.
+     * Show loader, not "No communities found".
+     */
+    if (isListTransitioning || isInitialLoading || isFirstPageFetching) {
       return (
         <View style={{ paddingVertical: 40 }}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -799,7 +823,7 @@ export default function ExploreScreen() {
   };
 
   const renderFooter = () => {
-    if (!isLoadingMore) return null;
+    if (!isLoadingMore || isPullRefreshing || isListTransitioning) return null;
 
     return (
       <View style={{ paddingVertical: 20 }}>
@@ -809,123 +833,57 @@ export default function ExploreScreen() {
   };
 
   return (
-    <>
-      <FlatList
-        style={{ flex: 1, backgroundColor: colors.background }}
-        data={communities}
-        keyExtractor={(item) => item.id}
-        renderItem={renderCommunity}
-        ListHeaderComponent={
-          <ExploreHeader
-            colors={colors}
-            selectedCategoryId={selectedCategoryId}
-            categoryPills={categoryPills}
-            searchValue={searchValue}
-            activeSearchText={activeSearchText}
-            isSearchVisible={isSearchVisible}
-            categoriesLoading={categoriesLoading}
-            categoriesFetching={categoriesFetching}
-            categoriesError={categoriesError}
-            categoryPage={categoryPage}
-            hasMoreCategories={hasMoreCategories}
-            showCategoryNextButton={showCategoryNextButton}
-            onOpenSearch={handleOpenSearch}
-            onCloseSearch={handleCloseSearch}
-            onSearchChange={handleSearchChange}
-            onOpenCreateCommunity={handleOpenCreateCommunity}
-            onSelectCategory={handleSelectCategory}
-            onCategoryContainerLayout={handleCategoryContainerLayout}
-            onCategoryScroll={handleCategoryScroll}
-            onCategoryContentSizeChange={handleCategoryContentSizeChange}
-            onSlideRight={handleSlideRight}
-            onLoadMoreCategories={handleLoadMoreCategories}
-            categoryScrollRef={categoryScrollRef}
-          />
-        }
-        ListEmptyComponent={renderEmpty}
-        ListFooterComponent={renderFooter}
-        contentContainerStyle={{
-          paddingHorizontal: 18,
-          paddingBottom: 140,
-        }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-        refreshControl={
-          <RefreshControl
-            refreshing={isPullRefreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.accent}
-            colors={[colors.accent]}
-            progressBackgroundColor={colors.surface}
-          />
-        }
-      />
-
-      <Modal
-        visible={isCreateCommunityVisible}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={handleCloseCreateCommunity}
-      >
-        <KeyboardAvoidingView
-          style={{ flex: 1, backgroundColor: colors.background }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
-          <View
-            style={{
-              paddingHorizontal: 18,
-              paddingTop: Platform.OS === "ios" ? 60 : 28,
-              paddingBottom: 12,
-              backgroundColor: colors.background,
-              borderBottomWidth: 1,
-              borderBottomColor: colors.border,
-            }}
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "flex-end",
-              }}
-            >
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={handleCloseCreateCommunity}
-                style={{
-                  height: 42,
-                  width: 42,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  // borderRadius: 999,
-                  // backgroundColor: colors.surface,s
-                  // borderWidth: 1,
-                  // borderColor: colors.border,
-                }}
-              >
-                <Ionicons name="close" size={20} color={colors.accent} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{
-              paddingHorizontal: 18,
-              paddingTop: 18,
-              paddingBottom: 40,
-            }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <CreateCommunityForm
-              submitLabel="Create Community"
-              onSuccess={handleCreateCommunitySuccess}
-            />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
-    </>
+    <FlatList
+      style={{ flex: 1, backgroundColor: colors.background }}
+      data={communities}
+      keyExtractor={(item) => item.id}
+      renderItem={renderCommunity}
+      ListHeaderComponent={
+        <ExploreHeader
+          colors={colors}
+          selectedCategoryId={selectedCategoryId}
+          categoryPills={categoryPills}
+          searchValue={searchValue}
+          isSearchVisible={isSearchVisible}
+          categoriesLoading={categoriesLoading}
+          categoriesFetching={categoriesFetching}
+          categoriesError={categoriesError}
+          categoryPage={categoryPage}
+          hasMoreCategories={hasMoreCategories}
+          showCategoryNextButton={showCategoryNextButton}
+          isPullRefreshing={isPullRefreshing}
+          onOpenSearch={handleOpenSearch}
+          onCloseSearch={handleCloseSearch}
+          onSearchChange={handleSearchChange}
+          onOpenCreateCommunity={handleOpenCreateCommunity}
+          onSelectCategory={handleSelectCategory}
+          onCategoryContainerLayout={handleCategoryContainerLayout}
+          onCategoryScroll={handleCategoryScroll}
+          onCategoryContentSizeChange={handleCategoryContentSizeChange}
+          onSlideRight={handleSlideRight}
+          onLoadMoreCategories={handleLoadMoreCategories}
+          categoryScrollRef={categoryScrollRef}
+        />
+      }
+      ListEmptyComponent={renderEmpty}
+      ListFooterComponent={renderFooter}
+      contentContainerStyle={{
+        paddingHorizontal: 18,
+        paddingBottom: 140,
+      }}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      onEndReached={handleLoadMore}
+      onEndReachedThreshold={0.5}
+      refreshControl={
+        <RefreshControl
+          refreshing={isPullRefreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+          progressBackgroundColor={colors.surface}
+        />
+      }
+    />
   );
 }

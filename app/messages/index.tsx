@@ -15,10 +15,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { SearchField } from "heroui-native";
 import { io, type Socket } from "socket.io-client";
 import dayjs from "dayjs";
+import { useDispatch } from "react-redux";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useSession } from "@/api/better-auth-client";
 import {
+  chatApi,
   type Chat,
   type ChatMessage,
   useGetMyChatsQuery,
@@ -47,7 +49,7 @@ function getSocketOrigin() {
 
   return cleanedBase.endsWith("/") ? cleanedBase.slice(0, -1) : cleanedBase;
 }
- 
+
 function sortChatsByUpdatedAt(items: Chat[]) {
   return [...items].sort((a, b) => {
     const bTime = new Date(b.updatedAt).getTime();
@@ -84,23 +86,23 @@ function mergeChatsWithLocalUnread(chats: Chat[], localUnread: UnreadMap) {
 export default function MessagesScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const dispatch = useDispatch();
 
   const [search, setSearch] = useState("");
   const [presenceTick, setPresenceTick] = useState(0);
 
   const [localChats, setLocalChats] = useState<Chat[]>([]);
   const [localUnread, setLocalUnread] = useState<UnreadMap>({});
-
+ const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
 
-  const {
-    data: chats = [],
-    isLoading,
-    isFetching,
-    isError,
-    refetch,
-  } = useGetMyChatsQuery();
+ const {
+  data: chats = [],
+  isLoading,
+  isError,
+  refetch,
+} = useGetMyChatsQuery();
 
   useEffect(() => {
     setLocalChats(sortChatsByUpdatedAt(chats));
@@ -135,10 +137,15 @@ export default function MessagesScreen() {
       if (!incomingChatId) return;
 
       setLocalChats((prev) => {
-        const existingIndex = prev.findIndex((item) => item.id === incomingChatId);
+        const existingIndex = prev.findIndex(
+          (item) => item.id === incomingChatId,
+        );
 
         if (payload.chat) {
-          const withoutCurrent = prev.filter((item) => item.id !== incomingChatId);
+          const withoutCurrent = prev.filter(
+            (item) => item.id !== incomingChatId,
+          );
+
           return sortChatsByUpdatedAt([payload.chat, ...withoutCurrent]);
         }
 
@@ -155,7 +162,9 @@ export default function MessagesScreen() {
           updatedAt: incomingMessage?.createdAt ?? new Date().toISOString(),
         };
 
-        const withoutCurrent = prev.filter((item) => item.id !== incomingChatId);
+        const withoutCurrent = prev.filter(
+          (item) => item.id !== incomingChatId,
+        );
 
         return sortChatsByUpdatedAt([updatedChat, ...withoutCurrent]);
       });
@@ -193,6 +202,14 @@ export default function MessagesScreen() {
       if (!mounted) return;
 
       updateChatInstantly(payload);
+
+      dispatch(
+        chatApi.util.invalidateTags([
+          { type: "Chat" as const, id: "LIST" },
+          { type: "Chat" as const, id: payload.chatId },
+          { type: "Message" as const, id: payload.chatId },
+        ]),
+      );
 
       try {
         await refetch();
@@ -250,7 +267,7 @@ export default function MessagesScreen() {
 
       socket.disconnect();
     };
-  }, [currentUserId, refetch, updateChatInstantly]);
+  }, [currentUserId, refetch, updateChatInstantly, dispatch]);
 
   const chatRows = useMemo(() => {
     return mergeChatsWithLocalUnread(localChats, localUnread);
@@ -274,6 +291,14 @@ export default function MessagesScreen() {
       );
     });
   }, [search, chatRows]);
+  const handlePullRefresh = useCallback(async () => {
+  try {
+    setIsPullRefreshing(true);
+    await refetch();
+  } finally {
+    setIsPullRefreshing(false);
+  }
+}, [refetch]);
 
   const handleOpenChat = useCallback(
     (chatId: string) => {
@@ -332,7 +357,7 @@ export default function MessagesScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
             refreshControl={
-              <RefreshControl refreshing={isFetching} onRefresh={refetch} />
+              <RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} />
             }
           >
             {filteredChats.length === 0 ? (
