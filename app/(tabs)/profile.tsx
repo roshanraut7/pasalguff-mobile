@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Menu, Tabs } from "heroui-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useDispatch } from "react-redux";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
@@ -36,9 +37,6 @@ import {
 import {
   useDeletePostMutation,
   useGetMyPostsQuery,
-  useLikePostMutation,
-  useSharePostMutation,
-  useUnlikePostMutation,
 } from "@/store/api/postApi";
 
 import type { PostMedia } from "@/types/post";
@@ -50,15 +48,17 @@ import {
 } from "@/store/api/uploadApi";
 
 import CommunityPostCard from "@/components/post/CommunityPostCard";
+import CommentPostModal from "@/components/post/CommentsModal";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
 import CommunityCard from "@/components/common/communityCard";
+
+import { usePostInteractions } from "@/hooks/media/usePostInteractions";
 
 import {
   createProfileStyles,
   type ProfileColors,
   type ProfileStyles,
 } from "@/constants/styles/profile.styles";
-import { useDispatch } from "react-redux";
 
 type ImageTarget = "avatar" | "cover";
 
@@ -67,6 +67,7 @@ const POSTS_LIMIT = 10;
 export default function ProfileScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createProfileStyles(colors), [colors]);
+  const dispatch = useDispatch();
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [tab, setTab] = useState("posts");
@@ -77,12 +78,13 @@ export default function ProfileScreen() {
 
   const [postsCursor, setPostsCursor] = useState<string | null>(null);
   const [allPosts, setAllPosts] = useState<CommunityPost[]>([]);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
 
-  const lastAppliedCursorRef = useRef<string | null>("__initial__");
+  const refreshStartedRef = useRef(false);
 
   const [viewer, setViewer] = useState<{
     visible: boolean;
-    media:PostMedia[];
+    media: PostMedia[];
     index: number;
   }>({
     visible: false,
@@ -95,6 +97,7 @@ export default function ProfileScreen() {
   const {
     data: profile,
     isLoading: profileLoading,
+    isFetching: profileFetching,
     error: profileError,
     refetch: refetchProfile,
   } = useGetMyProfileQuery(undefined, {
@@ -104,6 +107,7 @@ export default function ProfileScreen() {
   const {
     data: myCommunitiesResponse,
     isLoading: myCommunitiesLoading,
+    isFetching: myCommunitiesFetching,
     error: myCommunitiesError,
     refetch: refetchMyCommunities,
   } = useGetMyCommunitiesQuery(
@@ -117,7 +121,7 @@ export default function ProfileScreen() {
   );
 
   const {
-    data: myPostsResponse,
+    currentData: myPostsResponse,
     isLoading: myPostsLoading,
     isFetching: myPostsFetching,
     error: myPostsError,
@@ -139,16 +143,36 @@ export default function ProfileScreen() {
   const nextPostsCursor = myPostsResponse?.meta?.nextCursor ?? null;
 
   const [deletePost, { isLoading: isDeletingPost }] = useDeletePostMutation();
-  const [likePost] = useLikePostMutation();
-  const [unlikePost] = useUnlikePostMutation();
-  const [sharePost] = useSharePostMutation();
 
   const [updateMyProfile] = useUpdateMyProfileMutation();
   const [uploadProfileAvatar] = useUploadProfileAvatarMutation();
   const [uploadProfileCover] = useUploadProfileCoverMutation();
-  const dispatch = useDispatch();
 
   const user = profile ?? session?.user;
+
+  const {
+    commentPost,
+    activeCommentPost,
+    comments,
+    commentInput,
+    setCommentInput,
+
+    isLoadingComments,
+    isFetchingComments,
+    isCreatingComment,
+    isCreatingReply,
+
+    openComments,
+    closeComments,
+    handleLikePost,
+    handleSharePost,
+    handleCreateComment,
+    refetchComments,
+  } = usePostInteractions({
+    posts: allPosts,
+    setPosts: setAllPosts,
+    sessionUser: session?.user,
+  });
 
   const fullName = useMemo(() => {
     if (user?.name?.trim()) return user.name.trim();
@@ -188,11 +212,6 @@ export default function ProfileScreen() {
     if (!myPostsResponse) return;
 
     const responseCursor = postsCursor ?? null;
-
-    if (lastAppliedCursorRef.current === responseCursor) return;
-
-    lastAppliedCursorRef.current = responseCursor;
-
     const posts = myPostsResponse.data ?? [];
 
     if (!responseCursor) {
@@ -208,47 +227,108 @@ export default function ProfileScreen() {
     });
   }, [myPostsResponse, postsCursor]);
 
+  useEffect(() => {
+    if (!isPullRefreshing) return;
+    if (!refreshStartedRef.current) return;
+
+    if (
+      postsCursor === null &&
+      !profileFetching &&
+      !myCommunitiesFetching &&
+      !myPostsFetching
+    ) {
+      const timer = setTimeout(() => {
+        setIsPullRefreshing(false);
+        refreshStartedRef.current = false;
+      }, 120);
+
+      return () => clearTimeout(timer);
+    }
+  }, [
+    isPullRefreshing,
+    postsCursor,
+    profileFetching,
+    myCommunitiesFetching,
+    myPostsFetching,
+  ]);
+
   const loadMorePosts = useCallback(() => {
     if (tab !== "posts") return;
+    if (isPullRefreshing) return;
     if (myPostsLoading || myPostsFetching) return;
     if (!hasMorePosts || !nextPostsCursor) return;
 
     setPostsCursor(nextPostsCursor);
   }, [
     tab,
+    isPullRefreshing,
     myPostsLoading,
     myPostsFetching,
     hasMorePosts,
     nextPostsCursor,
   ]);
 
-  const refreshProfilePage = useCallback(() => {
-    lastAppliedCursorRef.current = "__refresh__";
-    setPostsCursor(null);
-    setAllPosts([]);
+  const refreshProfilePage = useCallback(async () => {
+    try {
+      setIsPullRefreshing(true);
+      refreshStartedRef.current = true;
 
-    refetchProfile();
-    refetchMyCommunities();
-    refetchMyPosts();
-  }, [refetchProfile, refetchMyCommunities, refetchMyPosts]);
+      /*
+       * Important:
+       * Do not clear allPosts here.
+       * Do not clear communities here.
+       * Old data stays visible while native pull refresh spinner is showing.
+       */
+      if (postsCursor !== null) {
+        setPostsCursor(null);
+      }
 
-const handleLogout = async () => {
-  try {
-    setIsLoggingOut(true);
+      const tasks: Promise<unknown>[] = [
+        Promise.resolve(refetchProfile()),
+        Promise.resolve(refetchMyCommunities()),
+      ];
 
-    await signOut();
+      if (postsCursor === null) {
+        tasks.push(Promise.resolve(refetchMyPosts()));
+      }
 
-    // This clears old account API data: profile, chats, communities, posts, etc.
-    dispatch(baseApi.util.resetApiState());
+      if (commentPost) {
+        tasks.push(Promise.resolve(refetchComments()));
+      }
 
-    // Replace route so user cannot go back to old account screens
-    router.replace("/(auth)");
-  } catch (error) {
-    console.log("Logout failed:", error);
-  } finally {
-    setIsLoggingOut(false);
-  }
-};
+      await Promise.allSettled(tasks);
+    } catch (error) {
+      console.log("Profile refresh failed:", error);
+    } finally {
+      if (postsCursor === null) {
+        setIsPullRefreshing(false);
+        refreshStartedRef.current = false;
+      }
+    }
+  }, [
+    postsCursor,
+    refetchProfile,
+    refetchMyCommunities,
+    refetchMyPosts,
+    commentPost,
+    refetchComments,
+  ]);
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+
+      await signOut();
+
+      dispatch(baseApi.util.resetApiState());
+
+      router.replace("/(auth)");
+    } catch (error) {
+      console.log("Logout failed:", error);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const handleCreateCommunity = () => {
     router.push("/pages/createCommunity");
@@ -258,16 +338,13 @@ const handleLogout = async () => {
     router.push("/pages/editprofile");
   };
 
-  const openViewer = useCallback(
-    (media:PostMedia[], index: number) => {
-      setViewer({
-        visible: true,
-        media,
-        index,
-      });
-    },
-    [],
-  );
+  const openViewer = useCallback((media: PostMedia[], index: number) => {
+    setViewer({
+      visible: true,
+      media,
+      index,
+    });
+  }, []);
 
   const closeViewer = useCallback(() => {
     setViewer((prev) => ({
@@ -291,79 +368,6 @@ const handleLogout = async () => {
       }
     },
     [deletePost],
-  );
-
-  const handleLikePost = useCallback(
-    async (post: CommunityPost) => {
-      try {
-        if (post.isLikedByMe) {
-          const response = await unlikePost({
-            communityId: post.communityId,
-            postId: post.id,
-          }).unwrap();
-
-          setAllPosts((prev) =>
-            prev.map((item) =>
-              item.id === post.id
-                ? {
-                    ...item,
-                    isLikedByMe: response.liked,
-                    likeCount: response.likeCount,
-                  }
-                : item,
-            ),
-          );
-        } else {
-          const response = await likePost({
-            communityId: post.communityId,
-            postId: post.id,
-          }).unwrap();
-
-          setAllPosts((prev) =>
-            prev.map((item) =>
-              item.id === post.id
-                ? {
-                    ...item,
-                    isLikedByMe: response.liked,
-                    likeCount: response.likeCount,
-                  }
-                : item,
-            ),
-          );
-        }
-      } catch (error) {
-        console.log("Like/unlike failed:", error);
-      }
-    },
-    [likePost, unlikePost],
-  );
-
-  const handleSharePost = useCallback(
-    async (post: CommunityPost) => {
-      try {
-        const response = await sharePost({
-          communityId: post.communityId,
-          postId: post.id,
-          body: {
-            platform: "copy_link",
-          },
-        }).unwrap();
-
-        setAllPosts((prev) =>
-          prev.map((item) =>
-            item.id === post.id
-              ? {
-                  ...item,
-                  shareCount: response.shareCount,
-                }
-              : item,
-          ),
-        );
-      } catch (error) {
-        console.log("Share post failed:", error);
-      }
-    },
-    [sharePost],
   );
 
   const uploadPickedAsset = async (
@@ -453,12 +457,7 @@ const handleLogout = async () => {
           isDeleting={isDeletingPost}
           onDelete={handleDeletePost}
           onPressLike={handleLikePost}
-          onPressComment={(post) => {
-            console.log("Open comments:", {
-              postId: post.id,
-              communityId: post.communityId,
-            });
-          }}
+          onPressComment={openComments}
           onPressShare={handleSharePost}
           onPressAuthor={(authorId) => {
             router.push({
@@ -475,10 +474,56 @@ const handleLogout = async () => {
       isDeletingPost,
       handleDeletePost,
       handleLikePost,
+      openComments,
       handleSharePost,
       openViewer,
     ],
   );
+
+  const showInitialPostLoader =
+    tab === "posts" &&
+    allPosts.length === 0 &&
+    !isPullRefreshing &&
+    !myPostsError &&
+    (myPostsLoading || (myPostsFetching && postsCursor === null));
+
+  const showEmptyPosts =
+    tab === "posts" &&
+    allPosts.length === 0 &&
+    !isPullRefreshing &&
+    !myPostsLoading &&
+    !myPostsFetching &&
+    !myPostsError;
+
+  const showOwnedCommunitiesInitialLoader =
+    tab === "communities" &&
+    ownedCommunities.length === 0 &&
+    !isPullRefreshing &&
+    !myCommunitiesError &&
+    (myCommunitiesLoading || myCommunitiesFetching);
+
+  const showEmptyOwnedCommunities =
+    tab === "communities" &&
+    ownedCommunities.length === 0 &&
+    !isPullRefreshing &&
+    !myCommunitiesLoading &&
+    !myCommunitiesFetching &&
+    !myCommunitiesError;
+
+  const showJoinedCommunitiesInitialLoader =
+    tab === "joinedCommunities" &&
+    joinedCommunities.length === 0 &&
+    !isPullRefreshing &&
+    !myCommunitiesError &&
+    (myCommunitiesLoading || myCommunitiesFetching);
+
+  const showEmptyJoinedCommunities =
+    tab === "joinedCommunities" &&
+    joinedCommunities.length === 0 &&
+    !isPullRefreshing &&
+    !myCommunitiesLoading &&
+    !myCommunitiesFetching &&
+    !myCommunitiesError;
 
   if (isPending || profileLoading) {
     return (
@@ -508,9 +553,11 @@ const handleLogout = async () => {
           onEndReachedThreshold={0.5}
           refreshControl={
             <RefreshControl
-              refreshing={myPostsFetching && postsCursor === null}
+              refreshing={isPullRefreshing}
               onRefresh={refreshProfilePage}
               tintColor={colors.accent}
+              colors={[colors.accent]}
+              progressBackgroundColor={colors.surface}
             />
           }
           ListHeaderComponent={
@@ -530,7 +577,11 @@ const handleLogout = async () => {
                   <Menu>
                     <Menu.Trigger asChild>
                       <Pressable style={styles.coverActionButton}>
-                        <Ionicons name="camera-outline" size={20} color="#fff" />
+                        <Ionicons
+                          name="camera-outline"
+                          size={20}
+                          color="#fff"
+                        />
                       </Pressable>
                     </Menu.Trigger>
 
@@ -769,15 +820,18 @@ const handleLogout = async () => {
                     <View style={styles.paddedPanel}>
                       <Text style={styles.sectionTitle}>Communities</Text>
 
-                      {myCommunitiesLoading ? (
-                        <Text style={styles.sectionText}>
-                          Loading communities...
-                        </Text>
-                      ) : myCommunitiesError ? (
+                      {showOwnedCommunitiesInitialLoader ? (
+                        <View style={styles.stateWrap}>
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accent}
+                          />
+                        </View>
+                      ) : myCommunitiesError && ownedCommunities.length === 0 ? (
                         <Text style={styles.errorText}>
                           Failed to load communities
                         </Text>
-                      ) : ownedCommunities.length === 0 ? (
+                      ) : showEmptyOwnedCommunities ? (
                         <>
                           <Text style={styles.sectionText}>
                             You do not own any communities yet.
@@ -791,25 +845,27 @@ const handleLogout = async () => {
                       ) : (
                         <View style={styles.communityList}>
                           {ownedCommunities.map((community) => (
-                           <CommunityCard
-  key={community.id}
-  community={community}
-  variant="profile"
-  badgeText="Owner"
-  onPress={() =>
-    router.push({
-      pathname: "/user/community-dashboard",
-      params: {
-       communityId: community.id,
-    communityName: community.name,
-    communityAvatar: community.avatarImage ?? "",
-    communityVisibility: community.visibility,
-    communityCategory: community.category?.name ?? "",
-    returnTo: "/(tabs)/profile",
-      },
-    })
-  }
-/>
+                            <CommunityCard
+                              key={community.id}
+                              community={community}
+                              variant="profile"
+                              badgeText="Owner"
+                              onPress={() =>
+                                router.push({
+                                  pathname: "/user/community-dashboard",
+                                  params: {
+                                    communityId: community.id,
+                                    communityName: community.name,
+                                    communityAvatar:
+                                      community.avatarImage ?? "",
+                                    communityVisibility: community.visibility,
+                                    communityCategory:
+                                      community.category?.name ?? "",
+                                    returnTo: "/(tabs)/profile",
+                                  },
+                                })
+                              }
+                            />
                           ))}
                         </View>
                       )}
@@ -822,15 +878,19 @@ const handleLogout = async () => {
                         Joined Communities
                       </Text>
 
-                      {myCommunitiesLoading ? (
-                        <Text style={styles.sectionText}>
-                          Loading joined communities...
-                        </Text>
-                      ) : myCommunitiesError ? (
+                      {showJoinedCommunitiesInitialLoader ? (
+                        <View style={styles.stateWrap}>
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accent}
+                          />
+                        </View>
+                      ) : myCommunitiesError &&
+                        joinedCommunities.length === 0 ? (
                         <Text style={styles.errorText}>
                           Failed to load joined communities
                         </Text>
-                      ) : joinedCommunities.length === 0 ? (
+                      ) : showEmptyJoinedCommunities ? (
                         <Text style={styles.sectionText}>
                           You have not joined any communities yet.
                         </Text>
@@ -858,7 +918,7 @@ const handleLogout = async () => {
 
                   {tab === "posts" ? (
                     <View style={styles.tabPanel}>
-                      {myPostsLoading && allPosts.length === 0 ? (
+                      {showInitialPostLoader ? (
                         <View style={styles.stateWrap}>
                           <ActivityIndicator
                             size="small"
@@ -869,7 +929,7 @@ const handleLogout = async () => {
                         <Text style={styles.errorText}>
                           Failed to load your posts.
                         </Text>
-                      ) : allPosts.length === 0 ? (
+                      ) : showEmptyPosts ? (
                         <View style={styles.emptyState}>
                           <Text style={styles.sectionTitle}>Posts</Text>
                           <Text style={styles.sectionText}>
@@ -895,6 +955,27 @@ const handleLogout = async () => {
           }
         />
       </SafeAreaView>
+
+      <CommentPostModal
+        visible={!!commentPost}
+        post={activeCommentPost}
+        comments={comments}
+        isLoading={
+          (isLoadingComments || isFetchingComments) && comments.length === 0
+        }
+        isCreating={isCreatingComment || isCreatingReply}
+        inputValue={commentInput}
+        onChangeInput={setCommentInput}
+        onClose={closeComments}
+        onSubmit={handleCreateComment}
+        onPressMedia={openViewer}
+        onPressPostLike={handleLikePost}
+        onPressPostShare={handleSharePost}
+        onRefreshComments={() => {
+          void refetchComments();
+        }}
+        colors={colors}
+      />
 
       <PostMediaViewer
         visible={viewer.visible}

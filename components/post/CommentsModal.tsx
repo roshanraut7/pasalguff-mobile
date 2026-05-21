@@ -184,7 +184,6 @@ const CommentItem = memo(function CommentItem({
   const totalReplyCount = Math.max(item.replyCount ?? 0, replies.length);
   const visibleReplies = isRepliesExpanded ? replies : [];
   const likeLabel = formatCount(item.likeCount);
-  const missingReplyCount = Math.max(0, totalReplyCount - replies.length);
 
   return (
     <View style={styles.commentBlock}>
@@ -204,9 +203,13 @@ const CommentItem = memo(function CommentItem({
               <Text style={styles.commentActionText}>Reply</Text>
             </Pressable>
 
-            <Text style={styles.commentTime}>{formatCommentTime(item.createdAt)}</Text>
+            <Text style={styles.commentTime}>
+              {formatCommentTime(item.createdAt)}
+            </Text>
 
-            {likeLabel ? <Text style={styles.commentReactionCount}>{likeLabel} ♥</Text> : null}
+            {likeLabel ? (
+              <Text style={styles.commentReactionCount}>{likeLabel} ♥</Text>
+            ) : null}
           </View>
         </View>
       </View>
@@ -224,7 +227,8 @@ const CommentItem = memo(function CommentItem({
               style={styles.viewRepliesButton}
             >
               <Text style={styles.viewMoreReplies}>
-                View {totalReplyCount} {totalReplyCount === 1 ? "reply" : "replies"}
+                View {totalReplyCount}{" "}
+                {totalReplyCount === 1 ? "reply" : "replies"}
               </Text>
             </Pressable>
           ) : null}
@@ -238,18 +242,6 @@ const CommentItem = memo(function CommentItem({
               onReply={onReply}
             />
           ))}
-
-          {isRepliesExpanded && missingReplyCount > 0 ? (
-            <Pressable
-              hitSlop={8}
-              onPress={() => onViewReplies(item)}
-              style={styles.viewRepliesButton}
-            >
-              <Text style={styles.viewMoreReplies}>
-                Refresh {missingReplyCount} more {missingReplyCount === 1 ? "reply" : "replies"}
-              </Text>
-            </Pressable>
-          ) : null}
 
           {isRepliesExpanded && replies.length > 0 ? (
             <Pressable
@@ -265,7 +257,6 @@ const CommentItem = memo(function CommentItem({
     </View>
   );
 });
-
 function CommentPostModal({
   visible,
   post,
