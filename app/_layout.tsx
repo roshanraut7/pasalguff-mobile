@@ -3,7 +3,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 import "../global.css";
-
+import { AppThemeProvider } from "@/components/theme/AppThemeProvider";
 import React, { useEffect, useMemo } from "react";
 import { HeroUINativeConfig, HeroUINativeProvider } from "heroui-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -99,7 +99,10 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <Provider store={store}>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <AppContent />
+            <AppThemeProvider>
+               <AppContent />
+            </AppThemeProvider>
+         
           
         </GestureHandlerRootView>
       </Provider>

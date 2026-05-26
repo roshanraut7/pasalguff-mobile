@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,7 +10,7 @@ import {
   Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Redirect } from "expo-router";
+import { Redirect, useLocalSearchParams } from "expo-router";
 
 import LoginForm from "@/components/form/LoginForm";
 import SignupForm from "@/components/form/SignupForm";
@@ -21,13 +21,31 @@ type AuthMode = "login" | "signup";
 
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>("login");
+  const params = useLocalSearchParams<{ mode?: string }>();
+
   const { data: session, isPending } = useSession();
   const { colors, isDark } = useAppTheme();
+
+  useEffect(() => {
+    if (params.mode === "signup") {
+      setMode("signup");
+    }
+
+    if (params.mode === "login") {
+      setMode("login");
+    }
+  }, [params.mode]);
 
   if (isPending) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
       </SafeAreaView>
@@ -37,8 +55,17 @@ export default function AuthPage() {
   if (session?.user) {
     const role = session.user.role;
     const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+    const onboardingCompleted = session.user.onboardingCompleted;
 
-    return <Redirect href={isAdmin ? "/admin" : "/(tabs)"} />;
+    if (isAdmin) {
+      return <Redirect href="/admin" />;
+    }
+
+    if (!onboardingCompleted) {
+      return <Redirect href="/onboarding" />;
+    }
+
+    return <Redirect href="/(tabs)" />;
   }
 
   return (

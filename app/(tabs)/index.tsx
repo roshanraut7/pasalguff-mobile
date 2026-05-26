@@ -16,7 +16,10 @@ import PostMediaViewer from "@/components/post/PostMediaViewer";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { usePostInteractions } from "@/hooks/media/usePostInteractions";
-import { useGetHomeFeedPostsQuery } from "@/store/api/postApi";
+import {
+  useGetHomeFeedPostsQuery,
+  useVotePostPollMutation,
+} from "@/store/api/postApi";
 import type { CommunityPost, PostMedia } from "@/types/post";
 
 type HomePostItemProps = {
@@ -27,6 +30,7 @@ type HomePostItemProps = {
   onPressShare: (post: CommunityPost) => void;
   onPressAuthor: (authorId: string) => void;
   onPressMedia: (media: PostMedia[], startIndex: number) => void;
+  onPressPollOption: (post: CommunityPost, optionId: string) => void;
 };
 
 const HomePostItem = memo(function HomePostItem({
@@ -37,6 +41,7 @@ const HomePostItem = memo(function HomePostItem({
   onPressShare,
   onPressAuthor,
   onPressMedia,
+  onPressPollOption,
 }: HomePostItemProps) {
   return (
     <CommunityPostCard
@@ -47,6 +52,7 @@ const HomePostItem = memo(function HomePostItem({
       onPressShare={onPressShare}
       onPressAuthor={onPressAuthor}
       onPressMedia={onPressMedia}
+      onPressPollOption={onPressPollOption}
     />
   );
 });
@@ -60,6 +66,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const { viewer, openViewer, closeViewer } = usePostMediaViewer();
+
+  const [votePostPoll] = useVotePostPollMutation();
 
   const {
     commentPost,
@@ -120,20 +128,45 @@ export default function HomeScreen() {
     });
   }, [feedResponse, cursor]);
 
+  const handleVotePostPoll = useCallback(
+    async (post: CommunityPost, optionId: string) => {
+      try {
+        const response = await votePostPoll({
+          communityId: post.communityId,
+          postId: post.id,
+          body: {
+            optionId,
+          },
+        }).unwrap();
+
+        setPosts((prev) =>
+          prev.map((item) =>
+            item.id === post.id ? response.post : item,
+          ),
+        );
+      } catch (error) {
+        console.log("Poll vote failed:", error);
+      }
+    },
+    [votePostPoll],
+  );
+
   const handleRefresh = useCallback(async () => {
     if (refreshing) return;
 
     setRefreshing(true);
 
-    if (cursor !== undefined) {
-      setCursor(undefined);
-      return;
-    }
-
     try {
+      if (cursor !== undefined) {
+        setCursor(undefined);
+        return;
+      }
+
       await refetch();
     } finally {
-      setRefreshing(false);
+      if (cursor === undefined) {
+        setRefreshing(false);
+      }
     }
   }, [cursor, refetch, refreshing]);
 
@@ -177,6 +210,7 @@ export default function HomeScreen() {
           onPressShare={handleSharePost}
           onPressAuthor={handleAuthorPress}
           onPressMedia={openViewer}
+          onPressPollOption={handleVotePostPoll}
         />
       );
     },
@@ -187,6 +221,7 @@ export default function HomeScreen() {
       handleSharePost,
       handleAuthorPress,
       openViewer,
+      handleVotePostPoll,
     ],
   );
 

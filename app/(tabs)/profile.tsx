@@ -17,7 +17,7 @@ import {
 import { Redirect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { Menu, Tabs } from "heroui-native";
+import { Menu, Switch, Tabs } from "heroui-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useDispatch } from "react-redux";
 
@@ -65,7 +65,7 @@ type ImageTarget = "avatar" | "cover";
 const POSTS_LIMIT = 10;
 
 export default function ProfileScreen() {
-  const { colors } = useAppTheme();
+  const { colors, isDark, setThemeMode } = useAppTheme();
   const styles = useMemo(() => createProfileStyles(colors), [colors]);
   const dispatch = useDispatch();
 
@@ -273,12 +273,6 @@ export default function ProfileScreen() {
       setIsPullRefreshing(true);
       refreshStartedRef.current = true;
 
-      /*
-       * Important:
-       * Do not clear allPosts here.
-       * Do not clear communities here.
-       * Old data stays visible while native pull refresh spinner is showing.
-       */
       if (postsCursor !== null) {
         setPostsCursor(null);
       }
@@ -715,7 +709,7 @@ export default function ProfileScreen() {
                           presentation="popover"
                           placement="bottom"
                           align="end"
-                          width={230}
+                          width={250}
                           className="rounded-2xl border border-border bg-surface"
                         >
                           <Menu.Item onPress={handleEditProfile}>
@@ -725,6 +719,49 @@ export default function ProfileScreen() {
                           <Menu.Item onPress={handleCreateCommunity}>
                             <Menu.ItemTitle>Create Community</Menu.ItemTitle>
                           </Menu.Item>
+
+                          <View
+                            style={{
+                              paddingHorizontal: 14,
+                              paddingVertical: 12,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                            }}
+                          >
+                            <View
+                              style={{
+                                flex: 1,
+                                flexDirection: "row",
+                                alignItems: "center",
+                              }}
+                            >
+                              <Ionicons
+                                name={isDark ? "moon-outline" : "sunny-outline"}
+                                size={18}
+                                color={colors.foreground}
+                              />
+
+                              <Text
+                                style={{
+                                  marginLeft: 10,
+                                  color: colors.foreground,
+                                  fontSize: 14,
+                                  fontFamily: "Poppins_500Medium",
+                                }}
+                              >
+                                {isDark ? "Dark mode" : "Light mode"}
+                              </Text>
+                            </View>
+
+                            <Switch
+                              isSelected={isDark}
+                              onSelectedChange={(selected) => {
+                                setThemeMode(selected ? "dark" : "light");
+                              }}
+                            />
+                          </View>
 
                           <Menu.Item
                             onPress={handleLogout}

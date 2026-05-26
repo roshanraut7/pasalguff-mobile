@@ -81,6 +81,9 @@ export const baseApi = createApi({
     "AdminCommunities",
     "Notifications",
     "CommunityGuidelines",
+      "Onboarding",
+  "OnboardingCategory",
+  "SuggestedCommunity",
 
     /**
      * Post feed / post detail / my posts.

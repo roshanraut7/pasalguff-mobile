@@ -26,6 +26,8 @@ import type {
    CommunityPostsTableQuery,
   CommunityPostsTableResponse,
   UpdateCommunityPostArgs,
+  VotePostPollResponse,
+  VotePostPollArgs,
 } from "@/types/post";
 
 /* =========================================================
@@ -355,6 +357,22 @@ export const postApi = baseApi.injectEndpoints({
         { type: "AdminPosts" as const, id: "LIST" },
       ],
     }),
+    votePostPoll: builder.mutation<VotePostPollResponse, VotePostPollArgs>({
+  query: ({ communityId, postId, body }) => ({
+    url: `/communities/${communityId}/posts/${postId}/poll/vote`,
+    method: "POST",
+    body,
+  }),
+
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Post" as const, id: arg.postId },
+    { type: "Post" as const, id: "LIST" },
+    { type: "Post" as const, id: "HOME-FEED" },
+    { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
+    { type: "AdminPosts" as const, id: arg.postId },
+    { type: "AdminPosts" as const, id: "LIST" },
+  ],
+}),
 
 
  /* =========================================================
@@ -572,5 +590,6 @@ export const {
   useUpdateCommentMutation,
   useDeleteCommentMutation,
   useGetHomeFeedPostsQuery,
-  useGetCommunityPostsTableQuery 
+  useGetCommunityPostsTableQuery,
+    useVotePostPollMutation,
 } = postApi;

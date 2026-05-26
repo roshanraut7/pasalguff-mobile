@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+        
+            <defs>
+                <clipPath id="clip-shape">
+                    <rect width="100%" height="100%" rx="60" ry="60" />
+                </clipPath>
+            </defs>
+        
+		<defs>
+			
+						<filter id="shadow-0" x="-200%" y="-200%" width="500%" height="500%">
+							<feDropShadow
+								dx="0"
+								dy="0.8"
+								stdDeviation="1"
+								flood-color="#000000"
+								flood-opacity="0.6"
+							/>
+						</filter>
+					
+		</defs>
+        <g clip-path="url(#clip-shape)">
+            
+            <defs>
+                <linearGradient id="bg-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#43e97b" /><stop offset="100%" stop-color="#38f9d7" />
+                </linearGradient>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#bg-grad)" />
+        
+			
+            <g transform="translate(256, 256) scale(10) rotate(0) translate(-12, -12)" opacity="1" filter="url(#shadow-0)">
+					<title xmlns="" stroke="#ffecb3">lucide:coffee</title>
+<path xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#ffecb3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 2v2m4-2v2m2 4a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1M6 2v2"/>
+				</g>
+        </g>
+    </svg>

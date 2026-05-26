@@ -49,6 +49,29 @@ type TabKey = "posts" | "about" | "communities" | "friends";
 
 type ActiveItem = CommunityPost | PublicProfileCommunity | FriendUser;
 
+type PublicProfilePermissions = {
+  canViewProfile: boolean;
+  canViewAbout: boolean;
+  canViewPosts: boolean;
+  canViewCommunities: boolean;
+  canViewFriends: boolean;
+  canMessage: boolean;
+};
+
+type PublicProfileWithPermissions = PublicUserProfile & {
+  permissions?: PublicProfilePermissions;
+};
+
+type PublicProfilePostWithExtraFields = PublicProfilePost & {
+  linkUrl?: string | null;
+  type?: unknown;
+  tag?: unknown;
+  status?: unknown;
+  updatedAt?: string | null;
+  editedAt?: string | null;
+  isLikedByMe?: boolean;
+};
+
 function getInitials(name?: string | null) {
   if (!name) return "U";
 
@@ -94,44 +117,55 @@ function mapPublicPostToCommunityPost(
   profile: PublicUserProfile,
   userId: string,
 ): CommunityPost {
-  const community = post.community as PublicProfilePost["community"] & {
+  const safePost = post as PublicProfilePostWithExtraFields;
+
+  const community = safePost.community as PublicProfilePost["community"] & {
     id?: string | null;
     slug?: string | null;
+    avatarImage?: string | null;
+    visibility?: string | null;
   };
 
   return {
-    id: post.id,
+    id: safePost.id,
     communityId: community.id ?? "",
     authorId: userId,
 
-    content: post.content ?? "",
-    linkUrl: null,
+    content: safePost.content ?? "",
+    linkUrl: safePost.linkUrl ?? null,
 
-    createdAt: post.createdAt,
-    updatedAt: post.createdAt,
-    publishedAt: post.publishedAt ?? post.createdAt,
+    type: safePost.type,
+    tag: safePost.tag ?? null,
+    status: safePost.status,
+
+    createdAt: safePost.createdAt,
+    updatedAt: safePost.updatedAt ?? safePost.createdAt,
+    publishedAt: safePost.publishedAt ?? safePost.createdAt,
+    editedAt: safePost.editedAt ?? null,
 
     author: {
       id: userId,
       name: profile.displayName,
-      firstName: null,
-      lastName: null,
+      firstName: profile.firstName ?? null,
+      lastName: profile.lastName ?? null,
       businessName: profile.businessName ?? null,
       image: profile.image ?? null,
     },
 
     community: {
       id: community.id ?? "",
-      name: post.community.name,
+      name: safePost.community.name,
       slug: community.slug ?? "",
+      avatarImage: community.avatarImage ?? null,
+      visibility: community.visibility ?? null,
     },
 
-    media: post.media ?? [],
+    media: safePost.media ?? [],
 
-    isLikedByMe: Boolean((post as any).isLikedByMe),
-    likeCount: post.engagement?.likeCount ?? 0,
-    commentCount: post.engagement?.commentCount ?? 0,
-    shareCount: post.engagement?.shareCount ?? 0,
+    isLikedByMe: Boolean(safePost.isLikedByMe),
+    likeCount: safePost.engagement?.likeCount ?? 0,
+    commentCount: safePost.engagement?.commentCount ?? 0,
+    shareCount: safePost.engagement?.shareCount ?? 0,
   } as unknown as CommunityPost;
 }
 
@@ -218,6 +252,7 @@ function ProfileAvatar({
 
 function ProfileActionButtons({
   profile,
+  isOwnProfile,
   isLoading,
   onSendRequest,
   onAcceptRequest,
@@ -225,7 +260,8 @@ function ProfileActionButtons({
   onCancelRequest,
   onMessage,
 }: {
-  profile: PublicUserProfile;
+  profile: PublicProfileWithPermissions;
+  isOwnProfile: boolean;
   isLoading: boolean;
   onSendRequest: () => void;
   onAcceptRequest: () => void;
@@ -235,6 +271,11 @@ function ProfileActionButtons({
 }) {
   const { colors } = useAppTheme();
   const friendship = profile.friendship;
+  const canMessage = Boolean(profile.permissions?.canMessage);
+
+  if (isOwnProfile) {
+    return null;
+  }
 
   if (friendship?.status === "ACCEPTED") {
     return (
@@ -252,19 +293,21 @@ function ProfileActionButtons({
           />
         </Button>
 
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={isLoading}
-          onPress={onMessage}
-          style={styles.profileActionButton}
-        >
-          <IconButtonContent
-            icon="chatbubble-ellipses-outline"
-            label="Message"
-            color={colors.accent}
-          />
-        </Button>
+        {canMessage ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={isLoading}
+            onPress={onMessage}
+            style={styles.profileActionButton}
+          >
+            <IconButtonContent
+              icon="chatbubble-ellipses-outline"
+              label="Message"
+              color={colors.accent}
+            />
+          </Button>
+        ) : null}
       </View>
     );
   }
@@ -292,18 +335,20 @@ function ProfileActionButtons({
           <Button.Label>Delete</Button.Label>
         </Button>
 
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={isLoading}
-          onPress={onMessage}
-          style={styles.profileActionIconButton}
-        >
-          <IconButtonContent
-            icon="chatbubble-ellipses-outline"
-            color={colors.accent}
-          />
-        </Button>
+        {canMessage ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={isLoading}
+            onPress={onMessage}
+            style={styles.profileActionIconButton}
+          >
+            <IconButtonContent
+              icon="chatbubble-ellipses-outline"
+              color={colors.accent}
+            />
+          </Button>
+        ) : null}
       </View>
     );
   }
@@ -325,19 +370,21 @@ function ProfileActionButtons({
           />
         </Button>
 
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={isLoading}
-          onPress={onMessage}
-          style={styles.profileActionButton}
-        >
-          <IconButtonContent
-            icon="chatbubble-ellipses-outline"
-            label="Message"
-            color={colors.accent}
-          />
-        </Button>
+        {canMessage ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={isLoading}
+            onPress={onMessage}
+            style={styles.profileActionButton}
+          >
+            <IconButtonContent
+              icon="chatbubble-ellipses-outline"
+              label="Message"
+              color={colors.accent}
+            />
+          </Button>
+        ) : null}
       </View>
     );
   }
@@ -358,19 +405,21 @@ function ProfileActionButtons({
         />
       </Button>
 
-      <Button
-        size="sm"
-        variant="secondary"
-        isDisabled={isLoading}
-        onPress={onMessage}
-        style={styles.profileActionButton}
-      >
-        <IconButtonContent
-          icon="chatbubble-ellipses-outline"
-          label="Message"
-          color={colors.accent}
-        />
-      </Button>
+      {canMessage ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          isDisabled={isLoading}
+          onPress={onMessage}
+          style={styles.profileActionButton}
+        >
+          <IconButtonContent
+            icon="chatbubble-ellipses-outline"
+            label="Message"
+            color={colors.accent}
+          />
+        </Button>
+      ) : null}
     </View>
   );
 }
@@ -646,7 +695,7 @@ export default function PublicProfileScreen() {
     sourceCommunityId?: string;
   }>();
 
-  const [activeTab, setActiveTab] = useState<TabKey>("posts");
+  const [activeTab, setActiveTab] = useState<TabKey>("about");
   const [postItems, setPostItems] = useState<CommunityPost[]>([]);
 
   const { viewer, openViewer, closeViewer } = usePostMediaViewer();
@@ -655,6 +704,8 @@ export default function PublicProfileScreen() {
   const safeSourceCommunityId = sourceCommunityId
     ? String(sourceCommunityId)
     : "";
+
+  const isOwnProfile = Boolean(session?.user?.id && session.user.id === safeUserId);
 
   const {
     data: profile,
@@ -665,6 +716,14 @@ export default function PublicProfileScreen() {
   } = useGetPublicProfileQuery(safeUserId, {
     skip: !safeUserId,
   });
+
+  const typedProfile = profile as PublicProfileWithPermissions | undefined;
+
+  const canViewPosts = Boolean(typedProfile?.permissions?.canViewPosts);
+  const canViewCommunities = Boolean(
+    typedProfile?.permissions?.canViewCommunities,
+  );
+  const canViewFriends = Boolean(typedProfile?.permissions?.canViewFriends);
 
   const {
     data: postsData,
@@ -678,7 +737,7 @@ export default function PublicProfileScreen() {
       limit: 20,
     },
     {
-      skip: !safeUserId,
+      skip: !safeUserId || !canViewPosts,
     },
   );
 
@@ -694,7 +753,7 @@ export default function PublicProfileScreen() {
       limit: 20,
     },
     {
-      skip: !safeUserId,
+      skip: !safeUserId || !canViewCommunities,
     },
   );
 
@@ -710,7 +769,7 @@ export default function PublicProfileScreen() {
       limit: 20,
     },
     {
-      skip: !safeUserId,
+      skip: !safeUserId || !canViewFriends,
     },
   );
 
@@ -754,17 +813,17 @@ export default function PublicProfileScreen() {
   });
 
   useEffect(() => {
-    if (!profile || !postsData?.data) {
+    if (!typedProfile || !postsData?.data || !canViewPosts) {
       setPostItems([]);
       return;
     }
 
     const mappedPosts = postsData.data.map((post) =>
-      mapPublicPostToCommunityPost(post, profile, safeUserId),
+      mapPublicPostToCommunityPost(post, typedProfile, safeUserId),
     );
 
     setPostItems(mappedPosts);
-  }, [profile, postsData?.data, safeUserId]);
+  }, [typedProfile, postsData?.data, safeUserId, canViewPosts]);
 
   const isFriendActionLoading =
     isSendingRequest ||
@@ -773,31 +832,52 @@ export default function PublicProfileScreen() {
     isCancellingRequest ||
     isCreatingChat;
 
-  const tabs = useMemo(
-    () => [
-      {
-        key: "posts" as const,
+  const tabs = useMemo(() => {
+    const items: { key: TabKey; label: string }[] = [];
+
+    if (canViewPosts) {
+      items.push({
+        key: "posts",
         label: `Posts ${postsData?.meta?.total ?? 0}`,
-      },
-      {
-        key: "about" as const,
-        label: "About",
-      },
-      {
-        key: "communities" as const,
+      });
+    }
+
+    items.push({
+      key: "about",
+      label: "About",
+    });
+
+    if (canViewCommunities) {
+      items.push({
+        key: "communities",
         label: `Communities ${communitiesData?.meta?.total ?? 0}`,
-      },
-      {
-        key: "friends" as const,
+      });
+    }
+
+    if (canViewFriends) {
+      items.push({
+        key: "friends",
         label: `Friends ${mutualFriendsData?.meta?.total ?? 0}`,
-      },
-    ],
-    [
-      postsData?.meta?.total,
-      communitiesData?.meta?.total,
-      mutualFriendsData?.meta?.total,
-    ],
-  );
+      });
+    }
+
+    return items;
+  }, [
+    canViewPosts,
+    canViewCommunities,
+    canViewFriends,
+    postsData?.meta?.total,
+    communitiesData?.meta?.total,
+    mutualFriendsData?.meta?.total,
+  ]);
+
+  useEffect(() => {
+    const activeTabExists = tabs.some((tab) => tab.key === activeTab);
+
+    if (!activeTabExists) {
+      setActiveTab("about");
+    }
+  }, [activeTab, tabs]);
 
   const activeData = useMemo<ActiveItem[]>(() => {
     if (activeTab === "posts") return postItems;
@@ -831,19 +911,21 @@ export default function PublicProfileScreen() {
           : false;
 
   const handleRefresh = async () => {
-    if (activeTab === "about") {
-      await refetchProfile();
-      return;
+    const tasks: Promise<unknown>[] = [refetchProfile()];
+
+    if (activeTab === "posts" && canViewPosts) {
+      tasks.push(refetchPosts());
     }
 
-    await Promise.all([
-      refetchProfile(),
-      activeTab === "posts"
-        ? refetchPosts()
-        : activeTab === "communities"
-          ? refetchCommunities()
-          : refetchMutualFriends(),
-    ]);
+    if (activeTab === "communities" && canViewCommunities) {
+      tasks.push(refetchCommunities());
+    }
+
+    if (activeTab === "friends" && canViewFriends) {
+      tasks.push(refetchMutualFriends());
+    }
+
+    await Promise.all(tasks);
   };
 
   const handleSendFriendRequest = async () => {
@@ -864,7 +946,7 @@ export default function PublicProfileScreen() {
   };
 
   const handleAcceptFriendRequest = async () => {
-    const requestId = profile?.friendship?.id;
+    const requestId = typedProfile?.friendship?.id;
 
     if (!requestId) return;
 
@@ -883,7 +965,7 @@ export default function PublicProfileScreen() {
   };
 
   const handleRejectFriendRequest = async () => {
-    const requestId = profile?.friendship?.id;
+    const requestId = typedProfile?.friendship?.id;
 
     if (!requestId) return;
 
@@ -902,7 +984,7 @@ export default function PublicProfileScreen() {
   };
 
   const handleCancelFriendRequest = async () => {
-    const requestId = profile?.friendship?.id;
+    const requestId = typedProfile?.friendship?.id;
 
     if (!requestId) return;
 
@@ -921,7 +1003,9 @@ export default function PublicProfileScreen() {
   };
 
   const handleMessagePress = async () => {
-    if (!safeUserId || isCreatingChat) return;
+    if (!safeUserId || isCreatingChat || !typedProfile?.permissions?.canMessage) {
+      return;
+    }
 
     try {
       const chat = await createDirectChat({
@@ -961,7 +1045,7 @@ export default function PublicProfileScreen() {
     );
   }
 
-  if (profileError || !profile) {
+  if (profileError || !typedProfile) {
     return (
       <SafeAreaView
         edges={["top"]}
@@ -980,7 +1064,7 @@ export default function PublicProfileScreen() {
         </Text>
 
         <Text style={[styles.errorText, { color: colors.muted }]}>
-          You may not have permission to view this profile.
+          This profile could not be loaded.
         </Text>
 
         <Button
@@ -1033,7 +1117,7 @@ export default function PublicProfileScreen() {
     }
 
     if (activeTab === "about") {
-      return <AboutSection profile={profile} />;
+      return <AboutSection profile={typedProfile} />;
     }
 
     if (activeTab === "posts") {
@@ -1068,7 +1152,7 @@ export default function PublicProfileScreen() {
   const listHeader = (
     <View style={styles.page}>
       <View style={styles.coverSection}>
-        <CoverImage image={profile.coverImage} />
+        <CoverImage image={typedProfile.coverImage} />
 
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="chevron-back" size={22} color="#ffffff" />
@@ -1083,7 +1167,10 @@ export default function PublicProfileScreen() {
               },
             ]}
           >
-            <ProfileAvatar image={profile.image} name={profile.displayName} />
+            <ProfileAvatar
+              image={typedProfile.image}
+              name={typedProfile.displayName}
+            />
           </View>
         </View>
       </View>
@@ -1093,29 +1180,30 @@ export default function PublicProfileScreen() {
           numberOfLines={1}
           style={[styles.profileName, { color: colors.foreground }]}
         >
-          {profile.displayName}
+          {typedProfile.displayName}
         </Text>
 
-        {profile.businessName ? (
+        {typedProfile.businessName ? (
           <Text
             numberOfLines={1}
             style={[styles.profileSubText, { color: colors.muted }]}
           >
-            {profile.businessName}
+            {typedProfile.businessName}
           </Text>
         ) : null}
 
-        {profile.businessType ? (
+        {typedProfile.businessType ? (
           <Text
             numberOfLines={1}
             style={[styles.profileBusinessType, { color: colors.muted }]}
           >
-            {profile.businessType}
+            {typedProfile.businessType}
           </Text>
         ) : null}
 
         <ProfileActionButtons
-          profile={profile}
+          profile={typedProfile}
+          isOwnProfile={isOwnProfile}
           isLoading={isFriendActionLoading}
           onSendRequest={handleSendFriendRequest}
           onAcceptRequest={handleAcceptFriendRequest}
@@ -1137,7 +1225,7 @@ export default function PublicProfileScreen() {
             <Ionicons name="calendar-outline" size={14} color={colors.accent} />
 
             <Text style={[styles.profileBadgeText, { color: colors.accent }]}>
-              Joined {formatDate(profile.createdAt)}
+              Joined {formatDate(typedProfile.createdAt)}
             </Text>
           </View>
         </View>
@@ -1212,7 +1300,9 @@ export default function PublicProfileScreen() {
         visible={!!commentPost}
         post={activeCommentPost}
         comments={comments}
-        isLoading={(isLoadingComments || isFetchingComments) && comments.length === 0}
+        isLoading={
+          (isLoadingComments || isFetchingComments) && comments.length === 0
+        }
         isCreating={isCreatingComment || isCreatingReply}
         inputValue={commentInput}
         onChangeInput={setCommentInput}

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -23,16 +24,23 @@ import { usePostInteractions } from "@/hooks/media/usePostInteractions";
 import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import {
+  useCancelMyJoinRequestMutation,
   useGetCommunityAccessQuery,
   useGetCommunityBySlugQuery,
   useJoinCommunityMutation,
 } from "@/store/api/communityApi";
-import { useGetCommunityMembersQuery } from "@/store/api/communityMemberManagementApi";
+import {
+  useGetCommunityMembersQuery,
+  useRemoveCommunityMemberMutation,
+} from "@/store/api/communityMemberManagementApi";
 import {
   useGetCommunityGuidelinesQuery,
   type CommunityGuidelineItem,
 } from "@/store/api/communityGuidelinesApi";
-import { useGetCommunityPostsQuery } from "@/store/api/postApi";
+import {
+  useDeletePostMutation,
+  useGetCommunityPostsQuery,
+} from "@/store/api/postApi";
 import type { CommunityMemberItem } from "@/types/community";
 import type { CommunityPost } from "@/types/post";
 
@@ -43,12 +51,15 @@ export default function CommunityDetailScreen() {
 
   const [tab, setTab] = useState("posts");
   const [isJoining, setIsJoining] = useState(false);
+  const [isCancellingRequest, setIsCancellingRequest] = useState(false);
 
   const [postCursor, setPostCursor] = useState<string | undefined>(undefined);
   const [postItems, setPostItems] = useState<CommunityPost[]>([]);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
 
   const [memberPage, setMemberPage] = useState(1);
   const [memberItems, setMemberItems] = useState<CommunityMemberItem[]>([]);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const { viewer, openViewer, closeViewer } = usePostMediaViewer();
 
@@ -107,16 +118,31 @@ export default function CommunityDetailScreen() {
     community?.myRole === "MODERATOR" ||
     community?.myRole === "MEMBER";
 
+  const isJoinRequestPending = community?.myJoinRequestStatus === "PENDING";
+
+  const isPrivateLocked =
+    community?.visibility === "PRIVATE" &&
+    !isJoined &&
+    !isOwner &&
+    !isModerator;
+
   const canViewContent =
     Boolean(access?.canView) ||
     community?.visibility === "PUBLIC" ||
-    Boolean(isJoined);
+    Boolean(isJoined) ||
+    Boolean(isOwner) ||
+    Boolean(isModerator);
 
   const canManageMembers =
     isOwner || Boolean(access?.permissions?.canManageMembers);
 
+  const canManagePosts =
+    isOwner || Boolean(access?.permissions?.canManagePosts);
+
   const canLoadMembers =
-    !!session?.user && !!community?.id && Boolean(isJoined);
+    !!session?.user &&
+    !!community?.id &&
+    (Boolean(isJoined) || Boolean(isOwner) || Boolean(isModerator));
 
   const {
     data: membersResponse,
@@ -169,11 +195,18 @@ export default function CommunityDetailScreen() {
   const guidelineItems = guidelinesResponse?.data ?? [];
 
   const [joinCommunity] = useJoinCommunityMutation();
+  const [cancelMyJoinRequest] = useCancelMyJoinRequestMutation();
+  const [deletePost] = useDeletePostMutation();
+  const [removeCommunityMember] = useRemoveCommunityMemberMutation();
 
   const coverUrl = toAbsoluteFileUrl(community?.coverImage);
   const avatarUrl = toAbsoluteFileUrl(community?.avatarImage);
 
-  const showJoinButton = !!community && !isOwner && !isJoined;
+  const showJoinButton =
+    !!community && !isOwner && !isJoined && !isJoinRequestPending;
+
+  const showCancelRequestButton =
+    !!community && !isOwner && !isJoined && isJoinRequestPending;
 
   const memberCount =
     community?.memberCount ?? membersResponse?.meta?.total ?? memberItems.length;
@@ -188,12 +221,18 @@ export default function CommunityDetailScreen() {
     return null;
   }, [isOwner, isModerator, isJoined]);
 
+  const aboutRoleLabel = isJoinRequestPending
+    ? "Pending"
+    : roleLabel ?? "Visitor";
+
   useEffect(() => {
     setPostCursor(undefined);
     setPostItems([]);
+    setDeletingPostId(null);
 
     setMemberPage(1);
     setMemberItems([]);
+    setRemovingMemberId(null);
 
     closeComments();
   }, [community?.id, closeComments]);
@@ -246,12 +285,192 @@ export default function CommunityDetailScreen() {
       setMemberItems([]);
 
       await Promise.allSettled([refetchCommunity(), refetchAccess()]);
-    } catch (error) {
+
+      if (community.visibility === "PRIVATE") {
+        Alert.alert(
+          "Request sent",
+          "Your request is pending. Please wait for verification from the admin to unlock this community.",
+        );
+      }
+    } catch (error: any) {
       console.log("Join community failed:", error);
+
+      Alert.alert(
+        "Could not join",
+        error?.data?.message ??
+          "Something went wrong while joining this community.",
+      );
     } finally {
       setIsJoining(false);
     }
-  }, [community?.id, joinCommunity, refetchCommunity, refetchAccess]);
+  }, [
+    community?.id,
+    community?.visibility,
+    joinCommunity,
+    refetchCommunity,
+    refetchAccess,
+  ]);
+
+  const handleCancelJoinRequest = useCallback(() => {
+    if (!community?.id) return;
+
+    Alert.alert(
+      "Cancel request",
+      "Do you want to cancel your join request for this private community?",
+      [
+        {
+          text: "No",
+          style: "cancel",
+        },
+        {
+          text: "Cancel Request",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsCancellingRequest(true);
+
+              await cancelMyJoinRequest(community.id).unwrap();
+
+              setMemberPage(1);
+              setMemberItems([]);
+
+              await Promise.allSettled([refetchCommunity(), refetchAccess()]);
+            } catch (error: any) {
+              console.log("Cancel join request failed:", error);
+
+              Alert.alert(
+                "Could not cancel request",
+                error?.data?.message ??
+                  "Something went wrong while cancelling your request.",
+              );
+            } finally {
+              setIsCancellingRequest(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [
+    community?.id,
+    cancelMyJoinRequest,
+    refetchCommunity,
+    refetchAccess,
+  ]);
+
+  const handleDeletePost = useCallback(
+    async (post: CommunityPost) => {
+      if (!community?.id) return;
+
+      try {
+        setDeletingPostId(post.id);
+
+        await deletePost({
+          communityId: community.id,
+          postId: post.id,
+        }).unwrap();
+
+        setPostItems((prev) => prev.filter((item) => item.id !== post.id));
+
+        if (commentPost?.id === post.id) {
+          closeComments();
+        }
+
+        await Promise.allSettled([refetchCommunity()]);
+      } catch (error: any) {
+        console.log("Delete community post failed:", error);
+
+        Alert.alert(
+          "Could not delete post",
+          error?.data?.message ??
+            "Something went wrong while deleting this post.",
+        );
+
+        throw error;
+      } finally {
+        setDeletingPostId(null);
+      }
+    },
+    [
+      community?.id,
+      deletePost,
+      commentPost?.id,
+      closeComments,
+      refetchCommunity,
+    ],
+  );
+
+  const handleRemoveMember = useCallback(
+    (member: CommunityMemberItem) => {
+      if (!community?.id) return;
+
+      const targetUserId = member.user.id;
+
+      if (!targetUserId) return;
+
+      if (targetUserId === session?.user?.id) {
+        Alert.alert("Not allowed", "You cannot remove yourself.");
+        return;
+      }
+
+      if (member.role === "ADMIN") {
+        Alert.alert("Not allowed", "You cannot remove the community owner.");
+        return;
+      }
+
+      Alert.alert(
+        "Remove member",
+        `Are you sure you want to remove ${
+          member.user.name ?? "this member"
+        } from this community?`,
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                setRemovingMemberId(targetUserId);
+
+                await removeCommunityMember({
+                  communityId: community.id,
+                  targetUserId,
+                }).unwrap();
+
+                setMemberItems((prev) =>
+                  prev.filter((item) => item.user.id !== targetUserId),
+                );
+
+                await Promise.allSettled([
+                  refetchCommunity(),
+                  refetchAccess(),
+                ]);
+              } catch (error: any) {
+                console.log("Remove member failed:", error);
+
+                Alert.alert(
+                  "Could not remove member",
+                  error?.data?.message ??
+                    "Something went wrong while removing this member.",
+                );
+              } finally {
+                setRemovingMemberId(null);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [
+      community?.id,
+      removeCommunityMember,
+      refetchCommunity,
+      refetchAccess,
+      session?.user?.id,
+    ],
+  );
 
   const loadMorePosts = useCallback(() => {
     if (tab !== "posts") return;
@@ -437,7 +656,7 @@ export default function CommunityDetailScreen() {
                   }}
                   className="h-[42px] w-[42px] items-center justify-center rounded-full border border-white/20 bg-white/15"
                 >
-                  <Ionicons name="chevron-back" size={20} color="#fff" />
+                  <Ionicons name="chevron-back" size={20} color="#ffffff" />
                 </Pressable>
               </View>
 
@@ -518,6 +737,38 @@ export default function CommunityDetailScreen() {
                         {roleLabel}
                       </Text>
                     </View>
+                  ) : showCancelRequestButton ? (
+                    <Pressable
+                      onPress={handleCancelJoinRequest}
+                      disabled={isCancellingRequest}
+                      style={{
+                        minWidth: 116,
+                        minHeight: 36,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: colors.danger,
+                        backgroundColor: colors.surfaceSecondary,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      {isCancellingRequest ? (
+                        <ActivityIndicator size="small" color={colors.danger} />
+                      ) : (
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            color: colors.danger,
+                            fontSize: 12,
+                            fontFamily: "Poppins_700Bold",
+                          }}
+                        >
+                          Cancel Request
+                        </Text>
+                      )}
+                    </Pressable>
                   ) : showJoinButton ? (
                     <Pressable
                       onPress={handleJoin}
@@ -604,17 +855,11 @@ export default function CommunityDetailScreen() {
                 <View className="pt-3">
                   <Tabs.Content value="posts">
                     <View className="bg-background">
-                      {!canViewContent && community.visibility === "PRIVATE" ? (
-                        <Text
-                          className="mt-2 px-5 text-muted"
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 22,
-                            fontFamily: "Poppins_400Regular",
-                          }}
-                        >
-                          Join this private community to view posts.
-                        </Text>
+                      {isPrivateLocked ? (
+                        <PrivateLockedMessage
+                          isPending={isJoinRequestPending}
+                          colors={colors}
+                        />
                       ) : postsLoading && postItems.length === 0 ? (
                         <View className="py-8">
                           <ActivityIndicator
@@ -646,18 +891,26 @@ export default function CommunityDetailScreen() {
                         </Text>
                       ) : (
                         <View className="mt-2">
-                          {postItems.map((post) => (
-                            <CommunityPostCard
-                              key={post.id}
-                              post={post}
-                              disableMediaPlayback={viewer.visible}
-                              onPressLike={handleLikePost}
-                              onPressComment={openComments}
-                              onPressShare={handleSharePost}
-                              onPressAuthor={handleAuthorPress}
-                              onPressMedia={openViewer}
-                            />
-                          ))}
+                          {postItems.map((post) => {
+                            const isOwnPost =
+                              post.author?.id === session?.user?.id;
+
+                            return (
+                              <CommunityPostCard
+                                key={post.id}
+                                post={post}
+                                disableMediaPlayback={viewer.visible}
+                                onPressLike={handleLikePost}
+                                onPressComment={openComments}
+                                onPressShare={handleSharePost}
+                                onPressAuthor={handleAuthorPress}
+                                onPressMedia={openViewer}
+                                canDelete={canManagePosts || isOwnPost}
+                                isDeleting={deletingPostId === post.id}
+                                onDelete={handleDeletePost}
+                              />
+                            );
+                          })}
 
                           {postsFetching && postItems.length > 0 ? (
                             <View className="py-5">
@@ -712,7 +965,7 @@ export default function CommunityDetailScreen() {
                       <InfoRow
                         icon="shield-checkmark-outline"
                         label="Your Role"
-                        value={roleLabel ?? "Visitor"}
+                        value={aboutRoleLabel}
                         colors={colors}
                       />
 
@@ -726,89 +979,92 @@ export default function CommunityDetailScreen() {
                     </View>
                   </Tabs.Content>
 
-<Tabs.Content value="guidelines">
-  <View className="bg-background px-5 pt-2">
-    {!canViewContent && community.visibility === "PRIVATE" ? (
-      <Text
-        className="text-muted"
-        style={{
-          fontSize: 14,
-          lineHeight: 22,
-          fontFamily: "Poppins_400Regular",
-        }}
-      >
-        Join this private community to view guidelines.
-      </Text>
-    ) : guidelinesLoading ||
-      (guidelinesFetching && guidelineItems.length === 0) ? (
-      <View className="py-6">
-        <ActivityIndicator size="small" color={colors.accent} />
-      </View>
-    ) : guidelinesError ? (
-      <Text
-        style={{
-          color: colors.danger,
-          fontSize: 14,
-          fontFamily: "Poppins_500Medium",
-        }}
-      >
-        Failed to load guidelines.
-      </Text>
-    ) : guidelineItems.length === 0 ? (
-      <View className="rounded-[22px] bg-surface px-4 py-5">
-        <Text
-          className="text-foreground"
-          style={{
-            fontSize: 16,
-            fontFamily: "Poppins_700Bold",
-          }}
-        >
-          No guidelines yet
-        </Text>
+                  <Tabs.Content value="guidelines">
+                    <View className="bg-background px-5 pt-2">
+                      {isPrivateLocked ? (
+                        <PrivateLockedMessage
+                          isPending={isJoinRequestPending}
+                          colors={colors}
+                        />
+                      ) : guidelinesLoading ||
+                        (guidelinesFetching && guidelineItems.length === 0) ? (
+                        <View className="py-6">
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accent}
+                          />
+                        </View>
+                      ) : guidelinesError ? (
+                        <Text
+                          style={{
+                            color: colors.danger,
+                            fontSize: 14,
+                            fontFamily: "Poppins_500Medium",
+                          }}
+                        >
+                          Failed to load guidelines.
+                        </Text>
+                      ) : guidelineItems.length === 0 ? (
+                        <View className="rounded-[22px] bg-surface px-4 py-5">
+                          <Text
+                            className="text-foreground"
+                            style={{
+                              fontSize: 16,
+                              fontFamily: "Poppins_700Bold",
+                            }}
+                          >
+                            No guidelines yet
+                          </Text>
 
-        <Text
-          className="mt-1 text-muted"
-          style={{
-            fontSize: 14,
-            lineHeight: 22,
-            fontFamily: "Poppins_400Regular",
-          }}
-        >
-          Community guidelines will appear here once the admin adds them.
-        </Text>
-      </View>
-    ) : (
-      <Accordion
-        selectionMode="single"
-        variant="surface"
-        defaultValue={guidelineItems[0]?.id}
-        className="overflow-hidden rounded-[22px]"
-        styles={{
-          container: {
-            borderRadius: 22,
-            overflow: "hidden",
-          },
-          separator: {
-            height: 1,
-          },
-        }}
-      >
-        {guidelineItems.map((guideline, index) => (
-          <GuidelineAccordionItem
-            key={guideline.id}
-            guideline={guideline}
-            index={index}
-            colors={colors}
-          />
-        ))}
-      </Accordion>
-    )}
-  </View>
-</Tabs.Content>
+                          <Text
+                            className="mt-1 text-muted"
+                            style={{
+                              fontSize: 14,
+                              lineHeight: 22,
+                              fontFamily: "Poppins_400Regular",
+                            }}
+                          >
+                            Community guidelines will appear here once the admin
+                            adds them.
+                          </Text>
+                        </View>
+                      ) : (
+                        <Accordion
+                          selectionMode="single"
+                          variant="surface"
+                          defaultValue={guidelineItems[0]?.id}
+                          className="overflow-hidden rounded-[22px]"
+                          styles={{
+                            container: {
+                              borderRadius: 22,
+                              overflow: "hidden",
+                            },
+                            separator: {
+                              height: 1,
+                            },
+                          }}
+                        >
+                          {guidelineItems.map((guideline, index) => (
+                            <GuidelineAccordionItem
+                              key={guideline.id}
+                              guideline={guideline}
+                              index={index}
+                              colors={colors}
+                            />
+                          ))}
+                        </Accordion>
+                      )}
+                    </View>
+                  </Tabs.Content>
 
                   <Tabs.Content value="members">
                     <View className="bg-background px-5 pt-2">
-                      {!isJoined ? (
+                      {isPrivateLocked ? (
+                        <PrivateLockedMessage
+                          isPending={isJoinRequestPending}
+                          colors={colors}
+                        />
+                      ) : !isJoined && !isOwner && !isModerator ? (
                         <Text
                           className="text-muted"
                           style={{
@@ -853,15 +1109,34 @@ export default function CommunityDetailScreen() {
                             const memberAvatar =
                               toAbsoluteFileUrl(member.user.image) ?? null;
 
+                            const isSelf =
+                              member.user.id === session?.user?.id;
+
+                            const isAdminMember = member.role === "ADMIN";
+
+                            const isActiveMember =
+                              !member.status || member.status === "ACTIVE";
+
+                            const canRemoveMember =
+                              canManageMembers &&
+                              !isSelf &&
+                              !isAdminMember &&
+                              isActiveMember;
+
                             return (
                               <MemberRow
                                 key={member.id}
                                 member={member}
                                 memberAvatar={memberAvatar}
                                 canManageMembers={canManageMembers}
+                                canRemoveMember={canRemoveMember}
+                                isRemoving={removingMemberId === member.user.id}
                                 colors={colors}
                                 onPressProfile={() =>
                                   handleMemberPress(member.user.id)
+                                }
+                                onRemoveMember={() =>
+                                  handleRemoveMember(member)
                                 }
                               />
                             );
@@ -932,6 +1207,53 @@ export default function CommunityDetailScreen() {
   );
 }
 
+function PrivateLockedMessage({
+  isPending,
+  colors,
+}: {
+  isPending: boolean;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  return (
+    <View className="mx-5 mt-2 rounded-[22px] border border-border bg-surface px-4 py-5">
+      <View className="flex-row items-start">
+        <View className="mr-3 h-[38px] w-[38px] items-center justify-center rounded-full bg-segment">
+          <Ionicons
+            name={isPending ? "time-outline" : "lock-closed-outline"}
+            size={20}
+            color={colors.accent}
+          />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text
+            className="text-foreground"
+            style={{
+              fontSize: 16,
+              fontFamily: "Poppins_700Bold",
+            }}
+          >
+            {isPending ? "Waiting for admin verification" : "Private community"}
+          </Text>
+
+          <Text
+            className="mt-1 text-muted"
+            style={{
+              fontSize: 14,
+              lineHeight: 22,
+              fontFamily: "Poppins_400Regular",
+            }}
+          >
+            {isPending
+              ? "Your join request is pending. Please wait for verification from the admin to unlock this community."
+              : "Join this private community first. After admin approval, posts, guidelines and members will be unlocked."}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function InlineStat({
   icon,
   value,
@@ -971,6 +1293,7 @@ function InlineStat({
     </View>
   );
 }
+
 function GuidelineAccordionItem({
   guideline,
   index,
@@ -1036,76 +1359,125 @@ function MemberRow({
   member,
   memberAvatar,
   canManageMembers,
+  canRemoveMember,
+  isRemoving,
   colors,
   onPressProfile,
+  onRemoveMember,
 }: {
   member: CommunityMemberItem;
   memberAvatar: string | null;
   canManageMembers: boolean;
+  canRemoveMember: boolean;
+  isRemoving: boolean;
   colors: ReturnType<typeof useAppTheme>["colors"];
   onPressProfile: () => void;
+  onRemoveMember: () => void;
 }) {
   return (
-    <Pressable
-      onPress={onPressProfile}
-      android_ripple={{ color: colors.surfaceSecondary }}
+    <View
       className="flex-row items-center rounded-[20px] border border-border bg-surface px-4 py-3"
       style={{ width: "100%" }}
     >
-      <View className="mr-3 h-[48px] w-[48px] overflow-hidden rounded-full border border-border bg-segment">
-        {memberAvatar ? (
-          <Image
-            source={{ uri: memberAvatar }}
+      <Pressable
+        onPress={onPressProfile}
+        android_ripple={{ color: colors.surfaceSecondary }}
+        className="flex-row items-center"
+        style={{ flex: 1 }}
+      >
+        <View className="mr-3 h-[48px] w-[48px] overflow-hidden rounded-full border border-border bg-segment">
+          {memberAvatar ? (
+            <Image
+              source={{ uri: memberAvatar }}
+              style={{
+                width: "100%",
+                height: "100%",
+              }}
+              resizeMode="cover"
+            />
+          ) : (
+            <View className="h-full w-full items-center justify-center">
+              <Ionicons name="person-outline" size={20} color={colors.accent} />
+            </View>
+          )}
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text
+            className="text-foreground"
+            numberOfLines={1}
             style={{
-              width: "100%",
-              height: "100%",
+              fontSize: 15,
+              fontFamily: "Poppins_600SemiBold",
             }}
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="h-full w-full items-center justify-center">
-            <Ionicons name="person-outline" size={20} color={colors.accent} />
-          </View>
-        )}
-      </View>
+          >
+            {member.user.name ?? "Unknown User"}
+          </Text>
 
-      <View style={{ flex: 1 }}>
-        <Text
-          className="text-foreground"
-          style={{
-            fontSize: 15,
-            fontFamily: "Poppins_600SemiBold",
-          }}
-        >
-          {member.user.name ?? "Unknown User"}
-        </Text>
-
-        <Text
-          className="mt-1 text-muted"
-          style={{
-            fontSize: 13,
-            fontFamily: "Poppins_400Regular",
-          }}
-        >
-          {member.role}
-          {canManageMembers && member.status ? ` • ${member.status}` : ""}
-        </Text>
-
-        {canManageMembers && member.user.email ? (
           <Text
             className="mt-1 text-muted"
+            numberOfLines={1}
             style={{
-              fontSize: 12,
+              fontSize: 13,
               fontFamily: "Poppins_400Regular",
             }}
           >
-            {member.user.email}
+            {member.role}
+            {canManageMembers && member.status ? ` • ${member.status}` : ""}
           </Text>
-        ) : null}
-      </View>
 
-      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-    </Pressable>
+          {canManageMembers && member.user.email ? (
+            <Text
+              className="mt-1 text-muted"
+              numberOfLines={1}
+              style={{
+                fontSize: 12,
+                fontFamily: "Poppins_400Regular",
+              }}
+            >
+              {member.user.email}
+            </Text>
+          ) : null}
+        </View>
+      </Pressable>
+
+      {canRemoveMember ? (
+        <Pressable
+          onPress={onRemoveMember}
+          disabled={isRemoving}
+          className="ml-3 flex-row items-center rounded-full px-3 py-2"
+          style={{
+            backgroundColor: colors.danger,
+            opacity: isRemoving ? 0.7 : 1,
+          }}
+        >
+          {isRemoving ? (
+            <ActivityIndicator size="small" color={colors.dangerForeground} />
+          ) : (
+            <>
+              <Ionicons
+                name="person-remove-outline"
+                size={14}
+                color={colors.dangerForeground}
+              />
+
+              <Text
+                style={{
+                  marginLeft: 5,
+                  color: colors.dangerForeground,
+                  fontSize: 12,
+                  fontFamily: "Poppins_600SemiBold",
+                }}
+              >
+                Remove
+              </Text>
+            </>
+          )}
+        </Pressable>
+      ) : (
+        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+      )}
+    </View>
   );
 }
 

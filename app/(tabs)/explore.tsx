@@ -8,6 +8,7 @@ import React, {
 import { router } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   LayoutChangeEvent,
   ListRenderItem,
@@ -25,6 +26,7 @@ import { SearchField } from "heroui-native";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useGetCategoriesQuery } from "@/store/api/category.api";
 import {
+  useCancelMyJoinRequestMutation,
   useGetExploreCommunitiesQuery,
   useJoinCommunityMutation,
   useLeaveCommunityMutation,
@@ -112,9 +114,7 @@ const ExploreHeader = React.memo(function ExploreHeader({
     categoriesLoading && categoryPage === 1 && categoryPills.length <= 1;
 
   const shouldShowMoreButton =
-    hasMoreCategories &&
-    !isPullRefreshing &&
-    categoryPills.length > 1;
+    hasMoreCategories && !isPullRefreshing && categoryPills.length > 1;
 
   return (
     <View style={{ paddingTop: 16, paddingBottom: 12 }}>
@@ -455,6 +455,7 @@ export default function ExploreScreen() {
 
   const [joinCommunity] = useJoinCommunityMutation();
   const [leaveCommunity] = useLeaveCommunityMutation();
+  const [cancelMyJoinRequest] = useCancelMyJoinRequestMutation();
 
   useEffect(() => {
     if (!categoriesResponse) return;
@@ -484,14 +485,6 @@ export default function ExploreScreen() {
   }, [categoryItems]);
 
   useEffect(() => {
-    /**
-     * When search text or category changes:
-     * - clear old community list
-     * - show loader
-     * - wait for the new API response
-     *
-     * This prevents the temporary "No communities found" flicker.
-     */
     setIsListTransitioning(true);
     setPage(1);
     setCommunities([]);
@@ -610,10 +603,6 @@ export default function ExploreScreen() {
         animated: false,
       });
 
-      /**
-       * Do not clear categoryItems or communities during pull refresh.
-       * Keep old data visible while fresh data loads.
-       */
       setCategoryPage(1);
       setPage(1);
       setHasMore(true);
@@ -657,6 +646,10 @@ export default function ExploreScreen() {
     return community.isJoined === true || community.myMemberStatus === "ACTIVE";
   }, []);
 
+  const isCommunityPending = useCallback((community: CommunityItem) => {
+    return community.myJoinRequestStatus === "PENDING";
+  }, []);
+
   const updateCommunityInLocalState = useCallback(
     (communityId: string, patch: Partial<CommunityItem>) => {
       setCommunities((prev) =>
@@ -677,8 +670,64 @@ export default function ExploreScreen() {
     async (community: CommunityItem) => {
       const isOwner = isCommunityOwner(community);
       const isJoined = isCommunityJoined(community);
+      const isPending = isCommunityPending(community);
+      const isPrivate = community.visibility === "PRIVATE";
 
       if (isOwner || actionCommunityId) return;
+
+      if (isPending) {
+        Alert.alert(
+          "Cancel request",
+          "Do you want to cancel your join request for this private community?",
+          [
+            {
+              text: "No",
+              style: "cancel",
+            },
+            {
+              text: "Cancel Request",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  setActionCommunityId(community.id);
+
+                  updateCommunityInLocalState(community.id, {
+                    isJoined: false,
+                    myRole: null,
+                    myMemberStatus: null,
+                    myJoinRequestId: null,
+                    myJoinRequestStatus: null,
+                  });
+
+                  await cancelMyJoinRequest(community.id).unwrap();
+
+                  await refetchCommunities();
+                } catch (error: any) {
+                  console.log("Cancel join request failed:", error);
+
+                  updateCommunityInLocalState(community.id, {
+                    isJoined: community.isJoined,
+                    myRole: community.myRole,
+                    myMemberStatus: community.myMemberStatus,
+                    myJoinRequestId: community.myJoinRequestId,
+                    myJoinRequestStatus: community.myJoinRequestStatus,
+                  });
+
+                  Alert.alert(
+                    "Could not cancel request",
+                    error?.data?.message ??
+                      "Something went wrong while cancelling your request.",
+                  );
+                } finally {
+                  setActionCommunityId(null);
+                }
+              },
+            },
+          ],
+        );
+
+        return;
+      }
 
       try {
         setActionCommunityId(community.id);
@@ -687,36 +736,63 @@ export default function ExploreScreen() {
           updateCommunityInLocalState(community.id, {
             isJoined: false,
             myMemberStatus: "LEFT",
+            myJoinRequestId: null,
+            myJoinRequestStatus: null,
           });
 
           await leaveCommunity(community.id).unwrap();
+        } else if (isPrivate) {
+          updateCommunityInLocalState(community.id, {
+            isJoined: false,
+            myRole: community.myRole ?? null,
+            myMemberStatus: community.myMemberStatus ?? null,
+            myJoinRequestStatus: "PENDING",
+          });
+
+          await joinCommunity({ communityId: community.id }).unwrap();
+
+          Alert.alert(
+            "Request sent",
+            "Your request is pending. Please wait for verification from the admin to unlock this community.",
+          );
         } else {
           updateCommunityInLocalState(community.id, {
             isJoined: true,
             myRole: community.myRole ?? "MEMBER",
             myMemberStatus: "ACTIVE",
+            myJoinRequestId: null,
+            myJoinRequestStatus: null,
           });
 
           await joinCommunity({ communityId: community.id }).unwrap();
         }
 
         await refetchCommunities();
-      } catch (error) {
+      } catch (error: any) {
         console.log("Community join/leave failed:", error);
 
         updateCommunityInLocalState(community.id, {
           isJoined: community.isJoined,
           myRole: community.myRole,
           myMemberStatus: community.myMemberStatus,
+          myJoinRequestId: community.myJoinRequestId,
+          myJoinRequestStatus: community.myJoinRequestStatus,
         });
+
+        Alert.alert(
+          "Action failed",
+          error?.data?.message ?? "Something went wrong. Please try again.",
+        );
       } finally {
         setActionCommunityId(null);
       }
     },
     [
       actionCommunityId,
+      cancelMyJoinRequest,
       isCommunityJoined,
       isCommunityOwner,
+      isCommunityPending,
       joinCommunity,
       leaveCommunity,
       refetchCommunities,
@@ -737,18 +813,10 @@ export default function ExploreScreen() {
   };
 
   const renderEmpty = () => {
-    /**
-     * Pull refresh already has its own spinner.
-     * So do not show empty state or big loader during pull refresh.
-     */
     if (isPullRefreshing) {
       return null;
     }
 
-    /**
-     * Search/category changed but new API result has not arrived yet.
-     * Show loader, not "No communities found".
-     */
     if (isListTransitioning || isInitialLoading || isFirstPageFetching) {
       return (
         <View style={{ paddingVertical: 40 }}>

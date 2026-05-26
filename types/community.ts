@@ -70,6 +70,8 @@ export type CommunityItem = {
   adminId?: string;
   createdAt?: string;
   updatedAt?: string;
+  myJoinRequestId?: string | null;
+myJoinRequestStatus?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | null;
 
   category?: CommunityCategory | null;
 

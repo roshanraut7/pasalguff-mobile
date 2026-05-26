@@ -331,7 +331,7 @@ export default function MessagesScreen() {
 
         <View style={styles.searchWrap}>
           <SearchField value={search} onChange={setSearch}>
-            <SearchField.Group className="rounded-[18px] bg-field-background px-3 py-2">
+            <SearchField.Group className="rounded-[18px] bg-background px-3 py-2">
               <SearchField.SearchIcon className="px-3" />
               <SearchField.Input placeholder="Search messages" />
               <SearchField.ClearButton className="mr-2 px-2" />

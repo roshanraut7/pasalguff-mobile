@@ -102,6 +102,7 @@ export const uploadApi = baseApi.injectEndpoints({
         method: "POST",
         body: buildFormData(payload, "profile-avatar"),
       }),
+        invalidatesTags: ["Profile", "Onboarding"],
     }),
 
     uploadProfileCover: builder.mutation<UploadResponse, UploadFilePayload>({
@@ -110,6 +111,7 @@ export const uploadApi = baseApi.injectEndpoints({
         method: "POST",
         body: buildFormData(payload, "profile-cover"),
       }),
+      invalidatesTags: ["Profile", "Onboarding"],
     }),
 
     uploadCommunityAvatar: builder.mutation<UploadResponse, UploadFilePayload>({

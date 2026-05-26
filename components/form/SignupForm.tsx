@@ -17,7 +17,6 @@ import {
   signupSchema,
   type SignupFormValues,
 } from "@/schema/singup.schema";
-import { mapSignupValues } from "@/lib/auth-mapper";
 import { signUpWithEmail } from "@/api/better-auth-client";
 import { useAppTheme } from "@/hooks/useAppTheme";
 
@@ -25,6 +24,7 @@ export default function SignupForm() {
   const [serverError, setServerError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
   const { colors } = useAppTheme();
 
   const {
@@ -38,11 +38,6 @@ export default function SignupForm() {
       lastName: "",
       email: "",
       password: "",
-      businessName: "",
-      businessType: "",
-      panNo: "",
-      registrationNo: "",
-      address: "",
     },
   });
 
@@ -51,14 +46,19 @@ export default function SignupForm() {
       setServerError("");
       setIsSubmitting(true);
 
-      const payload = mapSignupValues(values);
-      await signUpWithEmail(payload);
-        const result = await signUpWithEmail(payload);
+      await signUpWithEmail({
+        firstName: values.firstName.trim(),
+        lastName: values.lastName.trim(),
+        email: values.email.trim().toLowerCase(),
+        password: values.password,
+      });
 
-        const role = result?.user?.role;
-      const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
-
-      router.replace(isAdmin ? "/admin" : "/(tabs)");
+      /**
+       * After signup, user should complete onboarding.
+       * Business type, interests, business name, and address
+       * will be saved from onboarding screen.
+       */
+      router.replace("/onboarding");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Signup failed");
     } finally {
@@ -98,12 +98,16 @@ export default function SignupForm() {
             render={({ field: { onChange, value } }) => (
               <TextField isRequired isInvalid={!!errors.firstName}>
                 <Label>First Name</Label>
+
                 <Input
                   value={value}
                   onChangeText={onChange}
                   placeholder="First name"
+                  autoCapitalize="words"
+                  autoCorrect={false}
                   className="border-field-border bg-field-background"
                 />
+
                 {errors.firstName?.message ? (
                   <FieldError>{errors.firstName.message}</FieldError>
                 ) : null}
@@ -119,12 +123,16 @@ export default function SignupForm() {
             render={({ field: { onChange, value } }) => (
               <TextField isRequired isInvalid={!!errors.lastName}>
                 <Label>Last Name</Label>
+
                 <Input
                   value={value}
                   onChangeText={onChange}
                   placeholder="Last name"
+                  autoCapitalize="words"
+                  autoCorrect={false}
                   className="border-field-border bg-field-background"
                 />
+
                 {errors.lastName?.message ? (
                   <FieldError>{errors.lastName.message}</FieldError>
                 ) : null}
@@ -133,101 +141,6 @@ export default function SignupForm() {
           />
         </View>
       </View>
-
-      <Controller
-        control={control}
-        name="businessName"
-        render={({ field: { onChange, value } }) => (
-          <TextField isRequired isInvalid={!!errors.businessName}>
-            <Label>Business Name</Label>
-            <Input
-              value={value}
-              onChangeText={onChange}
-              placeholder="Enter business name"
-              className="border-field-border bg-field-background"
-            />
-            {errors.businessName?.message ? (
-              <FieldError>{errors.businessName.message}</FieldError>
-            ) : null}
-          </TextField>
-        )}
-      />
-
-      <Controller
-        control={control}
-        name="businessType"
-        render={({ field: { onChange, value } }) => (
-          <TextField isRequired isInvalid={!!errors.businessType}>
-            <Label>Business Type</Label>
-            <Input
-              value={value}
-              onChangeText={onChange}
-              placeholder="Enter business type"
-              className="border-field-border bg-field-background"
-            />
-            {errors.businessType?.message ? (
-              <FieldError>{errors.businessType.message}</FieldError>
-            ) : null}
-          </TextField>
-        )}
-      />
-
-      <Controller
-        control={control}
-        name="panNo"
-        render={({ field: { onChange, value } }) => (
-          <TextField isRequired isInvalid={!!errors.panNo}>
-            <Label>PAN Number</Label>
-            <Input
-              value={value}
-              onChangeText={onChange}
-              placeholder="Enter PAN number"
-              className="border-field-border bg-field-background"
-            />
-            {errors.panNo?.message ? (
-              <FieldError>{errors.panNo.message}</FieldError>
-            ) : null}
-          </TextField>
-        )}
-      />
-
-      <Controller
-        control={control}
-        name="registrationNo"
-        render={({ field: { onChange, value } }) => (
-          <TextField isRequired isInvalid={!!errors.registrationNo}>
-            <Label>Registration Number</Label>
-            <Input
-              value={value}
-              onChangeText={onChange}
-              placeholder="Enter registration number"
-              className="border-field-border bg-field-background"
-            />
-            {errors.registrationNo?.message ? (
-              <FieldError>{errors.registrationNo.message}</FieldError>
-            ) : null}
-          </TextField>
-        )}
-      />
-
-      <Controller
-        control={control}
-        name="address"
-        render={({ field: { onChange, value } }) => (
-          <TextField isRequired isInvalid={!!errors.address}>
-            <Label>Address</Label>
-            <Input
-              value={value}
-              onChangeText={onChange}
-              placeholder="Enter address"
-              className="border-field-border bg-field-background"
-            />
-            {errors.address?.message ? (
-              <FieldError>{errors.address.message}</FieldError>
-            ) : null}
-          </TextField>
-        )}
-      />
 
       <Controller
         control={control}
@@ -279,6 +192,8 @@ export default function SignupForm() {
                 onChangeText={onChange}
                 placeholder="Enter your password"
                 secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
               />
 
               <InputGroup.Suffix>

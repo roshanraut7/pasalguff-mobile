@@ -59,13 +59,28 @@ type CommunityPostMedia = {
   sortOrder?: number;
 };
 
+type CommunityPostPollOption = {
+  id?: string;
+  text: string;
+  sortOrder?: number;
+};
+
+type CommunityPostPoll = {
+  id?: string;
+  question: string;
+  closesAt?: string | null;
+  options: CommunityPostPollOption[];
+};
+
 type CommunityPost = {
   id: string;
   communityId: string;
+  title: string | null;
   tag: PostTag;
   content: string | null;
   linkUrl: string | null;
   media: CommunityPostMedia[];
+  poll?: CommunityPostPoll | null;
 };
 
 type ComposerAttachment = {
@@ -89,6 +104,11 @@ type UploadPostMediaResponse = {
   items: UploadPostMediaItem[];
 };
 
+type PostPollPayload = {
+  question: string;
+  options: string[];
+};
+
 type PostTab = "text" | "media" | "link";
 
 type TagOptionMeta = {
@@ -98,10 +118,15 @@ type TagOptionMeta = {
 
 const TAG_OPTIONS: TagOptionMeta[] = POST_TAGS.map((tag) => ({
   value: tag as PostTag,
-  label: tag.charAt(0) + tag.slice(1).toLowerCase(),
+  label: tag
+    .toLowerCase()
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" "),
 }));
 
 const MAX_ATTACHMENTS = 10;
+const MAX_POLL_OPTIONS = 10;
 const FOOTER_RESERVED_SPACE = 150;
 
 let _idCounter = 0;
@@ -435,14 +460,21 @@ export default function CreatePostScreen() {
   const [communitySearch, setCommunitySearch] = useState("");
   const [communityModalVisible, setCommunityModalVisible] = useState(false);
   const [tagModalVisible, setTagModalVisible] = useState(false);
+
   const [selectedCommunityId, setSelectedCommunityId] = useState("");
   const [selectedTag, setSelectedTag] = useState<PostTag>("GENERAL");
+  const [title, setTitle] = useState("");
+
   const [linkUrl, setLinkUrl] = useState("");
   const [html, setHtml] = useState("<p></p>");
   const [plainText, setPlainText] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const [pollEnabled, setPollEnabled] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
 
   const { data: communitiesResponse, isLoading: isLoadingCommunities } =
     useGetMyCommunitiesQuery({
@@ -533,17 +565,25 @@ export default function CreatePostScreen() {
     [selectedTag],
   );
 
+  const resetPoll = useCallback(() => {
+    setPollEnabled(false);
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+  }, []);
+
   const resetComposer = useCallback(() => {
     setActiveDraftId(null);
     setSelectedTag("GENERAL");
+    setTitle("");
     setLinkUrl("");
     setHtml("<p></p>");
     setPlainText("");
     setAttachments([]);
     setErrors({});
     setPostTab("text");
+    resetPoll();
     safeSetContent("<p></p>");
-  }, [safeSetContent]);
+  }, [resetPoll, safeSetContent]);
 
   const handleHtmlChange = useCallback((value: string) => {
     setHtml(value);
@@ -704,6 +744,57 @@ export default function CreatePostScreen() {
     }));
   };
 
+  const buildPollPayload = useCallback(
+    (requireValid: boolean): PostPollPayload | undefined => {
+      if (!pollEnabled) return undefined;
+
+      const question = pollQuestion.trim();
+      const options = pollOptions.map((option) => option.trim()).filter(Boolean);
+
+      if (!question && options.length === 0) {
+        return undefined;
+      }
+
+      if (!question) {
+        if (requireValid) {
+          setErrors((prev) => ({
+            ...prev,
+            poll: "Poll question is required.",
+          }));
+        }
+        return undefined;
+      }
+
+      if (options.length < 2) {
+        if (requireValid) {
+          setErrors((prev) => ({
+            ...prev,
+            poll: "Poll must have at least 2 options.",
+          }));
+        }
+        return undefined;
+      }
+
+      const uniqueOptions = new Set(options.map((option) => option.toLowerCase()));
+
+      if (uniqueOptions.size !== options.length) {
+        if (requireValid) {
+          setErrors((prev) => ({
+            ...prev,
+            poll: "Poll options must be unique.",
+          }));
+        }
+        return undefined;
+      }
+
+      return {
+        question,
+        options,
+      };
+    },
+    [pollEnabled, pollOptions, pollQuestion],
+  );
+
   const saveDraft = async () => {
     try {
       setErrors({});
@@ -717,8 +808,11 @@ export default function CreatePostScreen() {
         throw error;
       }
 
+      const poll = buildPollPayload(false);
+
       const parsed = draftPostSchema.safeParse({
         communityId: selectedCommunityId,
+        title,
         tag: selectedTag,
         html,
         plainText,
@@ -734,13 +828,16 @@ export default function CreatePostScreen() {
       }
 
       const createBody = {
+        title: title.trim() || undefined,
         tag: parsed.data.tag,
         content: parsed.data.html,
         linkUrl: parsed.data.linkUrl?.trim() || undefined,
         media,
+        poll,
       };
 
       const updateBody = {
+        title: title.trim() || undefined,
         tag: parsed.data.tag,
         content: parsed.data.html,
         linkUrl: parsed.data.linkUrl?.trim() || undefined,
@@ -800,8 +897,15 @@ export default function CreatePostScreen() {
         throw error;
       }
 
+      const poll = buildPollPayload(true);
+
+      if (pollEnabled && !poll) {
+        return;
+      }
+
       const parsed = publishPostSchema.safeParse({
         communityId: selectedCommunityId,
+        title,
         tag: selectedTag,
         html,
         plainText,
@@ -817,13 +921,16 @@ export default function CreatePostScreen() {
       }
 
       const createBody = {
+        title: title.trim(),
         tag: parsed.data.tag,
         content: parsed.data.html,
         linkUrl: parsed.data.linkUrl?.trim() || undefined,
         media,
+        poll,
       };
 
       const updateBody = {
+        title: title.trim(),
         tag: parsed.data.tag,
         content: parsed.data.html,
         linkUrl: parsed.data.linkUrl?.trim() || undefined,
@@ -872,9 +979,11 @@ export default function CreatePostScreen() {
       setActiveDraftId(draft.id);
       setSelectedCommunityId(draft.communityId);
       setSelectedTag(draft.tag);
+      setTitle(draft.title ?? "");
       setLinkUrl(draft.linkUrl ?? "");
       setHtml(draft.content ?? "<p></p>");
       setPlainText(stripHtml(draft.content ?? ""));
+
       setAttachments(
         draft.media.map((media) => ({
           id: media.id ?? makeId("remote"),
@@ -883,12 +992,25 @@ export default function CreatePostScreen() {
           mediaType: media.type,
         })),
       );
+
+      if (draft.poll) {
+        setPollEnabled(true);
+        setPollQuestion(draft.poll.question ?? "");
+        setPollOptions(
+          draft.poll.options?.length
+            ? draft.poll.options.map((option) => option.text)
+            : ["", ""],
+        );
+      } else {
+        resetPoll();
+      }
+
       setErrors({});
       setDraftsTabActive(false);
       setPostTab("text");
       safeSetContent(draft.content ?? "<p></p>");
     },
-    [safeSetContent],
+    [resetPoll, safeSetContent],
   );
 
   const deleteDraft = useCallback(
@@ -983,16 +1105,18 @@ export default function CreatePostScreen() {
         <View style={styles.contentWrap}>
           <View style={styles.topBar}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-             <Pressable
-  onPress={() => {
-    router.replace("/(tabs)");
-  }}
-  style={styles.backButton}
->
-  <Ionicons name="chevron-back" size={22} color={p.text} />
-</Pressable>
+              <Pressable
+                onPress={() => {
+                  router.replace("/(tabs)");
+                }}
+                style={styles.backButton}
+              >
+                <Ionicons name="chevron-back" size={22} color={p.text} />
+              </Pressable>
 
-              <Text style={styles.screenTitle}>Create post</Text>
+              <Text style={styles.screenTitle}>
+                {activeDraftId ? "Edit draft" : "Create post"}
+              </Text>
             </View>
 
             <Pressable
@@ -1100,6 +1224,25 @@ export default function CreatePostScreen() {
                   },
                 ]}
               >
+                <View style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>Discussion title</Text>
+
+                  <View style={styles.linkWrap}>
+                    <TextInput
+                      value={title}
+                      onChangeText={setTitle}
+                      placeholder="Write a clear title"
+                      placeholderTextColor={p.placeholder}
+                      maxLength={160}
+                      style={styles.linkInput}
+                    />
+                  </View>
+
+                  {errors.title ? (
+                    <Text style={styles.errorText}>{errors.title}</Text>
+                  ) : null}
+                </View>
+
                 <View style={styles.tagsRow}>
                   <Pressable
                     onPress={() => setTagModalVisible(true)}
@@ -1216,6 +1359,128 @@ export default function CreatePostScreen() {
                     ) : null}
                   </View>
                 )}
+
+                <View style={styles.sectionCard}>
+                  <Pressable
+                    onPress={() => setPollEnabled((prev) => !prev)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Ionicons
+                        name="bar-chart-outline"
+                        size={18}
+                        color={p.accentStrong}
+                      />
+                      <Text style={styles.sectionTitle}>Add poll</Text>
+                    </View>
+
+                    <Ionicons
+                      name={pollEnabled ? "checkbox" : "square-outline"}
+                      size={22}
+                      color={pollEnabled ? p.accentStrong : p.muted}
+                    />
+                  </Pressable>
+
+                  {pollEnabled ? (
+                    <View style={{ marginTop: 12, gap: 10 }}>
+                      <View style={styles.linkWrap}>
+                        <TextInput
+                          value={pollQuestion}
+                          onChangeText={setPollQuestion}
+                          placeholder="Poll question"
+                          placeholderTextColor={p.placeholder}
+                          maxLength={160}
+                          style={styles.linkInput}
+                        />
+                      </View>
+
+                      {pollOptions.map((option, index) => (
+                        <View
+                          key={`poll-option-${index}`}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <View style={[styles.linkWrap, { flex: 1 }]}>
+                            <TextInput
+                              value={option}
+                              onChangeText={(value) => {
+                                setPollOptions((prev) =>
+                                  prev.map((item, itemIndex) =>
+                                    itemIndex === index ? value : item,
+                                  ),
+                                );
+                              }}
+                              placeholder={`Option ${index + 1}`}
+                              placeholderTextColor={p.placeholder}
+                              maxLength={120}
+                              style={styles.linkInput}
+                            />
+                          </View>
+
+                          {pollOptions.length > 2 ? (
+                            <Pressable
+                              onPress={() =>
+                                setPollOptions((prev) =>
+                                  prev.filter((_, itemIndex) => itemIndex !== index),
+                                )
+                              }
+                              style={{
+                                width: 40,
+                                height: 40,
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <Ionicons
+                                name="trash-outline"
+                                size={18}
+                                color={p.danger}
+                              />
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      ))}
+
+                      {pollOptions.length < MAX_POLL_OPTIONS ? (
+                        <Pressable
+                          onPress={() => setPollOptions((prev) => [...prev, ""])}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
+                            paddingVertical: 8,
+                          }}
+                        >
+                          <Ionicons
+                            name="add-circle-outline"
+                            size={18}
+                            color={p.accentStrong}
+                          />
+                          <Text
+                            style={{
+                              color: p.accentStrong,
+                              fontFamily: "Poppins_600SemiBold",
+                              fontSize: 13,
+                            }}
+                          >
+                            Add option
+                          </Text>
+                        </Pressable>
+                      ) : null}
+
+                      {errors.poll ? (
+                        <Text style={styles.errorText}>{errors.poll}</Text>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
               </ScrollView>
 
               <View

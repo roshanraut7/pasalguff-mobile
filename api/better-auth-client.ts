@@ -11,14 +11,45 @@ export const authClient = createAuthClient({
   plugins: [
     inferAdditionalFields({
       user: {
-        firstName: { type: "string", required: true },
-        lastName: { type: "string", required: true },
-        businessName: { type: "string", required: true },
-        businessType: { type: "string", required: true },
-        panNo: { type: "string", required: true },
-        registrationNo: { type: "string", required: true },
-        address: { type: "string", required: true },
-        coverImage: { type: "string", required: false },
+        firstName: {
+          type: "string",
+          required: true,
+        },
+        lastName: {
+          type: "string",
+          required: true,
+        },
+
+        // These fields will be updated later from profile edit
+        businessName: {
+          type: "string",
+          required: false,
+        },
+        businessType: {
+          type: "string",
+          required: false,
+        },
+        panNo: {
+          type: "string",
+          required: false,
+        },
+        registrationNo: {
+          type: "string",
+          required: false,
+        },
+        address: {
+          type: "string",
+          required: false,
+        },
+        coverImage: {
+          type: "string",
+          required: false,
+        },
+         onboardingCompleted: {
+          type: "boolean",
+          required: false,
+        },
+
         role: {
           type: ["USER", "ADMIN", "SUPER_ADMIN"],
           required: false,
@@ -27,8 +58,8 @@ export const authClient = createAuthClient({
       },
     }),
     expoClient({
-     scheme: "pasalguff",
-  storagePrefix: "pasalguff",
+      scheme: "pasalguff",
+      storagePrefix: "pasalguff",
       storage: SecureStore,
     }),
   ],
@@ -50,28 +81,20 @@ export async function signInWithEmail(data: {
 }
 
 export async function signUpWithEmail(data: {
-  name: string;
   firstName: string;
   lastName: string;
   email: string;
   password: string;
-  businessName: string;
-  businessType: string;
-  panNo: string;
-  registrationNo: string;
-  address: string;
 }) {
+  const firstName = data.firstName.trim();
+  const lastName = data.lastName.trim();
+
   const { data: result, error } = await authClient.signUp.email({
-    name: data.name,
-    firstName: data.firstName,
-    lastName: data.lastName,
-    email: data.email,
+    name: `${firstName} ${lastName}`,
+    firstName,
+    lastName,
+    email: data.email.trim().toLowerCase(),
     password: data.password,
-    businessName: data.businessName,
-    businessType: data.businessType,
-    panNo: data.panNo,
-    registrationNo: data.registrationNo,
-    address: data.address,
   });
 
   if (error) throw new Error(error.message || "Signup failed");

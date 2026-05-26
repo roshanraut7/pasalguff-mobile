@@ -32,7 +32,7 @@ import Animated, {
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
-import type { CommunityPost, PostMedia } from "@/types/post";
+import type { CommunityPost, PostMedia, PostPoll } from "@/types/post";
 
 const systemFonts = [
   ...defaultSystemFonts,
@@ -55,6 +55,13 @@ type CommunityPostCardProps = {
   onPressShare?: (post: CommunityPost) => void;
   onPressAuthor?: (authorId: string) => void;
   onPressMedia?: (media: PostMedia[], startIndex: number) => void;
+
+  /**
+   * Poll option click.
+   * HomeScreen should pass this and call votePostPoll mutation.
+   */
+  onPressPollOption?: (post: CommunityPost, optionId: string) => void;
+
   canDelete?: boolean;
   isDeleting?: boolean;
   onDelete?: (post: CommunityPost) => Promise<void> | void;
@@ -117,6 +124,31 @@ function htmlToPlainText(html?: string | null) {
     .trim();
 }
 
+function getPostTagLabel(tag?: string | null) {
+  if (!tag) return null;
+
+  return tag
+    .toLowerCase()
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function getPollOptionPercentage(
+  option: PostPoll["options"][number],
+  totalVotes: number,
+) {
+  if (typeof option.percentage === "number") {
+    return Math.max(0, Math.min(option.percentage, 100));
+  }
+
+  const voteCount = option.voteCount ?? 0;
+
+  if (totalVotes <= 0) return 0;
+
+  return Math.round((voteCount / totalVotes) * 100);
+}
+
 const ReactionButton = memo(function ReactionButton({
   icon,
   label,
@@ -153,6 +185,122 @@ const ReactionButton = memo(function ReactionButton({
         {label}
       </Text>
     </Pressable>
+  );
+});
+
+const PollResultCard = memo(function PollResultCard({
+  post,
+  poll,
+  onPressOption,
+  styles,
+}: {
+  post: CommunityPost;
+  poll: PostPoll;
+  onPressOption?: (post: CommunityPost, optionId: string) => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const options = useMemo(
+    () =>
+      [...(poll.options ?? [])].sort(
+        (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+      ),
+    [poll.options],
+  );
+
+  const totalVotes =
+    poll.totalVotes ??
+    options.reduce((sum, option) => sum + (option.voteCount ?? 0), 0);
+
+  const isPollClosed =
+    Boolean(poll.isClosed) ||
+    Boolean(poll.closesAt && dayjs(poll.closesAt).isBefore(dayjs()));
+
+  return (
+    <View style={styles.pollCard}>
+      <View style={styles.pollHeaderRow}>
+        <View style={styles.pollIconWrap}>
+          <Ionicons name="bar-chart-outline" size={15} color="#ffffff" />
+        </View>
+
+        <Text style={styles.pollQuestion}>{poll.question}</Text>
+      </View>
+
+      <View style={styles.pollOptionsWrap}>
+        {options.map((option) => {
+          const percentage = getPollOptionPercentage(option, totalVotes);
+          const voted = Boolean(option.isVotedByMe);
+
+          return (
+            <Pressable
+              key={option.id}
+              disabled={isPollClosed || !onPressOption}
+              onPress={() => onPressOption?.(post, option.id)}
+              style={({ pressed }) => [
+                styles.pollOption,
+                voted && styles.pollOptionSelected,
+                pressed && styles.pollOptionPressed,
+                isPollClosed && styles.pollOptionDisabled,
+              ]}
+            >
+              <View style={styles.pollOptionTop}>
+                <View style={styles.pollOptionLabelRow}>
+                  {voted ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={15}
+                      color="#22c55e"
+                    />
+                  ) : (
+                    <Ionicons
+                      name="ellipse-outline"
+                      size={15}
+                      color="#94a3b8"
+                    />
+                  )}
+
+                  <Text numberOfLines={2} style={styles.pollOptionText}>
+                    {option.text}
+                  </Text>
+                </View>
+
+                <Text style={styles.pollPercent}>{percentage}%</Text>
+              </View>
+
+              <View style={styles.pollBarTrack}>
+                <View
+                  style={[
+                    styles.pollBarFill,
+                    {
+                      width: `${percentage}%`,
+                    },
+                  ]}
+                />
+              </View>
+
+              <Text style={styles.pollVoteCount}>
+                {option.voteCount ?? 0}{" "}
+                {(option.voteCount ?? 0) === 1 ? "vote" : "votes"}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={styles.pollFooterRow}>
+        <Text style={styles.pollMeta}>
+          Tap an option to vote • {totalVotes}{" "}
+          {totalVotes === 1 ? "vote" : "votes"}
+        </Text>
+
+        {isPollClosed ? (
+          <Text style={styles.pollClosedText}>Closed</Text>
+        ) : poll.closesAt ? (
+          <Text style={styles.pollMeta}>
+            Ends {dayjs(poll.closesAt).fromNow()}
+          </Text>
+        ) : null}
+      </View>
+    </View>
   );
 });
 
@@ -276,7 +424,7 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
   disabled,
   onPressMedia,
   onDoubleTapLike,
-  colors,
+  colors: _colors,
   styles,
 }: {
   media: PostMedia[];
@@ -341,11 +489,6 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
         data={normalizedMedia}
         scrollAnimationDuration={300}
         onSnapToItem={setIndex}
-        /**
-         * SCROLL FIX:
-         * This makes the carousel respond only to horizontal swipes.
-         * Vertical swipes now pass back to the parent FlatList.
-         */
         onConfigurePanGesture={(gesture) => {
           "worklet";
           gesture.activeOffsetX([-12, 12]);
@@ -400,6 +543,7 @@ export default function CommunityPostCard({
   onPressShare,
   onPressAuthor,
   onPressMedia,
+  onPressPollOption,
   canDelete = false,
   isDeleting = false,
   onDelete,
@@ -411,12 +555,14 @@ export default function CommunityPostCard({
   const authorName = getAuthorName(post.author);
   const authorImage = toAbsoluteFileUrl(post.author.image) ?? undefined;
   const hasMedia = !!post.media?.length;
+  const tagLabel = getPostTagLabel(post.tag);
 
   const [expanded, setExpanded] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const liked = Boolean(post.isLikedByMe);
   const plainText = useMemo(() => htmlToPlainText(post.content), [post.content]);
+
   const shouldCollapse = plainText.length > 220;
 
   const htmlSource = useMemo(() => {
@@ -468,6 +614,55 @@ export default function CommunityPostCard({
       console.log("Delete post failed:", error);
     }
   }, [onDelete, post]);
+
+  const renderPostHtml = () => {
+    if (!htmlSource) return null;
+
+    return (
+      <RenderHTML
+        contentWidth={contentWidth}
+        source={htmlSource}
+        systemFonts={systemFonts}
+        ignoredDomTags={["label"]}
+        baseStyle={styles.htmlBody}
+        tagsStyles={{
+          body: styles.htmlBody,
+          div: styles.htmlBody,
+          p: styles.htmlParagraph,
+          span: styles.htmlSpan,
+
+          strong: styles.htmlStrong,
+          b: styles.htmlStrong,
+
+          em: styles.htmlEm,
+          i: styles.htmlEm,
+
+          u: styles.htmlUnderline,
+
+          ul: styles.htmlList,
+          ol: styles.htmlList,
+          li: styles.htmlListItem,
+
+          a: styles.htmlLink,
+
+          h1: styles.htmlH1,
+          h2: styles.htmlH2,
+          h3: styles.htmlH3,
+          h4: styles.htmlH4,
+          h5: styles.htmlH5,
+          h6: styles.htmlH6,
+        }}
+        defaultTextProps={{
+          selectable: false,
+        }}
+        renderersProps={{
+          a: {
+            onPress: handleOpenLink,
+          },
+        }}
+      />
+    );
+  };
 
   return (
     <Surface variant="default" style={styles.card}>
@@ -556,48 +751,33 @@ export default function CommunityPostCard({
         )}
       </View>
 
+      {!!tagLabel && (
+        <View style={styles.tagWrap}>
+          <View style={styles.postTagChip}>
+            <Ionicons name="pricetag-outline" size={12} color={colors.accent} />
+            <Text style={styles.postTagText}>{tagLabel}</Text>
+          </View>
+        </View>
+      )}
+
+      {!!post.title && (
+        <View style={styles.titleWrap}>
+          <Text style={styles.postTitle}>{post.title}</Text>
+        </View>
+      )}
+
       {htmlSource ? (
         <View style={styles.htmlWrap}>
-          {expanded ? (
-            <RenderHTML
-              contentWidth={contentWidth}
-              source={htmlSource}
-              systemFonts={systemFonts}
-              ignoredDomTags={["label"]}
-              tagsStyles={{
-                body: styles.htmlBody,
-                div: styles.htmlBody,
-                p: styles.htmlParagraph,
-                span: styles.htmlSpan,
-                strong: styles.htmlStrong,
-                b: styles.htmlStrong,
-                em: styles.htmlEm,
-                i: styles.htmlEm,
-                u: styles.htmlUnderline,
-                ul: styles.htmlList,
-                ol: styles.htmlList,
-                li: styles.htmlListItem,
-                a: styles.htmlLink,
-                h1: styles.htmlH1,
-                h2: styles.htmlH2,
-                h3: styles.htmlH3,
-                h4: styles.htmlH4,
-                h5: styles.htmlH5,
-                h6: styles.htmlH6,
-              }}
-              defaultTextProps={{
-                selectable: false,
-              }}
-              renderersProps={{
-                a: {
-                  onPress: handleOpenLink,
-                },
-              }}
-            />
-          ) : (
-            <Text style={styles.previewText} numberOfLines={4}>
+          {shouldCollapse && !expanded ? (
+            <Text
+              style={styles.previewText}
+              numberOfLines={4}
+              ellipsizeMode="tail"
+            >
               {plainText}
             </Text>
+          ) : (
+            renderPostHtml()
           )}
 
           {shouldCollapse && (
@@ -633,6 +813,15 @@ export default function CommunityPostCard({
           onPressMedia={onPressMedia}
           onDoubleTapLike={handleDoubleTapLike}
           colors={colors}
+          styles={styles}
+        />
+      ) : null}
+
+      {post.poll ? (
+        <PollResultCard
+          post={post}
+          poll={post.poll}
+          onPressOption={onPressPollOption}
           styles={styles}
         />
       ) : null}
@@ -812,6 +1001,43 @@ function createStyles(colors: AppColors) {
       borderRadius: 999,
     },
 
+    tagWrap: {
+      paddingHorizontal: 12,
+      paddingTop: 2,
+      flexDirection: "row",
+    },
+
+    postTagChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      alignSelf: "flex-start",
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    postTagText: {
+      color: colors.accent,
+      fontSize: 11,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    titleWrap: {
+      paddingHorizontal: 12,
+      paddingTop: 1,
+    },
+
+    postTitle: {
+      color: colors.foreground,
+      fontSize: 17,
+      lineHeight: 24,
+      fontFamily: "Poppins_700Bold",
+    },
+
     htmlWrap: {
       width: "100%",
       marginTop: 2,
@@ -861,11 +1087,13 @@ function createStyles(colors: AppColors) {
 
     htmlStrong: {
       color: colors.foreground,
-      fontFamily: "Poppins_600SemiBold",
+      fontFamily: "Poppins_700Bold",
+      fontWeight: "700",
     },
 
     htmlEm: {
       color: colors.foreground,
+      fontFamily: "Poppins_400Italic",
       fontStyle: "italic",
     },
 
@@ -894,34 +1122,42 @@ function createStyles(colors: AppColors) {
     },
 
     htmlH1: {
-      fontSize: 28,
-      lineHeight: 36,
+      fontSize: 26,
+      lineHeight: 34,
       fontFamily: "Poppins_700Bold",
+      fontWeight: "700",
       color: colors.foreground,
+      marginTop: 4,
       marginBottom: 8,
     },
 
     htmlH2: {
-      fontSize: 24,
-      lineHeight: 32,
+      fontSize: 22,
+      lineHeight: 30,
       fontFamily: "Poppins_700Bold",
+      fontWeight: "700",
       color: colors.foreground,
+      marginTop: 4,
       marginBottom: 8,
     },
 
     htmlH3: {
-      fontSize: 20,
-      lineHeight: 28,
+      fontSize: 19,
+      lineHeight: 27,
       fontFamily: "Poppins_600SemiBold",
+      fontWeight: "600",
       color: colors.foreground,
+      marginTop: 4,
       marginBottom: 8,
     },
 
     htmlH4: {
-      fontSize: 18,
-      lineHeight: 26,
+      fontSize: 17,
+      lineHeight: 25,
       fontFamily: "Poppins_600SemiBold",
+      fontWeight: "600",
       color: colors.foreground,
+      marginTop: 4,
       marginBottom: 8,
     },
 
@@ -929,15 +1165,19 @@ function createStyles(colors: AppColors) {
       fontSize: 16,
       lineHeight: 24,
       fontFamily: "Poppins_600SemiBold",
+      fontWeight: "600",
       color: colors.foreground,
+      marginTop: 4,
       marginBottom: 8,
     },
 
     htmlH6: {
       fontSize: 15,
-      lineHeight: 22,
+      lineHeight: 23,
       fontFamily: "Poppins_600SemiBold",
+      fontWeight: "600",
       color: colors.foreground,
+      marginTop: 4,
       marginBottom: 8,
     },
 
@@ -1007,6 +1247,132 @@ function createStyles(colors: AppColors) {
     dotActive: {
       backgroundColor: "#ffffff",
       width: 16,
+    },
+
+    pollCard: {
+      marginHorizontal: 12,
+      marginTop: 6,
+      padding: 12,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+      gap: 10,
+    },
+
+    pollHeaderRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8,
+    },
+
+    pollIconWrap: {
+      width: 24,
+      height: 24,
+      borderRadius: 999,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.accent,
+      marginTop: 1,
+    },
+
+    pollQuestion: {
+      flex: 1,
+      color: colors.foreground,
+      fontSize: 14,
+      lineHeight: 21,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    pollOptionsWrap: {
+      gap: 10,
+    },
+
+    pollOption: {
+      gap: 5,
+      borderRadius: 12,
+      padding: 8,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    pollOptionSelected: {
+      borderColor: colors.accent,
+    },
+
+    pollOptionPressed: {
+      opacity: 0.75,
+    },
+
+    pollOptionDisabled: {
+      opacity: 0.65,
+    },
+
+    pollOptionTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+    },
+
+    pollOptionLabelRow: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+
+    pollOptionText: {
+      flex: 1,
+      color: colors.foreground,
+      fontSize: 13,
+      lineHeight: 19,
+      fontFamily: "Poppins_500Medium",
+    },
+
+    pollPercent: {
+      color: colors.foreground,
+      fontSize: 12,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    pollBarTrack: {
+      height: 8,
+      borderRadius: 999,
+      overflow: "hidden",
+      backgroundColor: colors.border,
+    },
+
+    pollBarFill: {
+      height: "100%",
+      borderRadius: 999,
+      backgroundColor: colors.accent,
+    },
+
+    pollVoteCount: {
+      color: colors.muted,
+      fontSize: 11,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    pollFooterRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingTop: 2,
+    },
+
+    pollMeta: {
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    pollClosedText: {
+      color: colors.danger,
+      fontSize: 12,
+      fontFamily: "Poppins_600SemiBold",
     },
 
     reactionsRow: {

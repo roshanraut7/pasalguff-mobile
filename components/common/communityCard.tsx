@@ -33,6 +33,10 @@ function isCommunityJoined(community: CommunityItem) {
   return community.isJoined === true || community.myMemberStatus === "ACTIVE";
 }
 
+function isCommunityPending(community: CommunityItem) {
+  return community.myJoinRequestStatus === "PENDING";
+}
+
 export default function CommunityCard({
   community,
   variant = "explore",
@@ -48,11 +52,41 @@ export default function CommunityCard({
 
   const isOwner = isCommunityOwner(community);
   const isJoined = isCommunityJoined(community);
+  const isPending = isCommunityPending(community);
 
   const resolvedBadgeText =
-    badgeText ?? (isOwner ? "Owner" : isJoined ? "Joined" : undefined);
+    badgeText ??
+    (isOwner
+      ? "Owner"
+      : isJoined
+        ? "Joined"
+        : isPending
+          ? "Pending"
+          : undefined);
 
-  const actionLabel = isOwner ? "Owner" : isJoined ? "Joined" : "Join";
+  const actionLabel = isActionLoading
+    ? ""
+    : isOwner
+      ? "Owner"
+      : isJoined
+        ? "Joined"
+        : isPending
+          ? "Cancel Request"
+          : "Join";
+
+  const actionBackgroundColor = isPending
+    ? colors.surfaceSecondary
+    : isJoined || isOwner
+      ? colors.segment
+      : colors.accent;
+
+  const actionTextColor = isPending
+    ? colors.danger
+    : isJoined || isOwner
+      ? colors.segmentForeground
+      : colors.accentForeground;
+
+  const actionBorderColor = isPending ? colors.danger : "transparent";
 
   const cardPadding = variant === "profile" ? 14 : 12;
   const avatarSize = variant === "profile" ? 48 : 44;
@@ -153,31 +187,25 @@ export default function CommunityCard({
                 }}
                 disabled={isOwner || isActionLoading}
                 style={{
-                  minWidth: 64,
+                  minWidth: isPending ? 116 : 64,
                   height: 34,
                   paddingHorizontal: 14,
                   alignItems: "center",
                   justifyContent: "center",
                   borderRadius: 999,
-                  backgroundColor: isJoined ? colors.segment : colors.accent,
+                  borderWidth: isPending ? 1 : 0,
+                  borderColor: actionBorderColor,
+                  backgroundColor: actionBackgroundColor,
                   opacity: isOwner ? 0.85 : 1,
                 }}
               >
                 {isActionLoading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={
-                      isJoined
-                        ? colors.segmentForeground
-                        : colors.accentForeground
-                    }
-                  />
+                  <ActivityIndicator size="small" color={actionTextColor} />
                 ) : (
                   <Text
+                    numberOfLines={1}
                     style={{
-                      color: isJoined
-                        ? colors.segmentForeground
-                        : colors.accentForeground,
+                      color: actionTextColor,
                       fontSize: 12,
                       fontFamily: "Poppins_700Bold",
                     }}
@@ -189,7 +217,7 @@ export default function CommunityCard({
             ) : resolvedBadgeText ? (
               <View
                 style={{
-                  minWidth: 62,
+                  minWidth: isPending ? 76 : 62,
                   height: 32,
                   paddingHorizontal: 12,
                   alignItems: "center",
@@ -235,6 +263,16 @@ export default function CommunityCard({
                 alignItems: "center",
               }}
             >
+              <Ionicons
+                name={
+                  community.visibility === "PRIVATE"
+                    ? "lock-closed-outline"
+                    : "globe-outline"
+                }
+                size={13}
+                color={colors.muted}
+              />
+
               <Text
                 numberOfLines={1}
                 style={{

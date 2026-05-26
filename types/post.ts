@@ -17,6 +17,8 @@ export type CommunityPostMediaType = "IMAGE" | "VIDEO";
 
 export type CommunityPostStatus = "DRAFT" | "PUBLISHED" | "DELETED";
 
+export type CommunityCommentStatus = "ACTIVE" | "DELETED";
+
 export type CommunityVisibility = "PUBLIC" | "PRIVATE";
 
 export type AdminPostSortBy =
@@ -70,11 +72,33 @@ export type PostMedia = {
   sortOrder: number;
 };
 
+export type PostPollOption = {
+  id: string;
+  text: string;
+  sortOrder: number;
+  voteCount: number;
+  percentage: number;
+  isVotedByMe?: boolean;
+};
+
+export type PostPoll = {
+  id: string;
+  question: string;
+  isClosed: boolean;
+  closesAt: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  totalVotes: number;
+  hasVotedByMe?: boolean;
+  options: PostPollOption[];
+};
+
 export type PostCommunity = {
   id: string;
   name: string;
   slug: string;
   visibility: CommunityVisibility;
+  avatarImage?: string | null;
 };
 
 export type PostAuthor = {
@@ -90,19 +114,28 @@ export type CommunityPost = {
   id: string;
   communityId: string;
   authorId: string;
+
+  title: string | null;
+
   type: CommunityPostType;
   tag: CommunityPostTag;
   status: CommunityPostStatus;
+
   content: string | null;
   linkUrl: string | null;
+
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
   editedAt: string | null;
   deletedAt: string | null;
+
   community: PostCommunity;
   author: PostAuthor;
   media: PostMedia[];
+
+  poll: PostPoll | null;
+
   likeCount: number;
   commentCount: number;
   shareCount: number;
@@ -124,7 +157,7 @@ export type PostComment = {
   authorId: string;
   parentId: string | null;
   content: string;
-  status: "ACTIVE" | "DELETED";
+  status: CommunityCommentStatus;
   createdAt: string;
   updatedAt: string;
   editedAt: string | null;
@@ -142,6 +175,7 @@ export type AdminPost = {
   id: string;
 
   post: {
+    title: string | null;
     content: string | null;
     linkUrl: string | null;
     type: CommunityPostType;
@@ -202,16 +236,25 @@ export type CreatePostMediaPayload = {
   sortOrder?: number;
 };
 
+export type CreatePostPollPayload = {
+  question: string;
+  options: string[];
+  closesAt?: string;
+};
+
 export type CreateCommunityPostPayload = {
+  title?: string;
   content?: string;
   linkUrl?: string;
   tag?: CommunityPostTag;
   media?: CreatePostMediaPayload[];
+  poll?: CreatePostPollPayload;
 };
 
 export type UpdateCommunityPostPayload = {
+  title?: string;
   content?: string;
-  linkUrl?: string;
+  linkUrl?: string | null;
   tag?: CommunityPostTag;
   media?: CreatePostMediaPayload[];
 };
@@ -226,6 +269,10 @@ export type UpdatePostCommentPayload = {
 
 export type SharePostPayload = {
   platform?: string;
+};
+
+export type VotePostPollPayload = {
+  optionId: string;
 };
 
 /* =========================================================
@@ -269,6 +316,12 @@ export type SharePostArgs = {
   body: SharePostPayload;
 };
 
+export type VotePostPollArgs = {
+  communityId: string;
+  postId: string;
+  body: VotePostPollPayload;
+};
+
 export type GetMyPostsArgs = {
   limit?: number;
   cursor?: string | null;
@@ -302,7 +355,7 @@ export type CreateCommentReplyArgs = {
   communityId: string;
   postId: string;
   commentId: string;
- body: {
+  body: {
     content: string;
 
     /**
@@ -353,6 +406,11 @@ export type SharePostResponse = {
   shareCount: number;
 };
 
+export type VotePostPollResponse = {
+  message: string;
+  post: CommunityPost;
+};
+
 export type DeletePostResponse = {
   message: string;
   post: CommunityPost;
@@ -362,8 +420,9 @@ export type DeleteCommentResponse = {
   message: string;
   comment: PostComment;
 };
+
 /* =========================================================
-   user-community-posts-table
+   USER COMMUNITY POSTS TABLE
    ========================================================= */
 
 export type CommunityPostTableItem = {
@@ -371,9 +430,11 @@ export type CommunityPostTableItem = {
   communityId: string;
   authorId: string;
 
-  type: "TEXT" | "MEDIA" | "LINK" | string;
-  tag: string | null;
-  status: "PUBLISHED" | "HIDDEN" | "REMOVED" | string;
+  title: string | null;
+
+  type: CommunityPostType | string;
+  tag: CommunityPostTag | string | null;
+  status: CommunityPostStatus | "HIDDEN" | "REMOVED" | string;
 
   content: string | null;
   linkUrl: string | null;
@@ -381,10 +442,14 @@ export type CommunityPostTableItem = {
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
+  editedAt?: string | null;
 
   author: {
     id: string;
     name: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    businessName?: string | null;
     image?: string | null;
   };
 
@@ -394,6 +459,8 @@ export type CommunityPostTableItem = {
     url: string;
     sortOrder: number;
   }[];
+
+  poll: PostPoll | null;
 
   likeCount: number;
   commentCount: number;
@@ -414,7 +481,7 @@ export type CommunityPostsTableResponse = {
     id: string;
     name: string;
     slug: string;
-    visibility: "PUBLIC" | "PRIVATE" | string;
+    visibility: CommunityVisibility | string;
   };
   viewer: {
     isOwner: boolean;
@@ -437,7 +504,7 @@ export type CommunityPostsTableQuery = {
   limit?: number;
   search?: string;
   status?: "PUBLISHED" | "HIDDEN" | "REMOVED";
-  type?: "TEXT" | "MEDIA" | "LINK";
+  type?: CommunityPostType;
   tag?: string;
   sortBy?: "newest" | "oldest";
 };
