@@ -39,7 +39,7 @@ export const authClient = createAuthClient({
         },
         address: {
           type: "string",
-          required: false,
+          required: true,
         },
         coverImage: {
           type: "string",
@@ -85,6 +85,7 @@ export async function signUpWithEmail(data: {
   lastName: string;
   email: string;
   password: string;
+  address:string;
 }) {
   const firstName = data.firstName.trim();
   const lastName = data.lastName.trim();
@@ -95,6 +96,7 @@ export async function signUpWithEmail(data: {
     lastName,
     email: data.email.trim().toLowerCase(),
     password: data.password,
+    address:data.address,
   });
 
   if (error) throw new Error(error.message || "Signup failed");

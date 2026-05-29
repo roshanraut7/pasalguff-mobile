@@ -4,6 +4,7 @@ import {
   FlatList,
   RefreshControl,
   Text,
+  Alert,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -147,6 +148,12 @@ export default function HomeScreen() {
       } catch (error) {
         console.log("Poll vote failed:", error);
       }
+
+  // Alert.alert(
+  //   "Could not vote",
+  //   error?.data?.message ??
+  //     "You may need to join this community before voting.",
+  // );
     },
     [votePostPoll],
   );

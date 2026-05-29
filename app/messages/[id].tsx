@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Keyboard,
   Linking,
@@ -18,12 +19,23 @@ import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import {
+  getRecordingPermissionsAsync,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
 import { io, type Socket } from "socket.io-client";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useSession } from "@/api/better-auth-client";
 import {
   type ChatMessage,
+  type MessageType,
   useGetChatMessagesQuery,
   useGetChatQuery,
   useMarkChatReadMutation,
@@ -100,6 +112,9 @@ export default function ConversationScreen() {
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createConversationStyles(colors), [colors]);
 
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder);
+
   const [message, setMessage] = useState("");
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -112,6 +127,7 @@ export default function ConversationScreen() {
   const drawerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const isRecordingRef = useRef(false);
 
   const {
     data: chat,
@@ -172,6 +188,22 @@ export default function ConversationScreen() {
 
     return () => {
       clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    isRecordingRef.current = recorderState.isRecording;
+  }, [recorderState.isRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (!isRecordingRef.current) return;
+
+      try {
+        void audioRecorder.stop().catch(() => {});
+      } catch {
+        // Native recorder may already be released.
+      }
     };
   }, []);
 
@@ -355,9 +387,11 @@ export default function ConversationScreen() {
   }, [insets.bottom]);
 
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       scrollRef.current?.scrollToEnd({ animated: true });
     }, 80);
+
+    return () => clearTimeout(timer);
   }, [messages.length, pendingUploads.length]);
 
   const emitTyping = (text: string) => {
@@ -414,11 +448,125 @@ export default function ConversationScreen() {
     }
   };
 
+  const startVoiceRecording = async () => {
+    if (!chatId || isSending || isUploading || recorderState.isRecording) return;
+
+    try {
+      Keyboard.dismiss();
+      setDrawerVisible(false);
+      setMessage("");
+
+      socketRef.current?.emit("typing:stop", { chatId });
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      const currentPermission = await getRecordingPermissionsAsync();
+      let hasPermission = currentPermission.granted;
+
+      if (!hasPermission) {
+        const requestedPermission = await requestRecordingPermissionsAsync();
+        hasPermission = requestedPermission.granted;
+      }
+
+      if (!hasPermission) {
+        Alert.alert(
+          "Microphone permission needed",
+          "Please allow microphone access to record voice messages.",
+        );
+        return;
+      }
+
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: true,
+      });
+
+      await audioRecorder.prepareToRecordAsync();
+      await audioRecorder.record();
+
+      isRecordingRef.current = true;
+    } catch (error) {
+      console.log(
+        "Start voice recording failed:",
+        JSON.stringify(error, null, 2),
+      );
+
+      isRecordingRef.current = false;
+
+      Alert.alert("Recording failed", "Could not start voice recording.");
+    }
+  };
+
+  const stopAndSendVoiceMessage = async () => {
+    if (!chatId || !recorderState.isRecording) return;
+
+    try {
+      const durationSeconds = Math.round(
+        (recorderState.durationMillis || 0) / 1000,
+      );
+
+      await audioRecorder.stop();
+      isRecordingRef.current = false;
+
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: false,
+      });
+
+      const audioUri = audioRecorder.uri;
+
+      if (!audioUri) {
+        Alert.alert("Recording failed", "Could not find the recorded audio.");
+        return;
+      }
+
+      if (durationSeconds < 1) {
+        Alert.alert("Voice message too short", "Please record at least 1 second.");
+        return;
+      }
+
+      await uploadAndSendAsset({
+        uri: audioUri,
+        fileName: `voice-message-${Date.now()}.m4a`,
+        mimeType: "audio/mp4",
+        forcedMessageType: "AUDIO",
+      });
+    } catch (error) {
+      console.log(
+        "Stop/send voice recording failed:",
+        JSON.stringify(error, null, 2),
+      );
+
+      isRecordingRef.current = false;
+
+      Alert.alert("Voice message failed", "Could not send the voice message.");
+    }
+  };
+
+  const cancelVoiceRecording = async () => {
+    if (!recorderState.isRecording) return;
+
+    try {
+      await audioRecorder.stop();
+      isRecordingRef.current = false;
+    } catch (error) {
+      console.log("Cancel voice recording failed:", error);
+    } finally {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: false,
+      });
+    }
+  };
+
   const uploadAndSendAsset = async (asset: {
     uri: string;
     fileName?: string | null;
     mimeType?: string | null;
     fileSize?: number | null;
+    forcedMessageType?: MessageType;
   }) => {
     if (!chatId || isUploading) return;
 
@@ -441,7 +589,7 @@ export default function ConversationScreen() {
       await sendMessage({
         chatId,
         body: {
-          type: guessMessageType(finalMimeType),
+          type: asset.forcedMessageType ?? guessMessageType(finalMimeType),
           mediaUrl: uploaded.url,
           fileName: uploaded.originalName || uploaded.filename || fileName,
           fileSize: uploaded.size || asset.fileSize || undefined,
@@ -457,6 +605,11 @@ export default function ConversationScreen() {
       }, 100);
     } catch (error) {
       console.log("Upload/send file failed:", JSON.stringify(error, null, 2));
+
+      Alert.alert(
+        "Upload failed",
+        "Could not upload this file. Please check your connection and backend upload settings.",
+      );
     }
   };
 
@@ -598,25 +751,34 @@ export default function ConversationScreen() {
       : Math.max(insets.bottom, 10);
 
   const handlePullRefresh = useCallback(async () => {
-  if (!chatId) return;
+    if (!chatId) return;
 
-  try {
-    setIsPullRefreshing(true);
+    try {
+      setIsPullRefreshing(true);
 
-    await Promise.all([
-      refetchMessages(),
-      refetchChat(),
-    ]);
-  } finally {
-    setIsPullRefreshing(false);
-  }
-}, [chatId, refetchMessages, refetchChat]);
+      await Promise.all([refetchMessages(), refetchChat()]);
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [chatId, refetchMessages, refetchChat]);
+
   const headerStatus = isOtherTyping
     ? "Typing..."
     : `${formatActiveStatus(chat?.otherUser, presenceTick)}${
         chat?.sourceCommunity?.name ? ` • ${chat.sourceCommunity.name}` : ""
       }`;
-    
+
+  const isRecording = recorderState.isRecording;
+  const hasTextMessage = message.trim().length > 0;
+
+  const composerActionIcon = isRecording
+    ? "stop"
+    : hasTextMessage
+      ? "send"
+      : "mic";
+
+  const composerActionDisabled = isSending || isUploading;
+  const composerActionOpacity = composerActionDisabled ? 0.55 : 1;
 
   if (chatLoading) {
     return (
@@ -689,10 +851,10 @@ export default function ConversationScreen() {
           keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           showsVerticalScrollIndicator={false}
           refreshControl={
-           <RefreshControl
-  refreshing={isPullRefreshing}
-  onRefresh={handlePullRefresh}
-/>
+            <RefreshControl
+              refreshing={isPullRefreshing}
+              onRefresh={handlePullRefresh}
+            />
           }
         >
           {messagesLoading ? (
@@ -732,49 +894,92 @@ export default function ConversationScreen() {
             <Pressable
               onPress={openAttachmentDrawer}
               style={styles.attachButton}
-              disabled={isUploading}
+              disabled={isUploading || isRecording}
             >
               <Ionicons name="add" size={22} color={colors.accent} />
             </Pressable>
 
             <View style={styles.inputWrap}>
-              <TextInput
-                value={message}
-                onChangeText={(text) => {
-                  setMessage(text);
-                  emitTyping(text);
-                }}
-                placeholder={isUploading ? "Uploading..." : "Type a message..."}
-                placeholderTextColor={colors.placeholder}
-                style={styles.input}
-                multiline
-                scrollEnabled
-                returnKeyType="send"
-                blurOnSubmit={false}
-                onSubmitEditing={() => {
-                  if (Platform.OS !== "ios") {
-                    handleSendText();
-                  }
-                }}
-                underlineColorAndroid="transparent"
-                editable={!isUploading}
-              />
+              {isRecording ? (
+                <View
+                  style={{
+                    minHeight: 38,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Ionicons name="mic" size={18} color={colors.accent} />
+
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: colors.foreground,
+                      fontSize: 15,
+                      fontWeight: "700",
+                    }}
+                  >
+                    Recording{" "}
+                    {formatAudioDuration(
+                      (recorderState.durationMillis || 0) / 1000,
+                    )}
+                  </Text>
+                </View>
+              ) : (
+                <TextInput
+                  value={message}
+                  onChangeText={(text) => {
+                    setMessage(text);
+                    emitTyping(text);
+                  }}
+                  placeholder={isUploading ? "Uploading..." : "Type a message..."}
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.input}
+                  multiline
+                  scrollEnabled
+                  returnKeyType="send"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    if (Platform.OS !== "ios") {
+                      handleSendText();
+                    }
+                  }}
+                  underlineColorAndroid="transparent"
+                  editable={!isUploading}
+                />
+              )}
             </View>
+
+            {isRecording ? (
+              <Pressable
+                style={styles.attachButton}
+                onPress={cancelVoiceRecording}
+                disabled={composerActionDisabled}
+              >
+                <Ionicons name="trash-outline" size={20} color={colors.muted} />
+              </Pressable>
+            ) : null}
 
             <Pressable
               style={[
                 styles.sendButton,
-                (!message.trim() || isSending || isUploading) && {
-                  opacity: 0.55,
+                {
+                  opacity: composerActionOpacity,
                 },
               ]}
-              disabled={!message.trim() || isSending || isUploading}
-              onPress={handleSendText}
+              disabled={composerActionDisabled}
+              onPress={
+                isRecording
+                  ? stopAndSendVoiceMessage
+                  : hasTextMessage
+                    ? handleSendText
+                    : startVoiceRecording
+              }
             >
-              {isSending ? (
+              {isSending || isUploading ? (
                 <ActivityIndicator color="#ffffff" />
               ) : (
-                <Ionicons name="send" size={18} color="#ffffff" />
+                <Ionicons name={composerActionIcon} size={18} color="#ffffff" />
               )}
             </Pressable>
           </View>
@@ -1159,6 +1364,22 @@ function renderMessageContent(
     );
   }
 
+  if (item.type === "AUDIO" && item.mediaUrl) {
+    const audioUrl = toAbsoluteFileUrl(item.mediaUrl);
+
+    if (!audioUrl) return null;
+
+    return (
+      <AudioMessageBubble
+        audioUrl={audioUrl}
+        fileSize={item.fileSize}
+        isMe={isMe}
+        styles={styles}
+        colors={colors}
+      />
+    );
+  }
+
   if (item.type === "FILE") {
     const fileUrl = toAbsoluteFileUrl(item.mediaUrl);
 
@@ -1215,6 +1436,121 @@ function renderMessageContent(
       {item.content}
     </Text>
   );
+}
+
+function AudioMessageBubble({
+  audioUrl,
+  fileSize,
+  isMe,
+  styles,
+  colors,
+}: {
+  audioUrl: string;
+  fileSize?: number | null;
+  isMe: boolean;
+  styles: ReturnType<typeof createConversationStyles>;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  const player = useAudioPlayer(audioUrl);
+  const status = useAudioPlayerStatus(player);
+    const isMountedRef = useRef(true);
+    useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+
+      /**
+       * Do not call player.pause() here.
+       * Expo may already release the native AudioPlayer during unmount.
+       */
+    };
+  }, []);
+
+  const isPlaying = Boolean(status.playing);
+  const currentTime = Math.max(0, status.currentTime || 0);
+  const duration = Math.max(0, status.duration || 0);
+  const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
+
+  const handleTogglePlayback = () => {
+    if (isPlaying) {
+      player.pause();
+      return;
+    }
+
+    if (duration > 0 && currentTime >= duration - 0.2) {
+      player.seekTo(0);
+    }
+
+    player.play();
+  };
+
+  return (
+    <Pressable style={styles.fileBubble} onPress={handleTogglePlayback}>
+      <View style={styles.fileIconWrap}>
+        <Ionicons
+          name={isPlaying ? "pause" : "play"}
+          size={20}
+          color={isMe ? "#ffffff" : colors.foreground}
+        />
+      </View>
+
+      <View style={[styles.fileTextWrap, { minWidth: 160 }]}>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.fileNameText,
+            isMe ? styles.bubbleTextMe : styles.bubbleTextOther,
+          ]}
+        >
+          Voice message
+        </Text>
+
+        <View
+          style={{
+            height: 4,
+            borderRadius: 999,
+            overflow: "hidden",
+            marginTop: 8,
+            backgroundColor: isMe ? "rgba(255,255,255,0.35)" : colors.border,
+          }}
+        >
+          <View
+            style={{
+              height: "100%",
+              width: `${progress * 100}%`,
+              backgroundColor: isMe ? "#ffffff" : colors.accent,
+            }}
+          />
+        </View>
+
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.fileMetaText,
+            isMe ? styles.fileMetaTextMe : styles.fileMetaTextOther,
+            { marginTop: 6 },
+          ]}
+        >
+          {duration > 0
+            ? `${formatAudioDuration(currentTime)} / ${formatAudioDuration(
+                duration,
+              )}`
+            : fileSize
+              ? formatFileSize(fileSize)
+              : "Audio"}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function formatAudioDuration(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 function getAvatarUrl(name: string, image?: string | null) {

@@ -643,6 +643,23 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       fontFamily: "Poppins_600SemiBold",
       color: p.text,
     },
+    titleInput: {
+  fontSize: 22,
+  lineHeight: 30,
+  fontFamily: "Poppins_600SemiBold",
+  color: p.text,
+  paddingHorizontal: 2,
+  paddingVertical: 8,
+  minHeight: 48,
+},
+
+visibilityHintText: {
+  fontSize: 12,
+  lineHeight: 18,
+  fontFamily: "Poppins_400Regular",
+  color: p.muted,
+  marginTop: -8,
+},
 
     tagDesc: {
       fontSize: 12,

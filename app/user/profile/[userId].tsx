@@ -6,7 +6,6 @@ import {
   Image,
   Pressable,
   RefreshControl,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -27,46 +26,70 @@ import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { useCreateDirectChatMutation } from "@/store/api/chatApi";
 
 import {
-  useAcceptFriendRequestMutation,
-  useCancelFriendRequestMutation,
   useGetPublicProfileCommunitiesQuery,
-  useGetPublicProfileMutualFriendsQuery,
   useGetPublicProfilePostsQuery,
   useGetPublicProfileQuery,
-  useRejectFriendRequestMutation,
-  useSendFriendRequestMutation,
 } from "@/store/api/friendApi";
 
+import {
+  useFollowUserMutation,
+  useGetUserFollowersQuery,
+  useGetUserFollowingQuery,
+  useUnfollowUserMutation,
+  type FollowItem,
+} from "@/store/api/followApi";
+
 import type {
-  FriendUser,
   PublicProfileCommunity,
   PublicProfilePost,
   PublicUserProfile,
 } from "@/types/friend";
 import type { CommunityPost } from "@/types/post";
 
-type TabKey = "posts" | "about" | "communities" | "friends";
+import { styles } from "@/constants/styles/PublicProfileScreen.styles";
 
-type ActiveItem = CommunityPost | PublicProfileCommunity | FriendUser;
+type TabKey = "about" | "posts" | "communities" | "followers" | "following";
+
+type ActiveItem = CommunityPost | PublicProfileCommunity | FollowItem;
 
 type PublicProfilePermissions = {
   canViewProfile: boolean;
   canViewAbout: boolean;
   canViewPosts: boolean;
   canViewCommunities: boolean;
-  canViewFriends: boolean;
+  canViewFollowers: boolean;
+  canViewFollowing: boolean;
   canMessage: boolean;
+  canFollow: boolean;
+  canUnfollow: boolean;
+  canEditProfile: boolean;
+
+  /**
+   * Temporary backend alias.
+   * Keep this only while old frontend/backend types still reference friends.
+   */
+  canViewFriends?: boolean;
 };
 
 type PublicProfileWithPermissions = PublicUserProfile & {
+  follow?: {
+    isFollowing: boolean;
+    followedAt?: string | null;
+  };
+  stats?: {
+    followersCount: number;
+    followingCount: number;
+  };
   permissions?: PublicProfilePermissions;
 };
 
 type PublicProfilePostWithExtraFields = PublicProfilePost & {
+  title?: string | null;
   linkUrl?: string | null;
   type?: unknown;
   tag?: unknown;
   status?: unknown;
+  visibility?: unknown;
   updatedAt?: string | null;
   editedAt?: string | null;
   isLikedByMe?: boolean;
@@ -94,27 +117,16 @@ function formatDate(value?: string | null) {
   });
 }
 
-function friendshipLabel(profile: PublicUserProfile) {
-  const friendship = profile.friendship;
+function followLabel(profile: PublicProfileWithPermissions) {
+  if (profile.follow?.isFollowing) return "Following";
+  if (profile.permissions?.canFollow) return "Not following";
 
-  if (!friendship) return "Not friends";
-
-  if (friendship.status === "ACCEPTED") return "Friends";
-
-  if (friendship.status === "PENDING" && friendship.direction === "INCOMING") {
-    return "Friend request received";
-  }
-
-  if (friendship.status === "PENDING" && friendship.direction === "OUTGOING") {
-    return "Friend request sent";
-  }
-
-  return friendship.status;
+  return "Private";
 }
 
 function mapPublicPostToCommunityPost(
   post: PublicProfilePost,
-  profile: PublicUserProfile,
+  profile: PublicProfileWithPermissions,
   userId: string,
 ): CommunityPost {
   const safePost = post as PublicProfilePostWithExtraFields;
@@ -131,12 +143,14 @@ function mapPublicPostToCommunityPost(
     communityId: community.id ?? "",
     authorId: userId,
 
+    title: safePost.title ?? null,
     content: safePost.content ?? "",
     linkUrl: safePost.linkUrl ?? null,
 
     type: safePost.type,
     tag: safePost.tag ?? null,
     status: safePost.status,
+    visibility: safePost.visibility,
 
     createdAt: safePost.createdAt,
     updatedAt: safePost.updatedAt ?? safePost.createdAt,
@@ -254,156 +268,63 @@ function ProfileActionButtons({
   profile,
   isOwnProfile,
   isLoading,
-  onSendRequest,
-  onAcceptRequest,
-  onRejectRequest,
-  onCancelRequest,
+  onFollow,
+  onUnfollow,
   onMessage,
 }: {
   profile: PublicProfileWithPermissions;
   isOwnProfile: boolean;
   isLoading: boolean;
-  onSendRequest: () => void;
-  onAcceptRequest: () => void;
-  onRejectRequest: () => void;
-  onCancelRequest: () => void;
+  onFollow: () => void;
+  onUnfollow: () => void;
   onMessage: () => void;
 }) {
   const { colors } = useAppTheme();
-  const friendship = profile.friendship;
+
   const canMessage = Boolean(profile.permissions?.canMessage);
+  const canFollow = Boolean(profile.permissions?.canFollow);
+  const canUnfollow = Boolean(profile.permissions?.canUnfollow);
+  const isFollowing = Boolean(profile.follow?.isFollowing);
 
   if (isOwnProfile) {
     return null;
   }
 
-  if (friendship?.status === "ACCEPTED") {
-    return (
-      <View style={styles.profileActionRow}>
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={isLoading}
-          style={styles.profileActionButton}
-        >
-          <IconButtonContent
-            icon="checkmark-circle-outline"
-            label="Friends"
-            color={colors.accent}
-          />
-        </Button>
-
-        {canMessage ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={isLoading}
-            onPress={onMessage}
-            style={styles.profileActionButton}
-          >
-            <IconButtonContent
-              icon="chatbubble-ellipses-outline"
-              label="Message"
-              color={colors.accent}
-            />
-          </Button>
-        ) : null}
-      </View>
-    );
-  }
-
-  if (friendship?.status === "PENDING" && friendship.direction === "INCOMING") {
-    return (
-      <View style={styles.profileActionRow}>
-        <Button
-          size="sm"
-          variant="primary"
-          isDisabled={isLoading}
-          onPress={onAcceptRequest}
-          style={styles.profileActionButton}
-        >
-          <Button.Label>Accept</Button.Label>
-        </Button>
-
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={isLoading}
-          onPress={onRejectRequest}
-          style={styles.profileActionButton}
-        >
-          <Button.Label>Delete</Button.Label>
-        </Button>
-
-        {canMessage ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={isLoading}
-            onPress={onMessage}
-            style={styles.profileActionIconButton}
-          >
-            <IconButtonContent
-              icon="chatbubble-ellipses-outline"
-              color={colors.accent}
-            />
-          </Button>
-        ) : null}
-      </View>
-    );
-  }
-
-  if (friendship?.status === "PENDING" && friendship.direction === "OUTGOING") {
-    return (
-      <View style={styles.profileActionRow}>
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={isLoading}
-          onPress={onCancelRequest}
-          style={styles.profileActionButton}
-        >
-          <IconButtonContent
-            icon="time-outline"
-            label="Requested"
-            color={colors.accent}
-          />
-        </Button>
-
-        {canMessage ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={isLoading}
-            onPress={onMessage}
-            style={styles.profileActionButton}
-          >
-            <IconButtonContent
-              icon="chatbubble-ellipses-outline"
-              label="Message"
-              color={colors.accent}
-            />
-          </Button>
-        ) : null}
-      </View>
-    );
+  if (!canFollow && !canUnfollow && !isFollowing && !canMessage) {
+    return null;
   }
 
   return (
     <View style={styles.profileActionRow}>
-      <Button
-        size="sm"
-        variant="primary"
-        isDisabled={isLoading}
-        onPress={onSendRequest}
-        style={styles.profileActionButton}
-      >
-        <IconButtonContent
-          icon="person-add-outline"
-          label="Add Friend"
-          color={colors.accentForeground}
-        />
-      </Button>
+      {canUnfollow || isFollowing ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          isDisabled={isLoading}
+          onPress={onUnfollow}
+          style={styles.profileActionButton}
+        >
+          <IconButtonContent
+            icon="checkmark-circle-outline"
+            label="Following"
+            color={colors.accent}
+          />
+        </Button>
+      ) : canFollow ? (
+        <Button
+          size="sm"
+          variant="primary"
+          isDisabled={isLoading}
+          onPress={onFollow}
+          style={styles.profileActionButton}
+        >
+          <IconButtonContent
+            icon="person-add-outline"
+            label="Follow"
+            color={colors.accentForeground}
+          />
+        </Button>
+      ) : null}
 
       {canMessage ? (
         <Button
@@ -521,15 +442,17 @@ function CommunityListCard({
   );
 }
 
-function FriendCard({ friend }: { friend: FriendUser }) {
+function FollowUserCard({ item }: { item: FollowItem }) {
   const { colors } = useAppTheme();
-  const imageUrl = toAbsoluteFileUrl(friend.image);
+
+  const user = item.user;
+  const imageUrl = toAbsoluteFileUrl(user.image);
 
   return (
     <Pressable
-      onPress={() => router.push(`/user/profile/${friend.id}`)}
+      onPress={() => router.push(`/user/profile/${user.id}`)}
       style={({ pressed }) => [
-        styles.friendCard,
+        styles.userCard,
         {
           backgroundColor: colors.surface,
           borderColor: colors.border,
@@ -550,7 +473,7 @@ function FriendCard({ friend }: { friend: FriendUser }) {
           ]}
         >
           <Text style={[styles.smallInitials, { color: colors.accent }]}>
-            {getInitials(friend.displayName)}
+            {getInitials(user.displayName)}
           </Text>
         </View>
       )}
@@ -560,15 +483,15 @@ function FriendCard({ friend }: { friend: FriendUser }) {
           numberOfLines={1}
           style={[styles.cardTitle, { color: colors.foreground }]}
         >
-          {friend.displayName}
+          {user.displayName}
         </Text>
 
-        {friend.businessName ? (
+        {user.businessName ? (
           <Text
             numberOfLines={1}
             style={[styles.cardMeta, { color: colors.muted }]}
           >
-            {friend.businessName}
+            {user.businessName}
           </Text>
         ) : null}
       </View>
@@ -624,7 +547,7 @@ function InfoRow({
   );
 }
 
-function AboutSection({ profile }: { profile: PublicUserProfile }) {
+function AboutSection({ profile }: { profile: PublicProfileWithPermissions }) {
   return (
     <View style={styles.aboutWrap}>
       <InfoRow
@@ -641,8 +564,20 @@ function AboutSection({ profile }: { profile: PublicUserProfile }) {
 
       <InfoRow
         icon="person-add-outline"
-        label="Friendship"
-        value={friendshipLabel(profile)}
+        label="Follow Status"
+        value={followLabel(profile)}
+      />
+
+      <InfoRow
+        icon="people-outline"
+        label="Followers"
+        value={String(profile.stats?.followersCount ?? 0)}
+      />
+
+      <InfoRow
+        icon="person-outline"
+        label="Following"
+        value={String(profile.stats?.followingCount ?? 0)}
       />
 
       <InfoRow
@@ -686,6 +621,10 @@ function EmptyState({
   );
 }
 
+function LockedState({ title, text }: { title: string; text: string }) {
+  return <EmptyState icon="lock-closed-outline" title={title} text={text} />;
+}
+
 export default function PublicProfileScreen() {
   const { colors } = useAppTheme();
   const { data: session } = useSession();
@@ -705,7 +644,9 @@ export default function PublicProfileScreen() {
     ? String(sourceCommunityId)
     : "";
 
-  const isOwnProfile = Boolean(session?.user?.id && session.user.id === safeUserId);
+  const isOwnProfile = Boolean(
+    session?.user?.id && session.user.id === safeUserId,
+  );
 
   const {
     data: profile,
@@ -719,11 +660,13 @@ export default function PublicProfileScreen() {
 
   const typedProfile = profile as PublicProfileWithPermissions | undefined;
 
+  const canViewAbout = Boolean(typedProfile?.permissions?.canViewAbout);
   const canViewPosts = Boolean(typedProfile?.permissions?.canViewPosts);
   const canViewCommunities = Boolean(
     typedProfile?.permissions?.canViewCommunities,
   );
-  const canViewFriends = Boolean(typedProfile?.permissions?.canViewFriends);
+  const canViewFollowers = Boolean(typedProfile?.permissions?.canViewFollowers);
+  const canViewFollowing = Boolean(typedProfile?.permissions?.canViewFollowing);
 
   const {
     data: postsData,
@@ -758,32 +701,41 @@ export default function PublicProfileScreen() {
   );
 
   const {
-    data: mutualFriendsData,
-    isLoading: mutualFriendsLoading,
-    isFetching: mutualFriendsFetching,
-    refetch: refetchMutualFriends,
-  } = useGetPublicProfileMutualFriendsQuery(
+    data: followersData,
+    isLoading: followersLoading,
+    isFetching: followersFetching,
+    refetch: refetchFollowers,
+  } = useGetUserFollowersQuery(
     {
       userId: safeUserId,
       page: 1,
       limit: 20,
     },
     {
-      skip: !safeUserId || !canViewFriends,
+      skip: !safeUserId || !canViewFollowers,
     },
   );
 
-  const [sendFriendRequest, { isLoading: isSendingRequest }] =
-    useSendFriendRequestMutation();
+  const {
+    data: followingData,
+    isLoading: followingLoading,
+    isFetching: followingFetching,
+    refetch: refetchFollowing,
+  } = useGetUserFollowingQuery(
+    {
+      userId: safeUserId,
+      page: 1,
+      limit: 20,
+    },
+    {
+      skip: !safeUserId || !canViewFollowing,
+    },
+  );
 
-  const [acceptFriendRequest, { isLoading: isAcceptingRequest }] =
-    useAcceptFriendRequestMutation();
+  const [followUser, { isLoading: isFollowingUser }] = useFollowUserMutation();
 
-  const [rejectFriendRequest, { isLoading: isRejectingRequest }] =
-    useRejectFriendRequestMutation();
-
-  const [cancelFriendRequest, { isLoading: isCancellingRequest }] =
-    useCancelFriendRequestMutation();
+  const [unfollowUser, { isLoading: isUnfollowingUser }] =
+    useUnfollowUserMutation();
 
   const [createDirectChat, { isLoading: isCreatingChat }] =
     useCreateDirectChatMutation();
@@ -825,50 +777,57 @@ export default function PublicProfileScreen() {
     setPostItems(mappedPosts);
   }, [typedProfile, postsData?.data, safeUserId, canViewPosts]);
 
-  const isFriendActionLoading =
-    isSendingRequest ||
-    isAcceptingRequest ||
-    isRejectingRequest ||
-    isCancellingRequest ||
-    isCreatingChat;
+  const isFollowActionLoading =
+    isFollowingUser || isUnfollowingUser || isCreatingChat;
 
   const tabs = useMemo(() => {
-    const items: { key: TabKey; label: string }[] = [];
-
-    if (canViewPosts) {
-      items.push({
-        key: "posts",
-        label: `Posts ${postsData?.meta?.total ?? 0}`,
-      });
-    }
-
-    items.push({
-      key: "about",
-      label: "About",
-    });
-
-    if (canViewCommunities) {
-      items.push({
-        key: "communities",
-        label: `Communities ${communitiesData?.meta?.total ?? 0}`,
-      });
-    }
-
-    if (canViewFriends) {
-      items.push({
-        key: "friends",
-        label: `Friends ${mutualFriendsData?.meta?.total ?? 0}`,
-      });
-    }
-
-    return items;
+    return [
+      {
+        key: "about" as const,
+        label: "About",
+      },
+      {
+        key: "posts" as const,
+        label: `Posts ${canViewPosts ? postsData?.meta?.total ?? 0 : ""}`,
+      },
+      {
+        key: "communities" as const,
+        label: `Communities ${
+          canViewCommunities ? communitiesData?.meta?.total ?? 0 : ""
+        }`,
+      },
+      {
+        key: "followers" as const,
+        label: `Followers ${
+          canViewFollowers
+            ? followersData?.meta?.total ??
+              typedProfile?.stats?.followersCount ??
+              0
+            : typedProfile?.stats?.followersCount ?? 0
+        }`,
+      },
+      {
+        key: "following" as const,
+        label: `Following ${
+          canViewFollowing
+            ? followingData?.meta?.total ??
+              typedProfile?.stats?.followingCount ??
+              0
+            : typedProfile?.stats?.followingCount ?? 0
+        }`,
+      },
+    ];
   }, [
     canViewPosts,
     canViewCommunities,
-    canViewFriends,
+    canViewFollowers,
+    canViewFollowing,
     postsData?.meta?.total,
     communitiesData?.meta?.total,
-    mutualFriendsData?.meta?.total,
+    followersData?.meta?.total,
+    followingData?.meta?.total,
+    typedProfile?.stats?.followersCount,
+    typedProfile?.stats?.followingCount,
   ]);
 
   useEffect(() => {
@@ -880,16 +839,33 @@ export default function PublicProfileScreen() {
   }, [activeTab, tabs]);
 
   const activeData = useMemo<ActiveItem[]>(() => {
-    if (activeTab === "posts") return postItems;
-    if (activeTab === "communities") return communitiesData?.data ?? [];
-    if (activeTab === "friends") return mutualFriendsData?.data ?? [];
+    if (activeTab === "posts" && canViewPosts) {
+      return postItems;
+    }
+
+    if (activeTab === "communities" && canViewCommunities) {
+      return communitiesData?.data ?? [];
+    }
+
+    if (activeTab === "followers" && canViewFollowers) {
+      return followersData?.data ?? [];
+    }
+
+    if (activeTab === "following" && canViewFollowing) {
+      return followingData?.data ?? [];
+    }
 
     return [];
   }, [
     activeTab,
+    canViewPosts,
+    canViewCommunities,
+    canViewFollowers,
+    canViewFollowing,
     postItems,
     communitiesData?.data,
-    mutualFriendsData?.data,
+    followersData?.data,
+    followingData?.data,
   ]);
 
   const activeLoading =
@@ -897,18 +873,22 @@ export default function PublicProfileScreen() {
       ? postsLoading
       : activeTab === "communities"
         ? communitiesLoading
-        : activeTab === "friends"
-          ? mutualFriendsLoading
-          : false;
+        : activeTab === "followers"
+          ? followersLoading
+          : activeTab === "following"
+            ? followingLoading
+            : false;
 
   const activeFetching =
     activeTab === "posts"
       ? postsFetching
       : activeTab === "communities"
         ? communitiesFetching
-        : activeTab === "friends"
-          ? mutualFriendsFetching
-          : false;
+        : activeTab === "followers"
+          ? followersFetching
+          : activeTab === "following"
+            ? followingFetching
+            : false;
 
   const handleRefresh = async () => {
     const tasks: Promise<unknown>[] = [refetchProfile()];
@@ -921,83 +901,47 @@ export default function PublicProfileScreen() {
       tasks.push(refetchCommunities());
     }
 
-    if (activeTab === "friends" && canViewFriends) {
-      tasks.push(refetchMutualFriends());
+    if (activeTab === "followers" && canViewFollowers) {
+      tasks.push(refetchFollowers());
+    }
+
+    if (activeTab === "following" && canViewFollowing) {
+      tasks.push(refetchFollowing());
     }
 
     await Promise.all(tasks);
   };
 
-  const handleSendFriendRequest = async () => {
+  const handleFollowUser = async () => {
+    if (!safeUserId || isFollowActionLoading) return;
+
     try {
-      await sendFriendRequest({
-        receiverId: safeUserId,
-      }).unwrap();
+      await followUser(safeUserId).unwrap();
 
       await refetchProfile();
 
-      Alert.alert("Success", "Friend request sent.");
+      Alert.alert("Success", "You are now following this user.");
     } catch (error: any) {
       Alert.alert(
         "Failed",
-        error?.data?.message ?? "Could not send friend request.",
+        error?.data?.message ?? "Could not follow this user.",
       );
     }
   };
 
-  const handleAcceptFriendRequest = async () => {
-    const requestId = typedProfile?.friendship?.id;
-
-    if (!requestId) return;
+  const handleUnfollowUser = async () => {
+    if (!safeUserId || isFollowActionLoading) return;
 
     try {
-      await acceptFriendRequest(requestId).unwrap();
+      await unfollowUser(safeUserId).unwrap();
 
       await refetchProfile();
 
-      Alert.alert("Success", "Friend request accepted.");
+      Alert.alert("Updated", "You unfollowed this user.");
     } catch (error: any) {
       Alert.alert(
         "Failed",
-        error?.data?.message ?? "Could not accept friend request.",
-      );
-    }
-  };
-
-  const handleRejectFriendRequest = async () => {
-    const requestId = typedProfile?.friendship?.id;
-
-    if (!requestId) return;
-
-    try {
-      await rejectFriendRequest(requestId).unwrap();
-
-      await refetchProfile();
-
-      Alert.alert("Removed", "Friend request deleted.");
-    } catch (error: any) {
-      Alert.alert(
-        "Failed",
-        error?.data?.message ?? "Could not delete friend request.",
-      );
-    }
-  };
-
-  const handleCancelFriendRequest = async () => {
-    const requestId = typedProfile?.friendship?.id;
-
-    if (!requestId) return;
-
-    try {
-      await cancelFriendRequest(requestId).unwrap();
-
-      await refetchProfile();
-
-      Alert.alert("Cancelled", "Friend request cancelled.");
-    } catch (error: any) {
-      Alert.alert(
-        "Failed",
-        error?.data?.message ?? "Could not cancel friend request.",
+        error?.data?.message ?? "Could not unfollow this user.",
       );
     }
   };
@@ -1104,7 +1048,11 @@ export default function PublicProfileScreen() {
       return <CommunityListCard community={item as PublicProfileCommunity} />;
     }
 
-    return <FriendCard friend={item as FriendUser} />;
+    if (activeTab === "followers" || activeTab === "following") {
+      return <FollowUserCard item={item as FollowItem} />;
+    }
+
+    return null;
   };
 
   const renderEmpty = () => {
@@ -1117,10 +1065,28 @@ export default function PublicProfileScreen() {
     }
 
     if (activeTab === "about") {
+      if (!canViewAbout) {
+        return (
+          <LockedState
+            title="About is private"
+            text="This user's about information is private."
+          />
+        );
+      }
+
       return <AboutSection profile={typedProfile} />;
     }
 
     if (activeTab === "posts") {
+      if (!canViewPosts) {
+        return (
+          <LockedState
+            title="Posts are private"
+            text="Follow this user or share a community with them to see visible posts."
+          />
+        );
+      }
+
       return (
         <EmptyState
           icon="document-text-outline"
@@ -1131,6 +1097,15 @@ export default function PublicProfileScreen() {
     }
 
     if (activeTab === "communities") {
+      if (!canViewCommunities) {
+        return (
+          <LockedState
+            title="Follow to see communities"
+            text="This user's communities are private. Follow this user to unlock this tab."
+          />
+        );
+      }
+
       return (
         <EmptyState
           icon="people-circle-outline"
@@ -1140,11 +1115,39 @@ export default function PublicProfileScreen() {
       );
     }
 
+    if (activeTab === "followers") {
+      if (!canViewFollowers) {
+        return (
+          <LockedState
+            title="Follow to see followers"
+            text="This user's followers list is private. Follow this user to unlock this tab."
+          />
+        );
+      }
+
+      return (
+        <EmptyState
+          icon="person-circle-outline"
+          title="No followers"
+          text="No followers are visible yet."
+        />
+      );
+    }
+
+    if (!canViewFollowing) {
+      return (
+        <LockedState
+          title="Follow to see following"
+          text="This user's following list is private. Follow this user to unlock this tab."
+        />
+      );
+    }
+
     return (
       <EmptyState
         icon="person-circle-outline"
-        title="No friends"
-        text="No friends are visible to you yet."
+        title="No following"
+        text="This user is not following anyone visible yet."
       />
     );
   };
@@ -1204,11 +1207,9 @@ export default function PublicProfileScreen() {
         <ProfileActionButtons
           profile={typedProfile}
           isOwnProfile={isOwnProfile}
-          isLoading={isFriendActionLoading}
-          onSendRequest={handleSendFriendRequest}
-          onAcceptRequest={handleAcceptFriendRequest}
-          onRejectRequest={handleRejectFriendRequest}
-          onCancelRequest={handleCancelFriendRequest}
+          isLoading={isFollowActionLoading}
+          onFollow={handleFollowUser}
+          onUnfollow={handleUnfollowUser}
           onMessage={handleMessagePress}
         />
 
@@ -1226,6 +1227,38 @@ export default function PublicProfileScreen() {
 
             <Text style={[styles.profileBadgeText, { color: colors.accent }]}>
               Joined {formatDate(typedProfile.createdAt)}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.profileBadge,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons name="people-outline" size={14} color={colors.accent} />
+
+            <Text style={[styles.profileBadgeText, { color: colors.accent }]}>
+              {typedProfile.stats?.followersCount ?? 0} followers
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.profileBadge,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons name="person-outline" size={14} color={colors.accent} />
+
+            <Text style={[styles.profileBadgeText, { color: colors.accent }]}>
+              {typedProfile.stats?.followingCount ?? 0} following
             </Text>
           </View>
         </View>
@@ -1326,379 +1359,3 @@ export default function PublicProfileScreen() {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-
-  scroll: {
-    flex: 1,
-  },
-
-  scrollContent: {
-    paddingBottom: 130,
-  },
-
-  page: {
-    paddingBottom: 0,
-  },
-
-  center: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-
-  errorTitle: {
-    marginTop: 12,
-    fontSize: 18,
-    fontFamily: "Poppins_700Bold",
-    textAlign: "center",
-  },
-
-  errorText: {
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 20,
-    fontFamily: "Poppins_400Regular",
-    textAlign: "center",
-  },
-
-  coverSection: {
-    position: "relative",
-    width: "100%",
-  },
-
-  coverImage: {
-    width: "100%",
-    height: 220,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-  },
-
-  coverFallback: {
-    width: "100%",
-    height: 220,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    borderBottomWidth: 1,
-  },
-
-  backButton: {
-    position: "absolute",
-    left: 20,
-    top: 20,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.25)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
-  },
-
-  avatarFloatingWrap: {
-    position: "absolute",
-    left: 24,
-    bottom: -56,
-  },
-
-  avatarOuter: {
-    width: 116,
-    height: 116,
-    borderRadius: 58,
-    padding: 4,
-  },
-
-  avatarImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 54,
-  },
-
-  avatarFallback: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 54,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  avatarFallbackText: {
-    fontSize: 34,
-    fontFamily: "Poppins_700Bold",
-  },
-
-  profileInfoSection: {
-    paddingTop: 68,
-    paddingHorizontal: 32,
-    paddingBottom: 20,
-  },
-
-  profileName: {
-    fontSize: 34,
-    lineHeight: 42,
-    fontFamily: "Poppins_700Bold",
-  },
-
-  profileSubText: {
-    marginTop: 4,
-    fontSize: 16,
-    lineHeight: 22,
-    fontFamily: "Poppins_500Medium",
-  },
-
-  profileBusinessType: {
-    marginTop: 4,
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: "Poppins_500Medium",
-  },
-
-  profileActionRow: {
-    marginTop: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-
-  profileActionButton: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: 999,
-  },
-
-  profileActionIconButton: {
-    width: 56,
-    minHeight: 44,
-    borderRadius: 999,
-  },
-
-  buttonContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-
-  profileBadgeRow: {
-    marginTop: 14,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-
-  profileBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-
-  profileBadgeText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Poppins_600SemiBold",
-  },
-
-  tabsRoot: {
-    borderBottomWidth: 1,
-  },
-
-  tabsScrollContent: {
-    flexDirection: "row",
-    gap: 28,
-    paddingLeft: 20,
-    paddingRight: 28,
-  },
-
-  loadingWrap: {
-    minHeight: 220,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  communityCard: {
-    marginHorizontal: 16,
-    marginTop: 14,
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  communityAvatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-  },
-
-  communityAvatarFallback: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  communityInitials: {
-    fontSize: 18,
-    fontFamily: "Poppins_700Bold",
-  },
-
-  communityInfo: {
-    flex: 1,
-  },
-
-  communityTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  smallPill: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-
-  smallPillText: {
-    fontSize: 10,
-    lineHeight: 13,
-    fontFamily: "Poppins_600SemiBold",
-  },
-
-  communityStatsRow: {
-    marginTop: 7,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-
-  miniStat: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-
-  miniStatText: {
-    fontSize: 11,
-    lineHeight: 15,
-    fontFamily: "Poppins_500Medium",
-  },
-
-  friendCard: {
-    marginHorizontal: 16,
-    marginTop: 14,
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  smallAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-  },
-
-  smallAvatarFallback: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  smallInitials: {
-    fontSize: 18,
-    fontFamily: "Poppins_700Bold",
-  },
-
-  cardTitle: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontFamily: "Poppins_700Bold",
-  },
-
-  cardMeta: {
-    marginTop: 3,
-    fontSize: 12,
-    lineHeight: 17,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  aboutWrap: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    gap: 12,
-  },
-
-  infoRow: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  infoIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  infoLabel: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Poppins_500Medium",
-  },
-
-  infoValue: {
-    marginTop: 3,
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: "Poppins_600SemiBold",
-  },
-
-  emptyCard: {
-    marginHorizontal: 16,
-    marginTop: 14,
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 22,
-    alignItems: "center",
-  },
-
-  emptyTitle: {
-    marginTop: 12,
-    fontSize: 17,
-    lineHeight: 24,
-    fontFamily: "Poppins_700Bold",
-    textAlign: "center",
-  },
-
-  emptyText: {
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 20,
-    fontFamily: "Poppins_400Regular",
-    textAlign: "center",
-  },
-});

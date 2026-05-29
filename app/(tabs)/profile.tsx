@@ -17,17 +17,15 @@ import {
 import { Redirect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { Menu, Switch, Tabs } from "heroui-native";
+import { Menu, Tabs } from "heroui-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useDispatch } from "react-redux";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
-import { signOut, useSession } from "@/api/better-auth-client";
+import { useSession } from "@/api/better-auth-client";
 
 import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
 import type { CommunityItem } from "@/types/community";
-import { baseApi } from "@/store/api/baseApi";
 
 import {
   useGetMyProfileQuery,
@@ -65,11 +63,9 @@ type ImageTarget = "avatar" | "cover";
 const POSTS_LIMIT = 10;
 
 export default function ProfileScreen() {
-  const { colors, isDark, setThemeMode } = useAppTheme();
+  const { colors } = useAppTheme();
   const styles = useMemo(() => createProfileStyles(colors), [colors]);
-  const dispatch = useDispatch();
 
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [tab, setTab] = useState("posts");
 
   const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(
@@ -308,28 +304,8 @@ export default function ProfileScreen() {
     refetchComments,
   ]);
 
-  const handleLogout = async () => {
-    try {
-      setIsLoggingOut(true);
-
-      await signOut();
-
-      dispatch(baseApi.util.resetApiState());
-
-      router.replace("/(auth)");
-    } catch (error) {
-      console.log("Logout failed:", error);
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
-
-  const handleCreateCommunity = () => {
-    router.push("/pages/createCommunity");
-  };
-
-  const handleEditProfile = () => {
-    router.push("/pages/editprofile");
+  const handleOpenSettingsPrivacy = () => {
+    router.push("/pages/privacySetting");
   };
 
   const openViewer = useCallback((media: PostMedia[], index: number) => {
@@ -705,71 +681,17 @@ export default function ProfileScreen() {
 
                       <Menu.Portal>
                         <Menu.Overlay />
+
                         <Menu.Content
                           presentation="popover"
                           placement="bottom"
                           align="end"
-                          width={250}
+                          width={240}
                           className="rounded-2xl border border-border bg-surface"
                         >
-                          <Menu.Item onPress={handleEditProfile}>
-                            <Menu.ItemTitle>Edit Profile</Menu.ItemTitle>
-                          </Menu.Item>
-
-                          <Menu.Item onPress={handleCreateCommunity}>
-                            <Menu.ItemTitle>Create Community</Menu.ItemTitle>
-                          </Menu.Item>
-
-                          <View
-                            style={{
-                              paddingHorizontal: 14,
-                              paddingVertical: 12,
-                              flexDirection: "row",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: 12,
-                            }}
-                          >
-                            <View
-                              style={{
-                                flex: 1,
-                                flexDirection: "row",
-                                alignItems: "center",
-                              }}
-                            >
-                              <Ionicons
-                                name={isDark ? "moon-outline" : "sunny-outline"}
-                                size={18}
-                                color={colors.foreground}
-                              />
-
-                              <Text
-                                style={{
-                                  marginLeft: 10,
-                                  color: colors.foreground,
-                                  fontSize: 14,
-                                  fontFamily: "Poppins_500Medium",
-                                }}
-                              >
-                                {isDark ? "Dark mode" : "Light mode"}
-                              </Text>
-                            </View>
-
-                            <Switch
-                              isSelected={isDark}
-                              onSelectedChange={(selected) => {
-                                setThemeMode(selected ? "dark" : "light");
-                              }}
-                            />
-                          </View>
-
-                          <Menu.Item
-                            onPress={handleLogout}
-                            variant="danger"
-                            isDisabled={isLoggingOut}
-                          >
+                          <Menu.Item onPress={handleOpenSettingsPrivacy}>
                             <Menu.ItemTitle>
-                              {isLoggingOut ? "Logging out..." : "Logout"}
+                              Settings & Privacy
                             </Menu.ItemTitle>
                           </Menu.Item>
                         </Menu.Content>
@@ -875,8 +797,7 @@ export default function ProfileScreen() {
                           </Text>
 
                           <Text style={styles.sectionHint}>
-                            Use the menu at the top right to create a new
-                            community.
+                            Go to Settings & Privacy to create a new community.
                           </Text>
                         </>
                       ) : (

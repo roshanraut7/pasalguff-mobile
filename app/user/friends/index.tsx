@@ -20,18 +20,13 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 
 import {
-  useAcceptFriendRequestMutation,
-  useCancelFriendRequestMutation,
-  useGetIncomingFriendRequestsQuery,
-  useGetMyFriendsQuery,
-  useGetOutgoingFriendRequestsQuery,
-  useRejectFriendRequestMutation,
-  useRemoveFriendMutation,
-} from "@/store/api/friendApi";
+  useGetMyFollowersQuery,
+  useGetMyFollowingQuery,
+  useUnfollowUserMutation,
+  type FollowItem,
+} from "@/store/api/followApi";
 
-import type { FriendRequest, FriendUser } from "@/types/friend";
-
-type TabKey = "friends" | "incoming" | "outgoing";
+type TabKey = "followers" | "following";
 
 function goToUserProfile(userId: string) {
   router.push({
@@ -64,7 +59,7 @@ function formatDate(value?: string | null) {
   });
 }
 
-function FriendAvatar({
+function FollowAvatar({
   image,
   name,
   size = 72,
@@ -104,23 +99,19 @@ function FriendAvatar({
   );
 }
 
-function FriendRequestCard({
-  request,
-  type,
-  onAccept,
-  onReject,
-  onCancel,
+function FollowUserCard({
+  item,
+  mode,
+  onUnfollow,
   isActionLoading,
 }: {
-  request: FriendRequest;
-  type: "incoming" | "outgoing";
-  onAccept?: (request: FriendRequest) => void;
-  onReject?: (request: FriendRequest) => void;
-  onCancel?: (request: FriendRequest) => void;
+  item: FollowItem;
+  mode: TabKey;
+  onUnfollow?: (item: FollowItem) => void;
   isActionLoading?: boolean;
 }) {
   const { colors } = useAppTheme();
-  const user = request.otherUser;
+  const user = item.user;
 
   return (
     <Pressable
@@ -133,7 +124,7 @@ function FriendRequestCard({
         },
       ]}
     >
-      <FriendAvatar image={user.image} name={user.displayName} />
+      <FollowAvatar image={user.image} name={user.displayName} />
 
       <View style={styles.cardBody}>
         <Text
@@ -152,125 +143,33 @@ function FriendRequestCard({
           </Text>
         ) : null}
 
-        {request.message ? (
-          <Text
-            numberOfLines={2}
-            style={[styles.messageText, { color: colors.muted }]}
-          >
-            “{request.message}”
-          </Text>
-        ) : (
-          <Text style={[styles.messageText, { color: colors.muted }]}>
-            {type === "incoming"
-              ? `Request received on ${formatDate(request.createdAt)}`
-              : `Request sent on ${formatDate(request.createdAt)}`}
-          </Text>
-        )}
-
-        {type === "incoming" ? (
-          <View style={styles.actionRow}>
-            <Button
-              size="sm"
-              variant="primary"
-              isDisabled={isActionLoading}
-              onPress={() => onAccept?.(request)}
-              style={styles.actionButton}
-            >
-              <Button.Label>Confirm</Button.Label>
-            </Button>
-
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={isActionLoading}
-              onPress={() => onReject?.(request)}
-              style={styles.actionButton}
-            >
-              <Button.Label>Delete</Button.Label>
-            </Button>
-          </View>
-        ) : (
-          <View style={styles.actionRow}>
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={isActionLoading}
-              onPress={() => onCancel?.(request)}
-              style={styles.fullActionButton}
-            >
-              <Button.Label>Cancel Request</Button.Label>
-            </Button>
-          </View>
-        )}
-      </View>
-    </Pressable>
-  );
-}
-
-function MyFriendCard({
-  friend,
-  onRemove,
-  isActionLoading,
-}: {
-  friend: FriendUser;
-  onRemove?: (friend: FriendUser) => void;
-  isActionLoading?: boolean;
-}) {
-  const { colors } = useAppTheme();
-
-  return (
-    <Pressable
-      onPress={() => goToUserProfile(friend.id)}
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <FriendAvatar image={friend.image} name={friend.displayName} />
-
-      <View style={styles.cardBody}>
-        <Text
-          numberOfLines={1}
-          style={[styles.nameText, { color: colors.foreground }]}
-        >
-          {friend.displayName}
-        </Text>
-
-        {friend.businessName ? (
-          <Text
-            numberOfLines={1}
-            style={[styles.businessText, { color: colors.muted }]}
-          >
-            {friend.businessName}
-          </Text>
-        ) : null}
-
         <Text style={[styles.messageText, { color: colors.muted }]}>
-          Friend since {formatDate(friend.createdAt)}
+          {mode === "followers"
+            ? `Started following you on ${formatDate(item.followedAt)}`
+            : `Following since ${formatDate(item.followedAt)}`}
         </Text>
 
         <View style={styles.actionRow}>
           <Button
             size="sm"
             variant="secondary"
-            onPress={() => goToUserProfile(friend.id)}
+            onPress={() => goToUserProfile(user.id)}
             style={styles.actionButton}
           >
             <Button.Label>View Profile</Button.Label>
           </Button>
 
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={isActionLoading}
-            onPress={() => onRemove?.(friend)}
-            style={styles.actionButton}
-          >
-            <Button.Label>Remove</Button.Label>
-          </Button>
+          {mode === "following" ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled={isActionLoading}
+              onPress={() => onUnfollow?.(item)}
+              style={styles.actionButton}
+            >
+              <Button.Label>Unfollow</Button.Label>
+            </Button>
+          ) : null}
         </View>
       </View>
     </Pressable>
@@ -281,20 +180,15 @@ function EmptyState({ activeTab }: { activeTab: TabKey }) {
   const { colors } = useAppTheme();
 
   const content = {
-    friends: {
-      icon: "person-circle-outline" as const,
-      title: "No friends yet",
-      text: "When your friend requests are accepted, your friends will appear here.",
-    },
-    incoming: {
+    followers: {
       icon: "people-outline" as const,
-      title: "No friend requests",
-      text: "When someone sends you a friend request, it will appear here.",
+      title: "No followers yet",
+      text: "When someone follows you, they will appear here.",
     },
-    outgoing: {
-      icon: "paper-plane-outline" as const,
-      title: "No sent requests",
-      text: "Friend requests you send will appear here.",
+    following: {
+      icon: "person-add-outline" as const,
+      title: "Not following anyone yet",
+      text: "People you follow will appear here.",
     },
   }[activeTab];
 
@@ -321,75 +215,49 @@ function EmptyState({ activeTab }: { activeTab: TabKey }) {
   );
 }
 
-export default function FriendsScreen() {
+export default function FollowersScreen() {
   const { colors } = useAppTheme();
 
-  // Changed from "incoming" to "friends"
-  const [activeTab, setActiveTab] = useState<TabKey>("friends");
-
-  const [actionRequestId, setActionRequestId] = useState<string | null>(null);
-  const [actionFriendId, setActionFriendId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("followers");
+  const [actionUserId, setActionUserId] = useState<string | null>(null);
 
   const {
-    data: incomingData,
-    isLoading: incomingLoading,
-    isFetching: incomingFetching,
-    refetch: refetchIncoming,
-  } = useGetIncomingFriendRequestsQuery({
+    data: followersData,
+    isLoading: followersLoading,
+    isFetching: followersFetching,
+    refetch: refetchFollowers,
+  } = useGetMyFollowersQuery({
     page: 1,
     limit: 20,
   });
 
   const {
-    data: outgoingData,
-    isLoading: outgoingLoading,
-    isFetching: outgoingFetching,
-    refetch: refetchOutgoing,
-  } = useGetOutgoingFriendRequestsQuery({
+    data: followingData,
+    isLoading: followingLoading,
+    isFetching: followingFetching,
+    refetch: refetchFollowing,
+  } = useGetMyFollowingQuery({
     page: 1,
     limit: 20,
   });
 
-  const {
-    data: friendsData,
-    isLoading: friendsLoading,
-    isFetching: friendsFetching,
-    refetch: refetchFriends,
-  } = useGetMyFriendsQuery({
-    page: 1,
-    limit: 20,
-  });
+  const [unfollowUser] = useUnfollowUserMutation();
 
-  const [acceptFriendRequest] = useAcceptFriendRequestMutation();
-  const [rejectFriendRequest] = useRejectFriendRequestMutation();
-  const [cancelFriendRequest] = useCancelFriendRequestMutation();
-  const [removeFriend] = useRemoveFriendMutation();
+  const followersCount = followersData?.meta?.total ?? 0;
+  const followingCount = followingData?.meta?.total ?? 0;
 
-  const incomingCount = incomingData?.meta?.total ?? 0;
-  const outgoingCount = outgoingData?.meta?.total ?? 0;
-  const friendsCount = friendsData?.meta?.total ?? 0;
-
-  // Changed order: My Friends first
   const tabs = useMemo(
     () => [
       {
-        key: "friends" as const,
-        label: friendsCount ? `My Friends (${friendsCount})` : "My Friends",
+        key: "followers" as const,
+        label: followersCount ? `Followers (${followersCount})` : "Followers",
       },
       {
-        key: "incoming" as const,
-        label: incomingCount
-          ? `Friend Requests (${incomingCount})`
-          : "Friend Requests",
-      },
-      {
-        key: "outgoing" as const,
-        label: outgoingCount
-          ? `Sent Requests (${outgoingCount})`
-          : "Sent Requests",
+        key: "following" as const,
+        label: followingCount ? `Following (${followingCount})` : "Following",
       },
     ],
-    [friendsCount, incomingCount, outgoingCount],
+    [followersCount, followingCount],
   );
 
   const handleBack = () => {
@@ -402,88 +270,42 @@ export default function FriendsScreen() {
   };
 
   const handleRefresh = async () => {
-    if (activeTab === "friends") {
-      await refetchFriends();
+    if (activeTab === "followers") {
+      await refetchFollowers();
       return;
     }
 
-    if (activeTab === "incoming") {
-      await refetchIncoming();
-      return;
-    }
-
-    await refetchOutgoing();
+    await refetchFollowing();
   };
 
-  const handleAccept = async (request: FriendRequest) => {
-    try {
-      setActionRequestId(request.id);
-      await acceptFriendRequest(request.id).unwrap();
-      Alert.alert("Success", "Friend request accepted.");
-    } catch (error: any) {
-      Alert.alert(
-        "Failed",
-        error?.data?.message ?? "Could not accept friend request.",
-      );
-    } finally {
-      setActionRequestId(null);
-    }
-  };
+  const handleUnfollow = async (item: FollowItem) => {
+    const user = item.user;
 
-  const handleReject = async (request: FriendRequest) => {
-    try {
-      setActionRequestId(request.id);
-      await rejectFriendRequest(request.id).unwrap();
-      Alert.alert("Removed", "Friend request deleted.");
-    } catch (error: any) {
-      Alert.alert(
-        "Failed",
-        error?.data?.message ?? "Could not delete friend request.",
-      );
-    } finally {
-      setActionRequestId(null);
-    }
-  };
-
-  const handleCancel = async (request: FriendRequest) => {
-    try {
-      setActionRequestId(request.id);
-      await cancelFriendRequest(request.id).unwrap();
-      Alert.alert("Cancelled", "Friend request cancelled.");
-    } catch (error: any) {
-      Alert.alert(
-        "Failed",
-        error?.data?.message ?? "Could not cancel friend request.",
-      );
-    } finally {
-      setActionRequestId(null);
-    }
-  };
-
-  const handleRemoveFriend = async (friend: FriendUser) => {
     Alert.alert(
-      "Remove friend",
-      `Are you sure you want to remove ${friend.displayName}?`,
+      "Unfollow user",
+      `Are you sure you want to unfollow ${user.displayName}?`,
       [
         {
           text: "Cancel",
           style: "cancel",
         },
         {
-          text: "Remove",
+          text: "Unfollow",
           style: "destructive",
           onPress: async () => {
             try {
-              setActionFriendId(friend.id);
-              await removeFriend(friend.id).unwrap();
-              Alert.alert("Removed", "Friend removed successfully.");
+              setActionUserId(user.id);
+
+              await unfollowUser(user.id).unwrap();
+
+              Alert.alert("Updated", "You unfollowed this user.");
             } catch (error: any) {
               Alert.alert(
                 "Failed",
-                error?.data?.message ?? "Could not remove friend.",
+                error?.data?.message ?? "Could not unfollow this user.",
               );
             } finally {
-              setActionFriendId(null);
+              setActionUserId(null);
             }
           },
         },
@@ -491,10 +313,10 @@ export default function FriendsScreen() {
     );
   };
 
-  const renderFriendsList = () => {
-    const friends = friendsData?.data ?? [];
+  const renderFollowersList = () => {
+    const followers = followersData?.data ?? [];
 
-    if (friendsLoading) {
+    if (followersLoading) {
       return (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -504,35 +326,35 @@ export default function FriendsScreen() {
 
     return (
       <FlatList
-        data={friends}
+        data={followers}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
-            refreshing={friendsFetching && !friendsLoading}
+            refreshing={followersFetching && !followersLoading}
             onRefresh={handleRefresh}
             tintColor={colors.accent}
             colors={[colors.accent]}
             progressBackgroundColor={colors.surface}
           />
         }
-        ListEmptyComponent={<EmptyState activeTab="friends" />}
+        ListEmptyComponent={<EmptyState activeTab="followers" />}
         renderItem={({ item }) => (
-          <MyFriendCard
-            friend={item}
-            isActionLoading={actionFriendId === item.id}
-            onRemove={handleRemoveFriend}
+          <FollowUserCard
+            item={item}
+            mode="followers"
+            isActionLoading={actionUserId === item.user.id}
           />
         )}
       />
     );
   };
 
-  const renderIncomingList = () => {
-    const requests = incomingData?.data ?? [];
+  const renderFollowingList = () => {
+    const following = followingData?.data ?? [];
 
-    if (incomingLoading) {
+    if (followingLoading) {
       return (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -542,66 +364,26 @@ export default function FriendsScreen() {
 
     return (
       <FlatList
-        data={requests}
+        data={following}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
-            refreshing={incomingFetching && !incomingLoading}
+            refreshing={followingFetching && !followingLoading}
             onRefresh={handleRefresh}
             tintColor={colors.accent}
             colors={[colors.accent]}
             progressBackgroundColor={colors.surface}
           />
         }
-        ListEmptyComponent={<EmptyState activeTab="incoming" />}
+        ListEmptyComponent={<EmptyState activeTab="following" />}
         renderItem={({ item }) => (
-          <FriendRequestCard
-            request={item}
-            type="incoming"
-            isActionLoading={actionRequestId === item.id}
-            onAccept={handleAccept}
-            onReject={handleReject}
-          />
-        )}
-      />
-    );
-  };
-
-  const renderOutgoingList = () => {
-    const requests = outgoingData?.data ?? [];
-
-    if (outgoingLoading) {
-      return (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
-      );
-    }
-
-    return (
-      <FlatList
-        data={requests}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={outgoingFetching && !outgoingLoading}
-            onRefresh={handleRefresh}
-            tintColor={colors.accent}
-            colors={[colors.accent]}
-            progressBackgroundColor={colors.surface}
-          />
-        }
-        ListEmptyComponent={<EmptyState activeTab="outgoing" />}
-        renderItem={({ item }) => (
-          <FriendRequestCard
-            request={item}
-            type="outgoing"
-            isActionLoading={actionRequestId === item.id}
-            onCancel={handleCancel}
+          <FollowUserCard
+            item={item}
+            mode="following"
+            isActionLoading={actionUserId === item.user.id}
+            onUnfollow={handleUnfollow}
           />
         )}
       />
@@ -632,9 +414,15 @@ export default function FriendsScreen() {
             </Pressable>
 
             <Text style={[styles.title, { color: colors.foreground }]}>
-              Friends
+              Followers
             </Text>
+
+            <View style={styles.headerRightSpace} />
           </View>
+
+          <Text style={[styles.subtitle, { color: colors.muted }]}>
+            Manage people who follow you and people you are following.
+          </Text>
         </View>
 
         <Tabs
@@ -668,16 +456,12 @@ export default function FriendsScreen() {
             </ScrollView>
           </View>
 
-          <Tabs.Content value="friends" style={styles.tabContent}>
-            {activeTab === "friends" ? renderFriendsList() : null}
+          <Tabs.Content value="followers" style={styles.tabContent}>
+            {activeTab === "followers" ? renderFollowersList() : null}
           </Tabs.Content>
 
-          <Tabs.Content value="incoming" style={styles.tabContent}>
-            {activeTab === "incoming" ? renderIncomingList() : null}
-          </Tabs.Content>
-
-          <Tabs.Content value="outgoing" style={styles.tabContent}>
-            {activeTab === "outgoing" ? renderOutgoingList() : null}
+          <Tabs.Content value="following" style={styles.tabContent}>
+            {activeTab === "following" ? renderFollowingList() : null}
           </Tabs.Content>
         </Tabs>
       </View>
@@ -821,10 +605,6 @@ const styles = StyleSheet.create({
   },
 
   actionButton: {
-    flex: 1,
-  },
-
-  fullActionButton: {
     flex: 1,
   },
 

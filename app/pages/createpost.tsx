@@ -42,6 +42,7 @@ import {
 import { useAppTheme } from "@/hooks/useAppTheme";
 
 type PostMediaType = "IMAGE" | "VIDEO";
+type PostVisibility = "PUBLIC" | "COMMUNITY" | "FOLLOWERS" | "PRIVATE";
 
 type PostTag =
   | "GENERAL"
@@ -77,6 +78,7 @@ type CommunityPost = {
   communityId: string;
   title: string | null;
   tag: PostTag;
+  visibility?: PostVisibility;
   content: string | null;
   linkUrl: string | null;
   media: CommunityPostMedia[];
@@ -107,13 +109,20 @@ type UploadPostMediaResponse = {
 type PostPollPayload = {
   question: string;
   options: string[];
+  closesAt?: string | null;
 };
 
-type PostTab = "text" | "media" | "link";
+type PostTab = "text" | "media" | "link" | "poll";
 
 type TagOptionMeta = {
   value: PostTag;
   label: string;
+};
+
+type VisibilityOptionMeta = {
+  value: PostVisibility;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
 };
 
 const TAG_OPTIONS: TagOptionMeta[] = POST_TAGS.map((tag) => ({
@@ -124,6 +133,29 @@ const TAG_OPTIONS: TagOptionMeta[] = POST_TAGS.map((tag) => ({
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" "),
 }));
+
+const POST_VISIBILITY_OPTIONS: VisibilityOptionMeta[] = [
+  {
+    value: "PUBLIC",
+    label: "Everyone",
+    icon: "earth-outline",
+  },
+  {
+    value: "COMMUNITY",
+    label: "Community",
+    icon: "people-outline",
+  },
+  {
+    value: "FOLLOWERS",
+    label: "Followers",
+    icon: "person-add-outline",
+  },
+  {
+    value: "PRIVATE",
+    label: "Only me",
+    icon: "lock-closed-outline",
+  },
+];
 
 const MAX_ATTACHMENTS = 10;
 const MAX_POLL_OPTIONS = 10;
@@ -274,26 +306,26 @@ function CommunityPickerModal({
                       <View style={{ flex: 1 }}>
                         <Text style={styles.communityName}>{item.name}</Text>
 
-                        {item.memberCount != null && (
+                        {item.memberCount != null ? (
                           <Text style={styles.communityMeta}>
                             {item.memberCount.toLocaleString()} members
                           </Text>
-                        )}
+                        ) : null}
 
-                        {!!item.description && (
+                        {!!item.description ? (
                           <Text numberOfLines={1} style={styles.communityDesc}>
                             {item.description}
                           </Text>
-                        )}
+                        ) : null}
                       </View>
 
-                      {isSelected && (
+                      {isSelected ? (
                         <Ionicons
                           name="checkmark-circle"
                           size={20}
                           color={p.accentStrong}
                         />
-                      )}
+                      ) : null}
                     </Pressable>
                   );
                 })
@@ -362,13 +394,94 @@ function TagPickerModal({
                     <Text style={styles.tagLabel}>{item.label}</Text>
                   </View>
 
-                  {isSelected && (
+                  {isSelected ? (
                     <Ionicons
                       name="checkmark"
                       size={18}
                       color={p.accentStrong}
                     />
-                  )}
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+type VisibilityPickerModalProps = {
+  visible: boolean;
+  selectedVisibility: PostVisibility;
+  options: VisibilityOptionMeta[];
+  onSelect: (visibility: PostVisibility) => void;
+  onClose: () => void;
+};
+
+function VisibilityPickerModal({
+  visible,
+  selectedVisibility,
+  options,
+  onSelect,
+  onClose,
+}: VisibilityPickerModalProps) {
+  const { colors, isDark } = useAppTheme();
+
+  const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
+  const styles = useMemo(() => createCreatePostStyles(p), [p]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.pickerOverlay} onPress={() => {}}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>Post visibility</Text>
+
+            <Pressable onPress={onClose} style={styles.closeBtn}>
+              <Ionicons name="close" size={18} color={p.text} />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.pickerList}
+          >
+            {options.map((item) => {
+              const isSelected = item.value === selectedVisibility;
+
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => {
+                    onSelect(item.value);
+                    onClose();
+                  }}
+                  style={[styles.tagRow, isSelected && styles.tagRowSelected]}
+                >
+                  <Ionicons
+                    name={item.icon}
+                    size={18}
+                    color={isSelected ? p.accentStrong : p.muted}
+                  />
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tagLabel}>{item.label}</Text>
+                  </View>
+
+                  {isSelected ? (
+                    <Ionicons
+                      name="checkmark"
+                      size={18}
+                      color={p.accentStrong}
+                    />
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -457,14 +570,18 @@ export default function CreatePostScreen() {
 
   const [postTab, setPostTab] = useState<PostTab>("text");
   const [draftsTabActive, setDraftsTabActive] = useState(false);
+
   const [communitySearch, setCommunitySearch] = useState("");
   const [communityModalVisible, setCommunityModalVisible] = useState(false);
   const [tagModalVisible, setTagModalVisible] = useState(false);
+  const [visibilityModalVisible, setVisibilityModalVisible] = useState(false);
 
   const [selectedCommunityId, setSelectedCommunityId] = useState("");
   const [selectedTag, setSelectedTag] = useState<PostTag>("GENERAL");
-  const [title, setTitle] = useState("");
+  const [selectedVisibility, setSelectedVisibility] =
+    useState<PostVisibility>("PUBLIC");
 
+  const [title, setTitle] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [html, setHtml] = useState("<p></p>");
   const [plainText, setPlainText] = useState("");
@@ -472,9 +589,9 @@ export default function CreatePostScreen() {
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [pollEnabled, setPollEnabled] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [pollClosesAt, setPollClosesAt] = useState("");
 
   const { data: communitiesResponse, isLoading: isLoadingCommunities } =
     useGetMyCommunitiesQuery({
@@ -560,20 +677,47 @@ export default function CreatePostScreen() {
     [communities, selectedCommunityId],
   );
 
+  const selectedCommunityVisibility = (
+    selectedCommunity as { visibility?: "PUBLIC" | "PRIVATE" } | undefined
+  )?.visibility;
+
+  const isPrivateCommunity = selectedCommunityVisibility === "PRIVATE";
+
+  const availableVisibilityOptions = useMemo(() => {
+    if (isPrivateCommunity) {
+      return POST_VISIBILITY_OPTIONS.filter((item) => item.value !== "PUBLIC");
+    }
+
+    return POST_VISIBILITY_OPTIONS;
+  }, [isPrivateCommunity]);
+
   const selectedTagMeta = useMemo(
     () => TAG_OPTIONS.find((tag) => tag.value === selectedTag),
     [selectedTag],
   );
 
+  const selectedVisibilityMeta = useMemo(
+    () =>
+      POST_VISIBILITY_OPTIONS.find((item) => item.value === selectedVisibility),
+    [selectedVisibility],
+  );
+
+  useEffect(() => {
+    if (isPrivateCommunity && selectedVisibility === "PUBLIC") {
+      setSelectedVisibility("COMMUNITY");
+    }
+  }, [isPrivateCommunity, selectedVisibility]);
+
   const resetPoll = useCallback(() => {
-    setPollEnabled(false);
     setPollQuestion("");
     setPollOptions(["", ""]);
+    setPollClosesAt("");
   }, []);
 
   const resetComposer = useCallback(() => {
     setActiveDraftId(null);
     setSelectedTag("GENERAL");
+    setSelectedVisibility("PUBLIC");
     setTitle("");
     setLinkUrl("");
     setHtml("<p></p>");
@@ -746,10 +890,11 @@ export default function CreatePostScreen() {
 
   const buildPollPayload = useCallback(
     (requireValid: boolean): PostPollPayload | undefined => {
-      if (!pollEnabled) return undefined;
+      if (postTab !== "poll") return undefined;
 
       const question = pollQuestion.trim();
       const options = pollOptions.map((option) => option.trim()).filter(Boolean);
+      const closesAt = pollClosesAt.trim();
 
       if (!question && options.length === 0) {
         return undefined;
@@ -762,6 +907,7 @@ export default function CreatePostScreen() {
             poll: "Poll question is required.",
           }));
         }
+
         return undefined;
       }
 
@@ -772,6 +918,7 @@ export default function CreatePostScreen() {
             poll: "Poll must have at least 2 options.",
           }));
         }
+
         return undefined;
       }
 
@@ -784,7 +931,29 @@ export default function CreatePostScreen() {
             poll: "Poll options must be unique.",
           }));
         }
+
         return undefined;
+      }
+
+      if (closesAt) {
+        const parsedDate = new Date(closesAt);
+
+        if (Number.isNaN(parsedDate.getTime())) {
+          if (requireValid) {
+            setErrors((prev) => ({
+              ...prev,
+              poll: "Poll close date must be valid.",
+            }));
+          }
+
+          return undefined;
+        }
+
+        return {
+          question,
+          options,
+          closesAt: parsedDate.toISOString(),
+        };
       }
 
       return {
@@ -792,7 +961,7 @@ export default function CreatePostScreen() {
         options,
       };
     },
-    [pollEnabled, pollOptions, pollQuestion],
+    [pollClosesAt, pollOptions, pollQuestion, postTab],
   );
 
   const saveDraft = async () => {
@@ -814,22 +983,26 @@ export default function CreatePostScreen() {
         communityId: selectedCommunityId,
         title,
         tag: selectedTag,
+        visibility: selectedVisibility,
         html,
         plainText,
         linkUrl,
         media,
+        poll,
       });
 
       if (!parsed.success) {
         if (isMountedRef.current) {
           setErrors(flattenErrors(parsed.error.issues));
         }
+
         return;
       }
 
       const createBody = {
         title: title.trim() || undefined,
         tag: parsed.data.tag,
+        visibility: selectedVisibility,
         content: parsed.data.html,
         linkUrl: parsed.data.linkUrl?.trim() || undefined,
         media,
@@ -839,6 +1012,7 @@ export default function CreatePostScreen() {
       const updateBody = {
         title: title.trim() || undefined,
         tag: parsed.data.tag,
+        visibility: selectedVisibility,
         content: parsed.data.html,
         linkUrl: parsed.data.linkUrl?.trim() || undefined,
         media,
@@ -899,7 +1073,7 @@ export default function CreatePostScreen() {
 
       const poll = buildPollPayload(true);
 
-      if (pollEnabled && !poll) {
+      if (postTab === "poll" && !poll) {
         return;
       }
 
@@ -907,22 +1081,26 @@ export default function CreatePostScreen() {
         communityId: selectedCommunityId,
         title,
         tag: selectedTag,
+        visibility: selectedVisibility,
         html,
         plainText,
         linkUrl,
         media,
+        poll,
       });
 
       if (!parsed.success) {
         if (isMountedRef.current) {
           setErrors(flattenErrors(parsed.error.issues));
         }
+
         return;
       }
 
       const createBody = {
         title: title.trim(),
         tag: parsed.data.tag,
+        visibility: selectedVisibility,
         content: parsed.data.html,
         linkUrl: parsed.data.linkUrl?.trim() || undefined,
         media,
@@ -932,6 +1110,7 @@ export default function CreatePostScreen() {
       const updateBody = {
         title: title.trim(),
         tag: parsed.data.tag,
+        visibility: selectedVisibility,
         content: parsed.data.html,
         linkUrl: parsed.data.linkUrl?.trim() || undefined,
         media,
@@ -979,6 +1158,7 @@ export default function CreatePostScreen() {
       setActiveDraftId(draft.id);
       setSelectedCommunityId(draft.communityId);
       setSelectedTag(draft.tag);
+      setSelectedVisibility(draft.visibility ?? "PUBLIC");
       setTitle(draft.title ?? "");
       setLinkUrl(draft.linkUrl ?? "");
       setHtml(draft.content ?? "<p></p>");
@@ -994,20 +1174,28 @@ export default function CreatePostScreen() {
       );
 
       if (draft.poll) {
-        setPollEnabled(true);
+        setPostTab("poll");
         setPollQuestion(draft.poll.question ?? "");
         setPollOptions(
           draft.poll.options?.length
             ? draft.poll.options.map((option) => option.text)
             : ["", ""],
         );
+        setPollClosesAt(draft.poll.closesAt ?? "");
       } else {
         resetPoll();
+
+        if (draft.media?.length) {
+          setPostTab("media");
+        } else if (draft.linkUrl) {
+          setPostTab("link");
+        } else {
+          setPostTab("text");
+        }
       }
 
       setErrors({});
       setDraftsTabActive(false);
-      setPostTab("text");
       safeSetContent(draft.content ?? "<p></p>");
     },
     [resetPoll, safeSetContent],
@@ -1207,6 +1395,10 @@ export default function CreatePostScreen() {
                       <Tabs.Trigger value="link">
                         <Tabs.Label>Link</Tabs.Label>
                       </Tabs.Trigger>
+
+                      <Tabs.Trigger value="poll">
+                        <Tabs.Label>Poll</Tabs.Label>
+                      </Tabs.Trigger>
                     </Tabs.ScrollView>
                   </Tabs.List>
                 </Tabs>
@@ -1224,19 +1416,15 @@ export default function CreatePostScreen() {
                   },
                 ]}
               >
-                <View style={styles.sectionCard}>
-                  <Text style={styles.sectionTitle}>Discussion title</Text>
-
-                  <View style={styles.linkWrap}>
-                    <TextInput
-                      value={title}
-                      onChangeText={setTitle}
-                      placeholder="Write a clear title"
-                      placeholderTextColor={p.placeholder}
-                      maxLength={160}
-                      style={styles.linkInput}
-                    />
-                  </View>
+                <View>
+                  <TextInput
+                    value={title}
+                    onChangeText={setTitle}
+                    placeholder="Write a clear title"
+                    placeholderTextColor={p.placeholder}
+                    maxLength={160}
+                    style={styles.titleInput}
+                  />
 
                   {errors.title ? (
                     <Text style={styles.errorText}>{errors.title}</Text>
@@ -1256,7 +1444,30 @@ export default function CreatePostScreen() {
 
                     <Ionicons name="chevron-down" size={14} color={p.muted} />
                   </Pressable>
+
+                  <Pressable
+                    onPress={() => setVisibilityModalVisible(true)}
+                    style={styles.tagChip}
+                  >
+                    <Ionicons
+                      name={selectedVisibilityMeta?.icon ?? "earth-outline"}
+                      size={14}
+                      color={p.muted}
+                    />
+
+                    <Text style={styles.tagChipText}>
+                      {selectedVisibilityMeta?.label ?? "Visibility"}
+                    </Text>
+
+                    <Ionicons name="chevron-down" size={14} color={p.muted} />
+                  </Pressable>
                 </View>
+
+                {isPrivateCommunity ? (
+                  <Text style={styles.visibilityHintText}>
+                    Public visibility is disabled in private communities.
+                  </Text>
+                ) : null}
 
                 {postTab === "text" && (
                   <>
@@ -1292,7 +1503,7 @@ export default function CreatePostScreen() {
                       <View style={styles.mediaSectionHeader}>
                         <Text style={styles.sectionTitle}>Images & Video</Text>
 
-                        {attachments.length > 0 && (
+                        {attachments.length > 0 ? (
                           <Pressable onPress={pickMedia} style={styles.addMoreBtn}>
                             <Ionicons
                               name="add"
@@ -1302,7 +1513,7 @@ export default function CreatePostScreen() {
 
                             <Text style={styles.addMoreBtnText}>Add more</Text>
                           </Pressable>
-                        )}
+                        ) : null}
                       </View>
 
                       {attachments.length === 0 ? (
@@ -1360,127 +1571,123 @@ export default function CreatePostScreen() {
                   </View>
                 )}
 
-                <View style={styles.sectionCard}>
-                  <Pressable
-                    onPress={() => setPollEnabled((prev) => !prev)}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Ionicons
-                        name="bar-chart-outline"
-                        size={18}
-                        color={p.accentStrong}
+                {postTab === "poll" && (
+                  <View style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>Poll Question</Text>
+
+                    <View style={styles.linkWrap}>
+                      <TextInput
+                        value={pollQuestion}
+                        onChangeText={setPollQuestion}
+                        placeholder="Ask a question"
+                        placeholderTextColor={p.placeholder}
+                        maxLength={160}
+                        style={styles.linkInput}
                       />
-                      <Text style={styles.sectionTitle}>Add poll</Text>
                     </View>
 
-                    <Ionicons
-                      name={pollEnabled ? "checkbox" : "square-outline"}
-                      size={22}
-                      color={pollEnabled ? p.accentStrong : p.muted}
-                    />
-                  </Pressable>
+                    <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+                      Options
+                    </Text>
 
-                  {pollEnabled ? (
-                    <View style={{ marginTop: 12, gap: 10 }}>
-                      <View style={styles.linkWrap}>
-                        <TextInput
-                          value={pollQuestion}
-                          onChangeText={setPollQuestion}
-                          placeholder="Poll question"
-                          placeholderTextColor={p.placeholder}
-                          maxLength={160}
-                          style={styles.linkInput}
-                        />
-                      </View>
-
-                      {pollOptions.map((option, index) => (
-                        <View
-                          key={`poll-option-${index}`}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <View style={[styles.linkWrap, { flex: 1 }]}>
-                            <TextInput
-                              value={option}
-                              onChangeText={(value) => {
-                                setPollOptions((prev) =>
-                                  prev.map((item, itemIndex) =>
-                                    itemIndex === index ? value : item,
-                                  ),
-                                );
-                              }}
-                              placeholder={`Option ${index + 1}`}
-                              placeholderTextColor={p.placeholder}
-                              maxLength={120}
-                              style={styles.linkInput}
-                            />
-                          </View>
-
-                          {pollOptions.length > 2 ? (
-                            <Pressable
-                              onPress={() =>
-                                setPollOptions((prev) =>
-                                  prev.filter((_, itemIndex) => itemIndex !== index),
-                                )
-                              }
-                              style={{
-                                width: 40,
-                                height: 40,
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Ionicons
-                                name="trash-outline"
-                                size={18}
-                                color={p.danger}
-                              />
-                            </Pressable>
-                          ) : null}
-                        </View>
-                      ))}
-
-                      {pollOptions.length < MAX_POLL_OPTIONS ? (
-                        <Pressable
-                          onPress={() => setPollOptions((prev) => [...prev, ""])}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 6,
-                            paddingVertical: 8,
-                          }}
-                        >
-                          <Ionicons
-                            name="add-circle-outline"
-                            size={18}
-                            color={p.accentStrong}
+                    {pollOptions.map((option, index) => (
+                      <View
+                        key={`poll-option-${index}`}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <View style={[styles.linkWrap, { flex: 1 }]}>
+                          <TextInput
+                            value={option}
+                            onChangeText={(value) => {
+                              setPollOptions((prev) =>
+                                prev.map((item, itemIndex) =>
+                                  itemIndex === index ? value : item,
+                                ),
+                              );
+                            }}
+                            placeholder={`Option ${index + 1}`}
+                            placeholderTextColor={p.placeholder}
+                            maxLength={120}
+                            style={styles.linkInput}
                           />
-                          <Text
+                        </View>
+
+                        {pollOptions.length > 2 ? (
+                          <Pressable
+                            onPress={() =>
+                              setPollOptions((prev) =>
+                                prev.filter((_, itemIndex) => itemIndex !== index),
+                              )
+                            }
                             style={{
-                              color: p.accentStrong,
-                              fontFamily: "Poppins_600SemiBold",
-                              fontSize: 13,
+                              width: 40,
+                              height: 40,
+                              alignItems: "center",
+                              justifyContent: "center",
                             }}
                           >
-                            Add option
-                          </Text>
-                        </Pressable>
-                      ) : null}
+                            <Ionicons
+                              name="trash-outline"
+                              size={18}
+                              color={p.danger}
+                            />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    ))}
 
-                      {errors.poll ? (
-                        <Text style={styles.errorText}>{errors.poll}</Text>
-                      ) : null}
+                    {pollOptions.length < MAX_POLL_OPTIONS ? (
+                      <Pressable
+                        onPress={() => setPollOptions((prev) => [...prev, ""])}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                          paddingVertical: 8,
+                        }}
+                      >
+                        <Ionicons
+                          name="add-circle-outline"
+                          size={18}
+                          color={p.accentStrong}
+                        />
+
+                        <Text
+                          style={{
+                            color: p.accentStrong,
+                            fontFamily: "Poppins_600SemiBold",
+                            fontSize: 13,
+                          }}
+                        >
+                          Add option
+                        </Text>
+                      </Pressable>
+                    ) : null}
+
+                    <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+                      Close Date Optional
+                    </Text>
+
+                    <View style={styles.linkWrap}>
+                      <TextInput
+                        value={pollClosesAt}
+                        onChangeText={setPollClosesAt}
+                        placeholder="Example: 2026-06-01T18:00:00"
+                        placeholderTextColor={p.placeholder}
+                        autoCapitalize="none"
+                        style={styles.linkInput}
+                      />
                     </View>
-                  ) : null}
-                </View>
+
+                    {errors.poll ? (
+                      <Text style={styles.errorText}>{errors.poll}</Text>
+                    ) : null}
+                  </View>
+                )}
               </ScrollView>
 
               <View
@@ -1542,6 +1749,14 @@ export default function CreatePostScreen() {
         selectedTag={selectedTag}
         onSelect={(tag) => setSelectedTag(tag)}
         onClose={() => setTagModalVisible(false)}
+      />
+
+      <VisibilityPickerModal
+        visible={visibilityModalVisible}
+        selectedVisibility={selectedVisibility}
+        options={availableVisibilityOptions}
+        onSelect={setSelectedVisibility}
+        onClose={() => setVisibilityModalVisible(false)}
       />
     </SafeAreaView>
   );

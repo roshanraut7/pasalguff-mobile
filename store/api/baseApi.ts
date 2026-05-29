@@ -7,16 +7,31 @@ import {
 } from "@reduxjs/toolkit/query/react";
 import { getAuthCookie } from "@/api/better-auth-client";
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_AUTH_URL!;
+const RAW_API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ?? process.env.EXPO_PUBLIC_AUTH_URL ?? "";
+
+function getApiBaseUrl() {
+  const raw = RAW_API_BASE_URL.trim();
+
+  if (!raw) {
+    console.log("API base URL is missing. Check your .env file.");
+    return "";
+  }
+
+  const cleaned = raw
+    .replace(/\/api\/auth\/?$/i, "")
+    .replace(/\/api\/?$/i, "");
+
+  return cleaned.endsWith("/") ? cleaned.slice(0, -1) : cleaned;
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
 
   /**
    * We manually attach the Better Auth cookie below.
-   *
-   * In React Native/Expo, browser-style cookie handling is not the same as web,
-   * so credentials: "omit" is okay here because we manually set the Cookie header.
    */
   credentials: "omit",
 
@@ -25,6 +40,13 @@ const rawBaseQuery = fetchBaseQuery({
     return headers;
   },
 });
+
+function isFormDataBody(body: unknown) {
+  return (
+    typeof FormData !== "undefined" &&
+    body instanceof FormData
+  );
+}
 
 const baseQueryWithAuth: BaseQueryFn<
   string | FetchArgs,
@@ -36,12 +58,6 @@ const baseQueryWithAuth: BaseQueryFn<
 
   const headers = new Headers(normalizedArgs.headers as HeadersInit | undefined);
 
-  /**
-   * Better Auth session cookie.
-   *
-   * Backend AuthGuard reads session from headers, so every protected API request
-   * must include this cookie.
-   */
   const authCookie = await getAuthCookie();
 
   if (authCookie) {
@@ -49,12 +65,11 @@ const baseQueryWithAuth: BaseQueryFn<
   }
 
   /**
-   * Do not set Content-Type manually for FormData.
-   *
-   * React Native/fetch needs to set multipart boundary automatically.
+   * IMPORTANT:
+   * Do not set Content-Type for FormData.
+   * React Native must set multipart boundary automatically.
    */
-  const isFormData =
-    typeof FormData !== "undefined" && normalizedArgs.body instanceof FormData;
+  const isFormData = isFormDataBody(normalizedArgs.body);
 
   if (normalizedArgs.body && !isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -68,48 +83,42 @@ const baseQueryWithAuth: BaseQueryFn<
 export const baseApi = createApi({
   reducerPath: "api",
   baseQuery: baseQueryWithAuth,
-  tagTypes: [
-    "Category",
+tagTypes: [
+  "Category",
 
-    "Community",
-    "MyCommunity",
-    "CommunityMembers",
-    "CommunityAccess",
-    "CommunityJoinRequests",
+  "Community",
+  "MyCommunity",
+  "CommunityMembers",
+  "CommunityAccess",
+  "CommunityJoinRequests",
 
-    "Profile",
-    "AdminCommunities",
-    "Notifications",
-    "CommunityGuidelines",
-      "Onboarding",
+  "Profile",
+  "AdminCommunities",
+  "Notifications",
+  "CommunityGuidelines",
+  "Onboarding",
   "OnboardingCategory",
   "SuggestedCommunity",
 
-    /**
-     * Post feed / post detail / my posts.
-     */
-    "Post",
-    "DraftPost",
-     "AdminUsers",
-       "AdminPosts",
-         "Friend",
-         "CommunityModerators",
-         "Chat",
-    "Message",
+  "Post",
+  "DraftPost",
+  "AdminUsers",
+  "AdminPosts",
+  "Friend",
+  "CommunityModerators",
 
-    /**
-     * New engagement tags.
-     *
-     * These help RTK Query refresh only the affected data after:
-     * - like/unlike
-     * - comment/reply create/update/delete
-     * - share
-     */
-    "PostLike",
-    "PostShare",
-    "PostComment",
-    "PostReply",
-  ],
+  "Chat",
+  "Message",
+
+  "PostLike",
+  "PostShare",
+  "PostComment",
+  "PostReply",
+
+  "Follow",
+  "Follower",
+  "Following",
+],
   refetchOnFocus: true,
   refetchOnReconnect: true,
   endpoints: () => ({}),

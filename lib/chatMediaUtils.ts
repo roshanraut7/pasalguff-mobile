@@ -38,25 +38,40 @@ export function guessMimeTypeFromName(fileName?: string | null) {
   if (name.endsWith(".mp3")) return "audio/mpeg";
   if (name.endsWith(".wav")) return "audio/wav";
   if (name.endsWith(".m4a")) return "audio/mp4";
+  if (name.endsWith(".aac")) return "audio/aac";
+  if (name.endsWith(".ogg")) return "audio/ogg";
+  if (name.endsWith(".opus")) return "audio/opus";
+  if (name.endsWith(".amr")) return "audio/amr";
 
   return "application/octet-stream";
 }
 
 export function guessMessageType(mimeType?: string | null): MessageType {
-  if (mimeType?.startsWith("image/")) return "IMAGE";
-  if (mimeType?.startsWith("video/")) return "VIDEO";
+  const type = mimeType?.toLowerCase() || "";
+
+  if (type.startsWith("image/")) return "IMAGE";
+  if (type.startsWith("video/")) return "VIDEO";
+  if (type.startsWith("audio/")) return "AUDIO";
 
   return "FILE";
 }
 
 export function isImageMimeType(mimeType?: string | null) {
-  return Boolean(mimeType?.startsWith("image/"));
+  return Boolean(mimeType?.toLowerCase().startsWith("image/"));
 }
 
 export function isVideoMimeType(mimeType?: string | null) {
-  return Boolean(mimeType?.startsWith("video/"));
+  return Boolean(mimeType?.toLowerCase().startsWith("video/"));
+}
+
+export function isAudioMimeType(mimeType?: string | null) {
+  return Boolean(mimeType?.toLowerCase().startsWith("audio/"));
 }
 
 export function isFileMimeType(mimeType?: string | null) {
-  return !isImageMimeType(mimeType) && !isVideoMimeType(mimeType);
+  return (
+    !isImageMimeType(mimeType) &&
+    !isVideoMimeType(mimeType) &&
+    !isAudioMimeType(mimeType)
+  );
 }

@@ -1,6 +1,6 @@
 import { baseApi } from "./baseApi";
 
-export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE";
+export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE" | "AUDIO";
 export type MessageStatus = "SENT" | "DELIVERED";
 export type ChatUser = {
   id: string;

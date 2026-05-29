@@ -480,6 +480,7 @@ function getLastMessagePreview(chat: Chat) {
 
   if (lastMessage.type === "IMAGE") return "📷 Photo";
   if (lastMessage.type === "VIDEO") return "🎥 Video";
+  if (lastMessage.type === "AUDIO") return "🎤 Voice message";
   if (lastMessage.type === "FILE") {
     return `📄 ${lastMessage.fileName || "File"}`;
   }

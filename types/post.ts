@@ -4,6 +4,12 @@
 
 export type CommunityPostType = "TEXT" | "MEDIA" | "LINK";
 
+export type PostVisibility =
+  | "PUBLIC"
+  | "COMMUNITY"
+  | "FOLLOWERS"
+  | "PRIVATE";
+
 export type CommunityPostTag =
   | "GENERAL"
   | "ANNOUNCEMENT"
@@ -29,6 +35,14 @@ export type AdminPostSortBy =
   | "mostShared";
 
 export type FeedSortBy = "newest" | "oldest";
+
+/**
+ * Optional aliases.
+ * These are useful if some older files still use PostType, PostTag, or PostMediaType.
+ */
+export type PostType = CommunityPostType;
+export type PostTag = CommunityPostTag;
+export type PostMediaType = CommunityPostMediaType;
 
 /* =========================================================
    COMMON RESPONSE TYPES
@@ -103,11 +117,11 @@ export type PostCommunity = {
 
 export type PostAuthor = {
   id: string;
-  name: string;
-  firstName: string;
-  lastName: string;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
   image: string | null;
-  businessName: string;
+  businessName: string | null;
 };
 
 export type CommunityPost = {
@@ -120,6 +134,7 @@ export type CommunityPost = {
   type: CommunityPostType;
   tag: CommunityPostTag;
   status: CommunityPostStatus;
+  visibility: PostVisibility;
 
   content: string | null;
   linkUrl: string | null;
@@ -144,11 +159,11 @@ export type CommunityPost = {
 
 export type PostCommentAuthor = {
   id: string;
-  name: string;
-  firstName: string;
-  lastName: string;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
   image: string | null;
-  businessName: string;
+  businessName: string | null;
 };
 
 export type PostComment = {
@@ -181,6 +196,7 @@ export type AdminPost = {
     type: CommunityPostType;
     tag: CommunityPostTag;
     status: "PUBLISHED";
+    visibility: PostVisibility;
     createdAt: string;
     updatedAt: string;
     publishedAt: string | null;
@@ -205,10 +221,10 @@ export type AdminPost = {
 
   author: {
     id: string;
-    name: string;
-    firstName: string;
-    lastName: string;
-    businessName: string;
+    name: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    businessName: string | null;
     image: string | null;
     displayName: string;
   };
@@ -221,8 +237,8 @@ export type AdminPost = {
 
   table: {
     postPreview: string;
-    visibility: CommunityVisibility;
-    publishedAt: string;
+    visibility: PostVisibility;
+    publishedAt: string | null;
   };
 };
 
@@ -239,7 +255,7 @@ export type CreatePostMediaPayload = {
 export type CreatePostPollPayload = {
   question: string;
   options: string[];
-  closesAt?: string;
+  closesAt?: string | null;
 };
 
 export type CreateCommunityPostPayload = {
@@ -247,6 +263,7 @@ export type CreateCommunityPostPayload = {
   content?: string;
   linkUrl?: string;
   tag?: CommunityPostTag;
+  visibility?: PostVisibility;
   media?: CreatePostMediaPayload[];
   poll?: CreatePostPollPayload;
 };
@@ -256,7 +273,14 @@ export type UpdateCommunityPostPayload = {
   content?: string;
   linkUrl?: string | null;
   tag?: CommunityPostTag;
+  visibility?: PostVisibility;
   media?: CreatePostMediaPayload[];
+
+  /**
+   * Keep this optional only if your backend later supports poll update.
+   * For now your updatePost service does not update poll.
+   */
+  poll?: CreatePostPollPayload;
 };
 
 export type CreatePostCommentPayload = {
@@ -385,7 +409,13 @@ export type GetAdminPostsArgs = {
   search?: string;
   communityId?: string;
   authorId?: string;
-  visibility?: CommunityVisibility;
+
+  /**
+   * This should be PostVisibility, not CommunityVisibility,
+   * because post visibility can be PUBLIC, COMMUNITY, FOLLOWERS, PRIVATE.
+   */
+  visibility?: PostVisibility;
+
   tag?: CommunityPostTag;
   type?: CommunityPostType;
   sortBy?: AdminPostSortBy;
@@ -435,6 +465,7 @@ export type CommunityPostTableItem = {
   type: CommunityPostType | string;
   tag: CommunityPostTag | string | null;
   status: CommunityPostStatus | "HIDDEN" | "REMOVED" | string;
+  visibility?: PostVisibility | string;
 
   content: string | null;
   linkUrl: string | null;
@@ -494,6 +525,7 @@ export type CommunityPostsTableResponse = {
     status?: string | null;
     type: string | null;
     tag: string | null;
+    visibility?: string | null;
     sortBy: string;
   };
 };
@@ -506,5 +538,6 @@ export type CommunityPostsTableQuery = {
   status?: "PUBLISHED" | "HIDDEN" | "REMOVED";
   type?: CommunityPostType;
   tag?: string;
+  visibility?: PostVisibility;
   sortBy?: "newest" | "oldest";
 };

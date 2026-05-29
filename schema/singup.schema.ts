@@ -19,6 +19,17 @@ export const signupSchema = z.object({
     .string()
     .min(1, "Password is required")
     .min(8, "Password must be at least 8 characters"),
+      address: z
+    .string()
+    .trim()
+    .min(1, "Please select your district"),
+
+     acceptedTerms: z.boolean().refine((value) => value === true, {
+    message: "You must agree to the Terms and Conditions",
+  }),
 });
+
+
+
 
 export type SignupFormValues = z.infer<typeof signupSchema>;
