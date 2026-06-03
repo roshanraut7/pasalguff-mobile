@@ -1,10 +1,10 @@
 import { DarkTheme, DefaultTheme, Theme } from "@react-navigation/native";
 
 export const lightColors = {
-  background: "#f0fdf4",
+  background: "#ffffff",  
   foreground: "#052e16",
-  surface: "#ffffff",
-  surfaceSecondary: "#f8fffa",
+  surface: "#ffffff",          
+  surfaceSecondary: "#ffffff",
   surfaceTertiary: "#dcfce7",
   overlay: "#ffffff",
   muted: "#6b7280",

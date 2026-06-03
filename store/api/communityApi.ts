@@ -21,6 +21,7 @@ import type {
   UpdateCommunityPayload,
   UpdateModeratorPermissionsPayload,
   CommunityDashboardOverviewResponse,
+  VisibleCommunityMembersQuery,
 } from "@/types/community";
 
 export const communityApi = baseApi.injectEndpoints({
@@ -105,7 +106,7 @@ export const communityApi = baseApi.injectEndpoints({
 
     getCommunityDetailsById: builder.query<CommunityItem, string>({
       query: (communityId) => ({
-        url: `/communities/${communityId}/details`,
+        url: `/communities/${communityId}`,
         method: "GET",
       }),
       providesTags: (_result, _error, communityId) => [
@@ -174,29 +175,35 @@ export const communityApi = baseApi.injectEndpoints({
        JOIN / LEAVE COMMUNITY
        ========================================================= */
 
-    joinCommunity: builder.mutation<unknown, JoinCommunityPayload>({
-      query: (arg) => {
-        const payload = typeof arg === "string" ? { communityId: arg } : arg;
+   joinCommunity: builder.mutation<unknown, JoinCommunityPayload>({
+  query: (arg) => {
+    const payload = typeof arg === "string" ? { communityId: arg } : arg;
 
-        return {
-          url: `/communities/${payload.communityId}/join`,
-          method: "POST",
-          body: payload.message ? { message: payload.message } : {},
-        };
-      },
-      invalidatesTags: (_result, _error, arg) => {
-        const communityId = typeof arg === "string" ? arg : arg.communityId;
+    return {
+      url: `/communities/${payload.communityId}/join`,
+      method: "POST",
+      body: payload.message ? { message: payload.message } : {},
+    };
+  },
 
-        return [
-          { type: "Community" as const, id: "LIST" },
-          { type: "Community" as const, id: communityId },
-          { type: "MyCommunity" as const, id: "LIST" },
-          { type: "CommunityAccess" as const, id: communityId },
-          { type: "CommunityMembers" as const, id: communityId },
-          { type: "CommunityJoinRequests" as const, id: communityId },
-        ];
-      },
-    }),
+  invalidatesTags: (_result, _error, arg) => {
+    const communityId = typeof arg === "string" ? arg : arg.communityId;
+
+    return [
+      { type: "Community" as const, id: "LIST" },
+      { type: "Community" as const, id: communityId },
+      { type: "MyCommunity" as const, id: "LIST" },
+      { type: "CommunityAccess" as const, id: communityId },
+      { type: "CommunityMembers" as const, id: communityId },
+      { type: "CommunityJoinRequests" as const, id: communityId },
+
+      /*
+       * Required so the current user's pending request refreshes.
+       */
+      { type: "CommunityJoinRequests" as const, id: `${communityId}-ME` },
+    ];
+  },
+}),
 
     leaveCommunity: builder.mutation<unknown, string>({
       query: (communityId) => ({
@@ -214,10 +221,33 @@ export const communityApi = baseApi.injectEndpoints({
     }),
 
     /* =========================================================
+   MEMBERS VISIBLE TO NORMAL JOINED USERS
+   ========================================================= */
+
+getVisibleCommunityMembers: builder.query<
+  PaginatedResponse<CommunityMemberItem>,
+  VisibleCommunityMembersQuery
+>({
+  query: ({ communityId, page = 1, limit = 20, search }) => ({
+    url: `/communities/${communityId}/visible-members`,
+    method: "GET",
+    params: {
+      page,
+      limit,
+      ...(search ? { search } : {}),
+    },
+  }),
+
+  providesTags: (_result, _error, { communityId }) => [
+    { type: "CommunityMembers" as const, id: communityId },
+  ],
+}),
+
+    /* =========================================================
        JOIN REQUESTS
        ========================================================= */
 
-    getMyJoinRequest: builder.query<CommunityJoinRequestItem, string>({
+    getMyJoinRequest: builder.query<CommunityJoinRequestItem | null, string>({
       query: (communityId) => ({
         url: `/communities/${communityId}/join-requests/me`,
         method: "GET",
@@ -420,4 +450,5 @@ export const {
 
   useTransferCommunityAdminMutation,
   useGetCommunityDashboardOverviewQuery,
+    useGetVisibleCommunityMembersQuery,
 } = communityApi;

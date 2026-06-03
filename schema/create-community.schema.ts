@@ -12,7 +12,7 @@ export const createCommunitySchema = z.object({
     name: z
         .string()
         .trim()
-        .min(2, "Community name must be at least 2 characters")
+        .min(6, "Community name must be at least 6 characters")
         .max(100, "Community name must be under 100 characters"),
     categoryId: z.string().min(1, "Please select a category"),
     description: optionalTextField.refine(

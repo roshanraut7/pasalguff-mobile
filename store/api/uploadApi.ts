@@ -3,16 +3,20 @@ import { baseApi } from "./baseApi";
 export type UploadResponse = {
   url: string;
   filename: string;
+  originalName?: string;
   mimetype: string;
   size: number;
+  originalSize?: number;
 };
 
 export type UploadPostMediaItem = {
   index: number;
   url: string;
   filename: string;
+  originalName?: string;
   mimetype: string;
   size: number;
+  originalSize?: number;
 };
 
 export type UploadPostMediaResponse = {
@@ -32,7 +36,6 @@ export type UploadPostMediaFilePayload = {
   name?: string | null;
   fileName?: string | null;
   mimeType?: string | null;
-  mediaType?: "IMAGE" | "VIDEO";
 };
 
 export type UploadPostMediaPayload = {
@@ -44,50 +47,27 @@ function buildFormData(payload: UploadFilePayload, fallbackPrefix: string) {
 
   form.append("file", {
     uri: payload.uri,
-    name: payload.fileName ?? payload.name ?? `${fallbackPrefix}-${Date.now()}.jpg`,
+    name:
+      payload.fileName ??
+      payload.name ??
+      `${fallbackPrefix}-${Date.now()}.jpg`,
     type: payload.mimeType ?? "image/jpeg",
   } as any);
 
   return form;
 }
 
-function getPostFileName(
-  file: UploadPostMediaFilePayload,
-  index: number,
-): string {
-  if (file.fileName) return file.fileName;
-  if (file.name) return file.name;
-
-  const isVideo =
-    file.mediaType === "VIDEO" || file.mimeType?.startsWith("video/");
-
-  return `post-media-${Date.now()}-${index}.${isVideo ? "mp4" : "jpg"}`;
-}
-
-function getPostMimeType(file: UploadPostMediaFilePayload): string {
-  if (file.mimeType) return file.mimeType;
-
-  if (file.mediaType === "VIDEO") {
-    return "video/mp4";
-  }
-
-  return "image/jpeg";
-}
-
-function buildPostMediaFormData(payload: UploadPostMediaPayload) {
+function buildPostImageFormData(payload: UploadPostMediaPayload) {
   const form = new FormData();
 
   payload.files.forEach((file, index) => {
-    /**
-     * Backend uses:
-     * FilesInterceptor("files", 10)
-     *
-     * So the field name MUST be "files".
-     */
     form.append("files", {
       uri: file.uri,
-      name: getPostFileName(file, index),
-      type: getPostMimeType(file),
+      name:
+        file.fileName ??
+        file.name ??
+        `post-image-${Date.now()}-${index}.jpg`,
+      type: file.mimeType ?? "image/jpeg",
     } as any);
   });
 
@@ -95,6 +75,8 @@ function buildPostMediaFormData(payload: UploadPostMediaPayload) {
 }
 
 export const uploadApi = baseApi.injectEndpoints({
+  overrideExisting: true,
+
   endpoints: (builder) => ({
     uploadProfileAvatar: builder.mutation<UploadResponse, UploadFilePayload>({
       query: (payload) => ({
@@ -102,7 +84,7 @@ export const uploadApi = baseApi.injectEndpoints({
         method: "POST",
         body: buildFormData(payload, "profile-avatar"),
       }),
-        invalidatesTags: ["Profile", "Onboarding"],
+      invalidatesTags: ["Profile", "Onboarding"],
     }),
 
     uploadProfileCover: builder.mutation<UploadResponse, UploadFilePayload>({
@@ -131,17 +113,8 @@ export const uploadApi = baseApi.injectEndpoints({
     }),
 
     /**
-     * Backend:
-     * POST /uploads/post
-     *
-     * Field name:
-     * files
-     *
-     * Response:
-     * {
-     *   total: number,
-     *   items: [{ index, url, filename, mimetype, size }]
-     * }
+     * Uploads post images only.
+     * External videos are shared through linkUrl in the post create/update API.
      */
     uploadPostMedia: builder.mutation<
       UploadPostMediaResponse,
@@ -150,7 +123,7 @@ export const uploadApi = baseApi.injectEndpoints({
       query: (payload) => ({
         url: "/uploads/post",
         method: "POST",
-        body: buildPostMediaFormData(payload),
+        body: buildPostImageFormData(payload),
       }),
     }),
   }),

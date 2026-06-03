@@ -19,13 +19,23 @@ export type CommunityPostTag =
   | "NEWS"
   | "HELP";
 
-export type CommunityPostMediaType = "IMAGE" | "VIDEO";
+export type CommunityPostMediaType = "IMAGE";
 
 export type CommunityPostStatus = "DRAFT" | "PUBLISHED" | "DELETED";
 
 export type CommunityCommentStatus = "ACTIVE" | "DELETED";
 
 export type CommunityVisibility = "PUBLIC" | "PRIVATE";
+export type CommunityPostLinkType =
+  | "VIDEO"
+  | "IMAGE"
+  | "WEBSITE";
+
+export type CommunityPostLinkProvider =
+  | "YOUTUBE"
+  | "DIRECT"
+  |"TIKTOK"
+  | "EXTERNAL";
 
 export type AdminPostSortBy =
   | "newest"
@@ -35,6 +45,7 @@ export type AdminPostSortBy =
   | "mostShared";
 
 export type FeedSortBy = "newest" | "oldest";
+export type HomeFeedType ="FOR_YOU" | "COMMUNITY";
 
 /**
  * Optional aliases.
@@ -43,6 +54,25 @@ export type FeedSortBy = "newest" | "oldest";
 export type PostType = CommunityPostType;
 export type PostTag = CommunityPostTag;
 export type PostMediaType = CommunityPostMediaType;
+export type DislikePostBody = {
+  reason: string;
+};
+
+export type DislikePostArgs = {
+  communityId: string;
+  postId: string;
+  body: DislikePostBody;
+};
+
+export type PostReactionResponse = {
+  message: string;
+  likeCount: number;
+  dislikeCount: number;
+  liked: boolean;
+  disliked: boolean;
+  myDislikeReason: string | null;
+  approvalRate: number | null;
+};
 
 /* =========================================================
    COMMON RESPONSE TYPES
@@ -138,6 +168,16 @@ export type CommunityPost = {
 
   content: string | null;
   linkUrl: string | null;
+   linkType?: CommunityPostLinkType | null;
+  linkProvider?: CommunityPostLinkProvider | null;
+  linkExternalId?: string | null;
+  linkTitle?: string | null;
+  linkDescription?: string | null;
+  linkThumbnailUrl?: string | null;
+  dislikeCount: number;
+isDislikedByMe: boolean;
+myDislikeReason: string | null;
+approvalRate: number | null;
 
   createdAt: string;
   updatedAt: string;
@@ -269,8 +309,8 @@ export type CreateCommunityPostPayload = {
 };
 
 export type UpdateCommunityPostPayload = {
-  title?: string;
-  content?: string;
+  title?: string | null;
+  content?: string | null;
   linkUrl?: string | null;
   tag?: CommunityPostTag;
   visibility?: PostVisibility;
@@ -305,6 +345,16 @@ export type VotePostPollPayload = {
 
 export type GetCommunityPostsArgs = {
   communityId: string;
+  feedType?:HomeFeedType;
+  limit?: number;
+  cursor?: string | null;
+  search?: string;
+  tag?: CommunityPostTag;
+  type?: CommunityPostType;
+  sortBy?: FeedSortBy;
+};
+export type GetHomeFeedPostsArgs = {
+  feedType?: HomeFeedType;
   limit?: number;
   cursor?: string | null;
   search?: string;
@@ -425,11 +475,7 @@ export type GetAdminPostsArgs = {
    MUTATION RESPONSE TYPES
    ========================================================= */
 
-export type LikePostResponse = {
-  message: string;
-  liked: boolean;
-  likeCount: number;
-};
+export type LikePostResponse = PostReactionResponse;
 
 export type SharePostResponse = {
   message: string;

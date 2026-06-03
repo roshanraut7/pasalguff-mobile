@@ -23,24 +23,27 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { usePostInteractions } from "@/hooks/media/usePostInteractions";
 import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
+
 import {
   useCancelMyJoinRequestMutation,
   useGetCommunityAccessQuery,
   useGetCommunityBySlugQuery,
+  useGetVisibleCommunityMembersQuery,
   useJoinCommunityMutation,
 } from "@/store/api/communityApi";
-import {
-  useGetCommunityMembersQuery,
-  useRemoveCommunityMemberMutation,
-} from "@/store/api/communityMemberManagementApi";
+
+import { useRemoveCommunityMemberMutation } from "@/store/api/communityMemberManagementApi";
+
 import {
   useGetCommunityGuidelinesQuery,
   type CommunityGuidelineItem,
 } from "@/store/api/communityGuidelinesApi";
+
 import {
   useDeletePostMutation,
   useGetCommunityPostsQuery,
 } from "@/store/api/postApi";
+
 import type { CommunityMemberItem } from "@/types/community";
 import type { CommunityPost } from "@/types/post";
 
@@ -50,8 +53,17 @@ export default function CommunityDetailScreen() {
   const { colors } = useAppTheme();
 
   const [tab, setTab] = useState("posts");
+
   const [isJoining, setIsJoining] = useState(false);
   const [isCancellingRequest, setIsCancellingRequest] = useState(false);
+
+  /*
+   * Used only to show Pending immediately after submitting
+   * a private-community request, before the refreshed API
+   * response reaches the screen.
+   */
+  const [submittedPrivateRequest, setSubmittedPrivateRequest] =
+    useState(false);
 
   const [postCursor, setPostCursor] = useState<string | undefined>(undefined);
   const [postItems, setPostItems] = useState<CommunityPost[]>([]);
@@ -87,6 +99,13 @@ export default function CommunityDetailScreen() {
     sessionUser: session?.user,
   });
 
+  /*
+   * Loads the community shell by slug.
+   *
+   * Important:
+   * Your backend CommunityQueryService.findOne() must allow
+   * private communities to load as locked previews.
+   */
   const {
     data: community,
     isLoading: communityLoading,
@@ -97,6 +116,13 @@ export default function CommunityDetailScreen() {
     refetchOnMountOrArgChange: true,
   });
 
+  /*
+   * Loads the logged-in viewer's access information.
+   * For a pending private request this should return:
+   * - isMember: false
+   * - canView: false
+   * - joinRequestStatus: "PENDING"
+   */
   const {
     data: access,
     isLoading: accessLoading,
@@ -106,10 +132,14 @@ export default function CommunityDetailScreen() {
     refetchOnMountOrArgChange: true,
   });
 
-  const isOwner = access?.role === "ADMIN" || community?.myRole === "ADMIN";
+  const isOwner =
+    access?.role === "ADMIN" ||
+    community?.myRole === "ADMIN" ||
+    community?.isOwner === true;
 
   const isModerator =
-    access?.role === "MODERATOR" || community?.myRole === "MODERATOR";
+    access?.role === "MODERATOR" ||
+    community?.myRole === "MODERATOR";
 
   const isJoined =
     Boolean(access?.isMember) ||
@@ -118,7 +148,19 @@ export default function CommunityDetailScreen() {
     community?.myRole === "MODERATOR" ||
     community?.myRole === "MEMBER";
 
-  const isJoinRequestPending = community?.myJoinRequestStatus === "PENDING";
+  /*
+   * Use both backend sources because:
+   * - community response includes myJoinRequestStatus
+   * - access response includes joinRequestStatus
+   * - submittedPrivateRequest updates the UI instantly after pressing Join
+   *
+   * The !isJoined check prevents showing Pending after approval.
+   */
+  const isJoinRequestPending =
+    !isJoined &&
+    (submittedPrivateRequest ||
+      community?.myJoinRequestStatus === "PENDING" ||
+      access?.joinRequestStatus === "PENDING");
 
   const isPrivateLocked =
     community?.visibility === "PRIVATE" &&
@@ -129,9 +171,9 @@ export default function CommunityDetailScreen() {
   const canViewContent =
     Boolean(access?.canView) ||
     community?.visibility === "PUBLIC" ||
-    Boolean(isJoined) ||
-    Boolean(isOwner) ||
-    Boolean(isModerator);
+    isJoined ||
+    isOwner ||
+    isModerator;
 
   const canManageMembers =
     isOwner || Boolean(access?.permissions?.canManageMembers);
@@ -139,17 +181,28 @@ export default function CommunityDetailScreen() {
   const canManagePosts =
     isOwner || Boolean(access?.permissions?.canManagePosts);
 
+  /*
+   * A pending private-community user must not load members.
+   * An approved joined user, owner or moderator can load them.
+   */
   const canLoadMembers =
     !!session?.user &&
     !!community?.id &&
-    (Boolean(isJoined) || Boolean(isOwner) || Boolean(isModerator));
+    (isJoined || isOwner || isModerator);
 
+  /*
+   * Normal joined-user member list endpoint.
+   * This must call:
+   * GET /communities/:communityId/visible-members
+   *
+   * Do not use the management-members query here.
+   */
   const {
     data: membersResponse,
     isLoading: membersLoading,
     isFetching: membersFetching,
     error: membersError,
-  } = useGetCommunityMembersQuery(
+  } = useGetVisibleCommunityMembersQuery(
     {
       communityId: community?.id ?? "",
       page: memberPage,
@@ -161,6 +214,11 @@ export default function CommunityDetailScreen() {
     },
   );
 
+  /*
+   * Protected content loads only when:
+   * - community is public, or
+   * - user is approved member/owner/moderator.
+   */
   const {
     data: postsResponse,
     isLoading: postsLoading,
@@ -180,7 +238,7 @@ export default function CommunityDetailScreen() {
   );
 
   const canLoadGuidelines =
-    !!session?.user && !!community?.id && Boolean(canViewContent);
+    !!session?.user && !!community?.id && canViewContent;
 
   const {
     data: guidelinesResponse,
@@ -209,14 +267,24 @@ export default function CommunityDetailScreen() {
     !!community && !isOwner && !isJoined && isJoinRequestPending;
 
   const memberCount =
-    community?.memberCount ?? membersResponse?.meta?.total ?? memberItems.length;
+    community?.memberCount ??
+    membersResponse?.meta?.total ??
+    memberItems.length;
 
   const totalPostCount = community?.postCount ?? postItems.length;
 
   const roleLabel = useMemo(() => {
-    if (isOwner) return "Owner";
-    if (isModerator) return "Moderator";
-    if (isJoined) return "Joined";
+    if (isOwner) {
+      return "Owner";
+    }
+
+    if (isModerator) {
+      return "Moderator";
+    }
+
+    if (isJoined) {
+      return "Joined";
+    }
 
     return null;
   }, [isOwner, isModerator, isJoined]);
@@ -225,7 +293,12 @@ export default function CommunityDetailScreen() {
     ? "Pending"
     : roleLabel ?? "Visitor";
 
+  /*
+   * Reset screen data when opening another community.
+   */
   useEffect(() => {
+    setTab("posts");
+
     setPostCursor(undefined);
     setPostItems([]);
     setDeletingPostId(null);
@@ -234,64 +307,114 @@ export default function CommunityDetailScreen() {
     setMemberItems([]);
     setRemovingMemberId(null);
 
+    setSubmittedPrivateRequest(false);
+
     closeComments();
   }, [community?.id, closeComments]);
 
+  /*
+   * Once the user is approved and becomes a joined member,
+   * remove the temporary local pending state.
+   */
   useEffect(() => {
-    if (!postsResponse) return;
+    if (isJoined) {
+      setSubmittedPrivateRequest(false);
+    }
+  }, [isJoined]);
+
+  /*
+   * Store paginated post responses in local screen state.
+   */
+  useEffect(() => {
+    if (!postsResponse) {
+      return;
+    }
 
     const incomingPosts = postsResponse.data ?? [];
 
-    setPostItems((prev) => {
+    setPostItems((previousItems) => {
       if (!postCursor) {
         return incomingPosts;
       }
 
-      const existingIds = new Set(prev.map((item) => item.id));
-      const newItems = incomingPosts.filter((item) => !existingIds.has(item.id));
+      const existingIds = new Set(previousItems.map((item) => item.id));
 
-      return [...prev, ...newItems];
+      const newItems = incomingPosts.filter(
+        (item) => !existingIds.has(item.id),
+      );
+
+      return [...previousItems, ...newItems];
     });
   }, [postsResponse, postCursor]);
 
+  /*
+   * Store paginated visible-member responses in local screen state.
+   */
   useEffect(() => {
-    if (!membersResponse) return;
+    if (!membersResponse) {
+      return;
+    }
 
     const incomingMembers = membersResponse.data ?? [];
 
-    setMemberItems((prev) => {
+    setMemberItems((previousItems) => {
       if (memberPage === 1) {
         return incomingMembers;
       }
 
-      const existingIds = new Set(prev.map((item) => item.id));
+      const existingIds = new Set(previousItems.map((item) => item.id));
+
       const newItems = incomingMembers.filter(
         (item) => !existingIds.has(item.id),
       );
 
-      return [...prev, ...newItems];
+      return [...previousItems, ...newItems];
     });
   }, [membersResponse, memberPage]);
 
   const handleJoin = useCallback(async () => {
-    if (!community?.id) return;
+    if (!community?.id) {
+      return;
+    }
 
     try {
       setIsJoining(true);
 
-      await joinCommunity({ communityId: community.id }).unwrap();
+      await joinCommunity({
+        communityId: community.id,
+      }).unwrap();
 
       setMemberPage(1);
       setMemberItems([]);
 
-      await Promise.allSettled([refetchCommunity(), refetchAccess()]);
-
       if (community.visibility === "PRIVATE") {
+        /*
+         * Private community:
+         * the user submitted a request but is not a member yet.
+         */
+        setSubmittedPrivateRequest(true);
+
+        await Promise.allSettled([
+          refetchCommunity(),
+          refetchAccess(),
+        ]);
+
         Alert.alert(
           "Request sent",
           "Your request is pending. Please wait for verification from the admin to unlock this community.",
         );
+
+        return;
       }
+
+      /*
+       * Public community:
+       * the user becomes an ACTIVE member immediately.
+       */
+      await Promise.allSettled([
+        refetchCommunity(),
+        refetchAccess(),
+      ]);
     } catch (error: any) {
       console.log("Join community failed:", error);
 
@@ -312,7 +435,9 @@ export default function CommunityDetailScreen() {
   ]);
 
   const handleCancelJoinRequest = useCallback(() => {
-    if (!community?.id) return;
+    if (!community?.id) {
+      return;
+    }
 
     Alert.alert(
       "Cancel request",
@@ -331,10 +456,14 @@ export default function CommunityDetailScreen() {
 
               await cancelMyJoinRequest(community.id).unwrap();
 
+              setSubmittedPrivateRequest(false);
               setMemberPage(1);
               setMemberItems([]);
 
-              await Promise.allSettled([refetchCommunity(), refetchAccess()]);
+              await Promise.allSettled([
+                refetchCommunity(),
+                refetchAccess(),
+              ]);
             } catch (error: any) {
               console.log("Cancel join request failed:", error);
 
@@ -359,7 +488,9 @@ export default function CommunityDetailScreen() {
 
   const handleDeletePost = useCallback(
     async (post: CommunityPost) => {
-      if (!community?.id) return;
+      if (!community?.id) {
+        return;
+      }
 
       try {
         setDeletingPostId(post.id);
@@ -369,7 +500,9 @@ export default function CommunityDetailScreen() {
           postId: post.id,
         }).unwrap();
 
-        setPostItems((prev) => prev.filter((item) => item.id !== post.id));
+        setPostItems((previousItems) =>
+          previousItems.filter((item) => item.id !== post.id),
+        );
 
         if (commentPost?.id === post.id) {
           closeComments();
@@ -401,11 +534,15 @@ export default function CommunityDetailScreen() {
 
   const handleRemoveMember = useCallback(
     (member: CommunityMemberItem) => {
-      if (!community?.id) return;
+      if (!community?.id) {
+        return;
+      }
 
       const targetUserId = member.user.id;
 
-      if (!targetUserId) return;
+      if (!targetUserId) {
+        return;
+      }
 
       if (targetUserId === session?.user?.id) {
         Alert.alert("Not allowed", "You cannot remove yourself.");
@@ -439,8 +576,10 @@ export default function CommunityDetailScreen() {
                   targetUserId,
                 }).unwrap();
 
-                setMemberItems((prev) =>
-                  prev.filter((item) => item.user.id !== targetUserId),
+                setMemberItems((previousItems) =>
+                  previousItems.filter(
+                    (item) => item.user.id !== targetUserId,
+                  ),
                 );
 
                 await Promise.allSettled([
@@ -473,11 +612,25 @@ export default function CommunityDetailScreen() {
   );
 
   const loadMorePosts = useCallback(() => {
-    if (tab !== "posts") return;
-    if (postsLoading || postsFetching) return;
-    if (!postsResponse?.meta?.hasMore) return;
-    if (!postsResponse?.meta?.nextCursor) return;
-    if (postCursor === postsResponse.meta.nextCursor) return;
+    if (tab !== "posts") {
+      return;
+    }
+
+    if (postsLoading || postsFetching) {
+      return;
+    }
+
+    if (!postsResponse?.meta?.hasMore) {
+      return;
+    }
+
+    if (!postsResponse?.meta?.nextCursor) {
+      return;
+    }
+
+    if (postCursor === postsResponse.meta.nextCursor) {
+      return;
+    }
 
     setPostCursor(postsResponse.meta.nextCursor ?? undefined);
   }, [
@@ -490,15 +643,22 @@ export default function CommunityDetailScreen() {
   ]);
 
   const loadMoreMembers = useCallback(() => {
-    if (tab !== "members") return;
-    if (membersLoading || membersFetching) return;
+    if (tab !== "members") {
+      return;
+    }
+
+    if (membersLoading || membersFetching) {
+      return;
+    }
 
     const currentPage = membersResponse?.meta?.page ?? memberPage;
     const totalPages = membersResponse?.meta?.totalPages ?? 1;
 
-    if (currentPage >= totalPages) return;
+    if (currentPage >= totalPages) {
+      return;
+    }
 
-    setMemberPage((prev) => prev + 1);
+    setMemberPage((previousPage) => previousPage + 1);
   }, [
     tab,
     membersLoading,
@@ -516,7 +676,9 @@ export default function CommunityDetailScreen() {
       const isCloseToBottom =
         layoutMeasurement.height + contentOffset.y >= contentSize.height - 220;
 
-      if (!isCloseToBottom) return;
+      if (!isCloseToBottom) {
+        return;
+      }
 
       if (tab === "posts") {
         loadMorePosts();
@@ -531,7 +693,9 @@ export default function CommunityDetailScreen() {
 
   const handleAuthorPress = useCallback(
     (authorId: string) => {
-      if (!authorId || !community?.id) return;
+      if (!authorId || !community?.id) {
+        return;
+      }
 
       if (authorId === session?.user?.id) {
         return;
@@ -550,7 +714,9 @@ export default function CommunityDetailScreen() {
 
   const handleMemberPress = useCallback(
     (memberUserId?: string | null) => {
-      if (!memberUserId || !community?.id) return;
+      if (!memberUserId || !community?.id) {
+        return;
+      }
 
       if (memberUserId === session?.user?.id) {
         return;
@@ -569,11 +735,11 @@ export default function CommunityDetailScreen() {
 
   if (isPending || communityLoading || accessLoading) {
     return (
-      <View
-        style={{ flex: 1 }}
-        className="items-center justify-center bg-background"
-      >
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator
+          size="large"
+          color={colors.accent}
+        />
       </View>
     );
   }
@@ -584,7 +750,10 @@ export default function CommunityDetailScreen() {
 
   if (communityError || !community) {
     return (
-      <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
+      <SafeAreaView
+        className="flex-1 bg-background"
+        edges={["top"]}
+      >
         <View className="flex-1 items-center justify-center px-6">
           <Text
             className="text-foreground"
@@ -614,8 +783,7 @@ export default function CommunityDetailScreen() {
   return (
     <>
       <SafeAreaView
-        style={{ flex: 1 }}
-        className="bg-background"
+        className="flex-1 bg-background"
         edges={["top"]}
       >
         <ScrollView
@@ -627,7 +795,7 @@ export default function CommunityDetailScreen() {
         >
           <View className="bg-background">
             <View className="relative">
-              {!!coverUrl ? (
+              {coverUrl ? (
                 <Image
                   source={{ uri: coverUrl }}
                   style={{
@@ -656,16 +824,23 @@ export default function CommunityDetailScreen() {
                   }}
                   className="h-[42px] w-[42px] items-center justify-center rounded-full border border-white/20 bg-white/15"
                 >
-                  <Ionicons name="chevron-back" size={20} color="#ffffff" />
+                  <Ionicons
+                    name="chevron-back"
+                    size={20}
+                    color="#ffffff"
+                  />
                 </Pressable>
               </View>
 
-              <View className="absolute left-5 -bottom-[52px]">
+              <View className="absolute -bottom-[52px] left-5">
                 <View className="h-[112px] w-[112px] items-center justify-center overflow-hidden rounded-full border-4 border-background bg-surface">
                   {avatarUrl ? (
                     <Image
                       source={{ uri: avatarUrl }}
-                      style={{ width: "100%", height: "100%" }}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                      }}
                       resizeMode="cover"
                     />
                   ) : (
@@ -682,11 +857,8 @@ export default function CommunityDetailScreen() {
             </View>
 
             <View className="px-5 pt-[66px]">
-              <View
-                className="flex-row items-start justify-between"
-                style={{ width: "100%" }}
-              >
-                <View style={{ width: "74%" }}>
+              <View className="flex-row items-start justify-between">
+                <View style={{ width: "72%" }}>
                   <Text
                     className="text-foreground"
                     style={{
@@ -710,7 +882,7 @@ export default function CommunityDetailScreen() {
                     {community.visibility}
                   </Text>
 
-                  {!!community.description ? (
+                  {community.description ? (
                     <Text
                       className="mt-3 text-muted"
                       style={{
@@ -724,7 +896,7 @@ export default function CommunityDetailScreen() {
                   ) : null}
                 </View>
 
-                <View style={{ width: "24%", alignItems: "flex-end" }}>
+                <View style={{ width: "26%", alignItems: "flex-end" }}>
                   {roleLabel ? (
                     <View className="rounded-full bg-segment px-3 py-2">
                       <Text
@@ -755,7 +927,10 @@ export default function CommunityDetailScreen() {
                       }}
                     >
                       {isCancellingRequest ? (
-                        <ActivityIndicator size="small" color={colors.danger} />
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.danger}
+                        />
                       ) : (
                         <Text
                           numberOfLines={1}
@@ -796,7 +971,10 @@ export default function CommunityDetailScreen() {
                 </View>
               </View>
 
-              <View className="mt-5 flex-row items-center" style={{ gap: 22 }}>
+              <View
+                className="mt-5 flex-row items-center"
+                style={{ gap: 22 }}
+              >
                 <InlineStat
                   icon="document-text-outline"
                   value={String(totalPostCount)}
@@ -940,7 +1118,10 @@ export default function CommunityDetailScreen() {
                   </Tabs.Content>
 
                   <Tabs.Content value="about">
-                    <View className="px-5 pt-2" style={{ rowGap: 12 }}>
+                    <View
+                      className="px-5 pt-2"
+                      style={{ rowGap: 12 }}
+                    >
                       <InfoRow
                         icon="people-outline"
                         label="Community Name"
@@ -1130,7 +1311,9 @@ export default function CommunityDetailScreen() {
                                 memberAvatar={memberAvatar}
                                 canManageMembers={canManageMembers}
                                 canRemoveMember={canRemoveMember}
-                                isRemoving={removingMemberId === member.user.id}
+                                isRemoving={
+                                  removingMemberId === member.user.id
+                                }
                                 colors={colors}
                                 onPressProfile={() =>
                                   handleMemberPress(member.user.id)
@@ -1177,11 +1360,12 @@ export default function CommunityDetailScreen() {
       </SafeAreaView>
 
       <CommentPostModal
-        visible={!!commentPost}
+        visible={Boolean(commentPost)}
         post={activeCommentPost}
         comments={comments}
         isLoading={
-          (isLoadingComments || isFetchingComments) && comments.length === 0
+          (isLoadingComments || isFetchingComments) &&
+          comments.length === 0
         }
         isCreating={isCreatingComment || isCreatingReply}
         inputValue={commentInput}
@@ -1233,7 +1417,9 @@ function PrivateLockedMessage({
               fontFamily: "Poppins_700Bold",
             }}
           >
-            {isPending ? "Waiting for admin verification" : "Private community"}
+            {isPending
+              ? "Waiting for admin verification"
+              : "Private community"}
           </Text>
 
           <Text
@@ -1268,7 +1454,11 @@ function InlineStat({
   return (
     <View className="flex-row items-center">
       <View className="mr-2 h-[34px] w-[34px] items-center justify-center rounded-full bg-segment">
-        <Ionicons name={icon} size={18} color={colors.accent} />
+        <Ionicons
+          name={icon}
+          size={18}
+          color={colors.accent}
+        />
       </View>
 
       <Text
@@ -1306,7 +1496,10 @@ function GuidelineAccordionItem({
   return (
     <Accordion.Item value={guideline.id}>
       <Accordion.Trigger className="px-4 py-4">
-        <View className="flex-row items-center" style={{ flex: 1 }}>
+        <View
+          className="flex-row items-center"
+          style={{ flex: 1 }}
+        >
           <View className="mr-3 h-[30px] w-[30px] items-center justify-center rounded-full bg-segment">
             <Text
               style={{
@@ -1397,7 +1590,11 @@ function MemberRow({
             />
           ) : (
             <View className="h-full w-full items-center justify-center">
-              <Ionicons name="person-outline" size={20} color={colors.accent} />
+              <Ionicons
+                name="person-outline"
+                size={20}
+                color={colors.accent}
+              />
             </View>
           )}
         </View>
@@ -1423,7 +1620,9 @@ function MemberRow({
             }}
           >
             {member.role}
-            {canManageMembers && member.status ? ` • ${member.status}` : ""}
+            {canManageMembers && member.status
+              ? ` • ${member.status}`
+              : ""}
           </Text>
 
           {canManageMembers && member.user.email ? (
@@ -1452,7 +1651,10 @@ function MemberRow({
           }}
         >
           {isRemoving ? (
-            <ActivityIndicator size="small" color={colors.dangerForeground} />
+            <ActivityIndicator
+              size="small"
+              color={colors.dangerForeground}
+            />
           ) : (
             <>
               <Ionicons
@@ -1475,7 +1677,11 @@ function MemberRow({
           )}
         </Pressable>
       ) : (
-        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={colors.muted}
+        />
       )}
     </View>
   );
@@ -1497,7 +1703,11 @@ function InfoRow({
   return (
     <View className="flex-row rounded-[18px] bg-surface px-4 py-3">
       <View className="mr-3 h-[34px] w-[34px] items-center justify-center rounded-full bg-segment">
-        <Ionicons name={icon} size={18} color={colors.accent} />
+        <Ionicons
+          name={icon}
+          size={18}
+          color={colors.accent}
+        />
       </View>
 
       <View style={{ width: "84%" }}>

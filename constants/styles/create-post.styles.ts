@@ -218,11 +218,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
     },
 
     sectionCard: {
-      borderWidth: 1,
-      borderRadius: 24,
-      padding: 15,
-      backgroundColor: p.card,
-      borderColor: p.border,
+      gap:0,
     },
 
     sectionTitle: {
@@ -264,14 +260,108 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       color: p.muted,
     },
 
-    linkWrap: {
+    fieldGroup: {
+      width: "100%",
+    },
+
+    fieldLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+      marginBottom: 9,
+    },
+
+    fieldLabel: {
+      fontSize: 14,
+      fontFamily: "Poppins_600SemiBold",
+      color: p.text,
+    },
+
+    requiredLabel: {
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+      borderRadius: 999,
+      overflow: "hidden",
+      fontSize: 11,
+      fontFamily: "Poppins_500Medium",
+      color: p.danger,
+      backgroundColor: p.soft,
+    },
+
+    optionalLabel: {
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+      borderRadius: 999,
+      overflow: "hidden",
+      fontSize: 11,
+      fontFamily: "Poppins_500Medium",
+      color: p.muted,
+      backgroundColor: p.soft,
+    },
+
+    titleWrap: {
+      minHeight: 58,
       borderWidth: 1,
-      borderRadius: 16,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      marginTop: 12,
+      borderRadius: 17,
+      justifyContent: "center",
+      paddingHorizontal: 15,
+      backgroundColor: p.input,
+      borderColor: p.border,
+    },
+
+   titleInput: {
+  minHeight: 56,
+  fontSize: 17,
+  lineHeight: 24,
+  fontFamily: "Poppins_500Medium",
+  color: p.text,
+  paddingVertical: 12,
+  paddingHorizontal: 15,       // ← moved from titleWrap
+  borderWidth: 1,              // ← moved from titleWrap
+  borderRadius: 17,            // ← moved from titleWrap
+  backgroundColor: p.input,   // ← moved from titleWrap
+  borderColor: p.border,      // ← moved from titleWrap
+},
+
+    cardDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: p.divider,
+      marginVertical: 16,
+    },
+
+    descriptionBlock: {
+      width: "100%",
+    },
+
+    fieldHint: {
+      marginTop: 2,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
+      color: p.muted,
+    },
+
+    linkWrap: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      borderWidth: 1,
+      borderRadius: 17,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      marginTop: 10,
       borderColor: p.border,
       backgroundColor: p.input,
+    },
+
+    linkLeadingIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: p.soft,
     },
 
     linkInput: {
@@ -279,6 +369,103 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       fontFamily: "Poppins_400Regular",
       minHeight: 46,
       color: p.text,
+      paddingVertical: 10,
+    },
+
+    linkInputFlex: {
+      flex: 1,
+      minHeight: 54,
+      maxHeight: 96,
+      textAlignVertical: "top",
+    },
+
+    linkHelperText: {
+      marginTop: 8,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
+      color: p.muted,
+    },
+
+    linkPreviewCard: {
+      overflow: "hidden",
+      borderWidth: 1,
+      borderRadius: 18,
+      marginTop: 14,
+      backgroundColor: p.soft,
+      borderColor: p.border,
+    },
+
+    linkPreviewImageWrap: {
+      width: "100%",
+      height: 180,
+      position: "relative",
+      backgroundColor: p.soft,
+    },
+
+    linkPreviewImage: {
+      width: "100%",
+      height: "100%",
+    },
+
+    externalImagePreview: {
+      width: "100%",
+      height: 190,
+      backgroundColor: p.soft,
+    },
+
+    linkPreviewOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(0,0,0,0.16)",
+    },
+
+    playCircle: {
+      width: 54,
+      height: 54,
+      borderRadius: 27,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(0,0,0,0.64)",
+      paddingLeft: 3,
+    },
+
+    linkPreviewMeta: {
+      paddingHorizontal: 13,
+      paddingVertical: 11,
+      gap: 3,
+    },
+
+    linkPreviewLabel: {
+      fontSize: 13,
+      lineHeight: 18,
+      fontFamily: "Poppins_600SemiBold",
+      color: p.text,
+    },
+
+    linkPreviewUrl: {
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
+      color: p.muted,
+    },
+
+    websitePreviewCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      borderWidth: 1,
+      borderRadius: 18,
+      paddingHorizontal: 13,
+      paddingVertical: 12,
+      marginTop: 14,
+      backgroundColor: p.soft,
+      borderColor: p.border,
     },
 
     errorText: {
@@ -303,6 +490,12 @@ export function createCreatePostStyles(p: CreatePostPalette) {
 
     mediaDropText: {
       fontSize: 14,
+      fontFamily: "Poppins_500Medium",
+      color: p.text,
+    },
+
+    mediaDropSubText: {
+      fontSize: 12,
       fontFamily: "Poppins_400Regular",
       color: p.muted,
     },
@@ -337,21 +530,6 @@ export function createCreatePostStyles(p: CreatePostPalette) {
     mediaImage: {
       width: "100%",
       height: "100%",
-    },
-
-    mediaVideoBox: {
-      width: "100%",
-      height: "100%",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 4,
-      backgroundColor: p.soft,
-    },
-
-    videoText: {
-      fontSize: 11,
-      fontFamily: "Poppins_500Medium",
-      color: p.text,
     },
 
     mediaActionRow: {
@@ -643,23 +821,13 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       fontFamily: "Poppins_600SemiBold",
       color: p.text,
     },
-    titleInput: {
-  fontSize: 22,
-  lineHeight: 30,
-  fontFamily: "Poppins_600SemiBold",
-  color: p.text,
-  paddingHorizontal: 2,
-  paddingVertical: 8,
-  minHeight: 48,
-},
-
-visibilityHintText: {
-  fontSize: 12,
-  lineHeight: 18,
-  fontFamily: "Poppins_400Regular",
-  color: p.muted,
-  marginTop: -8,
-},
+    visibilityHintText: {
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
+      color: p.muted,
+      marginTop: -8,
+    },
 
     tagDesc: {
       fontSize: 12,

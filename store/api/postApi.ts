@@ -28,6 +28,9 @@ import type {
   UpdateCommunityPostArgs,
   VotePostPollResponse,
   VotePostPollArgs,
+  GetHomeFeedPostsArgs,
+  DislikePostArgs,
+  PostReactionResponse
 } from "@/types/post";
 
 /* =========================================================
@@ -101,6 +104,7 @@ export const postApi = baseApi.injectEndpoints({
 
       invalidatesTags: (_result, _error, arg) => [
         { type: "Post" as const, id: "LIST" },
+        {type:"Post" as const,id:"HOME-FEED"},
         { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
         { type: "AdminPosts" as const, id: "LIST" },
       ],
@@ -182,6 +186,7 @@ export const postApi = baseApi.injectEndpoints({
       invalidatesTags: (_result, _error, arg) => [
         { type: "Post" as const, id: arg.postId },
         { type: "Post" as const, id: "LIST" },
+        { type: "Post" as const, id: "HOME-FEED" },
         { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
         { type: "DraftPost" as const, id: "LIST" },
         { type: "AdminPosts" as const, id: arg.postId },
@@ -213,6 +218,7 @@ export const postApi = baseApi.injectEndpoints({
       invalidatesTags: (_result, _error, arg) => [
         { type: "Post" as const, id: arg.postId },
         { type: "Post" as const, id: "LIST" },
+        { type: "Post" as const, id: "HOME-FEED" },
         { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
         { type: "DraftPost" as const, id: "LIST" },
         { type: "AdminPosts" as const, id: arg.postId },
@@ -323,6 +329,7 @@ export const postApi = baseApi.injectEndpoints({
 
       invalidatesTags: (_result, _error, arg) => [
         { type: "Post" as const, id: arg.postId },
+        { type: "Post" as const, id: "HOME-FEED" },
         { type: "PostLike" as const, id: arg.postId },
         { type: "AdminPosts" as const, id: arg.postId },
         { type: "AdminPosts" as const, id: "LIST" },
@@ -337,11 +344,42 @@ export const postApi = baseApi.injectEndpoints({
 
       invalidatesTags: (_result, _error, arg) => [
         { type: "Post" as const, id: arg.postId },
+        { type: "Post" as const, id: "HOME-FEED" },
         { type: "PostLike" as const, id: arg.postId },
         { type: "AdminPosts" as const, id: arg.postId },
         { type: "AdminPosts" as const, id: "LIST" },
       ],
     }),
+    dislikePost: builder.mutation<PostReactionResponse, DislikePostArgs>({
+  query: ({ communityId, postId, body }) => ({
+    url: `/communities/${communityId}/posts/${postId}/dislikes`,
+    method: "POST",
+    body,
+  }),
+
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Post" as const, id: arg.postId },
+    { type: "Post" as const, id: "HOME-FEED" },
+    { type: "PostLike" as const, id: arg.postId },
+    { type: "AdminPosts" as const, id: arg.postId },
+    { type: "AdminPosts" as const, id: "LIST" },
+  ],
+}),
+
+removeDislikePost: builder.mutation<PostReactionResponse, PostActionArgs>({
+  query: ({ communityId, postId }) => ({
+    url: `/communities/${communityId}/posts/${postId}/dislikes/me`,
+    method: "DELETE",
+  }),
+
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Post" as const, id: arg.postId },
+    { type: "Post" as const, id: "HOME-FEED" },
+    { type: "PostLike" as const, id: arg.postId },
+    { type: "AdminPosts" as const, id: arg.postId },
+    { type: "AdminPosts" as const, id: "LIST" },
+  ],
+}),
 
     sharePost: builder.mutation<SharePostResponse, SharePostArgs>({
       query: ({ communityId, postId, body }) => ({
@@ -352,6 +390,7 @@ export const postApi = baseApi.injectEndpoints({
 
       invalidatesTags: (_result, _error, arg) => [
         { type: "Post" as const, id: arg.postId },
+        { type: "Post" as const, id: "HOME-FEED" },
         { type: "PostShare" as const, id: arg.postId },
         { type: "AdminPosts" as const, id: arg.postId },
         { type: "AdminPosts" as const, id: "LIST" },
@@ -378,21 +417,23 @@ export const postApi = baseApi.injectEndpoints({
  /* =========================================================
        Get Home Feed Post
        ========================================================= */
- getHomeFeedPosts: builder.query<
+getHomeFeedPosts: builder.query<
   CursorResponse<CommunityPost>,
-  {
-    limit?: number;
-    cursor?: string | null;
-    search?: string;
-    tag?: string;
-    type?: "TEXT" | "MEDIA" | "LINK";
-    sortBy?: "newest" | "oldest";
-  }
+  GetHomeFeedPostsArgs
 >({
-  query: ({ limit = 10, cursor, search, tag, type, sortBy }) => ({
+  query: ({
+    feedType = "FOR_YOU",
+    limit = 10,
+    cursor,
+    search,
+    tag,
+    type,
+    sortBy,
+  }) => ({
     url: "/posts/feed",
     method: "GET",
     params: {
+      feedType,
       limit,
       ...(cursor ? { cursor } : {}),
       ...(search ? { search } : {}),
@@ -402,8 +443,10 @@ export const postApi = baseApi.injectEndpoints({
     },
   }),
 
-  providesTags: (result) =>
-    result
+  providesTags: (result, _error, arg) => {
+    const feedType = arg.feedType ?? "FOR_YOU";
+
+    return result
       ? [
           ...result.data.map((post) => ({
             type: "Post" as const,
@@ -411,13 +454,15 @@ export const postApi = baseApi.injectEndpoints({
           })),
           { type: "Post" as const, id: "LIST" },
           { type: "Post" as const, id: "HOME-FEED" },
+          { type: "Post" as const, id: `HOME-FEED-${feedType}` },
         ]
       : [
           { type: "Post" as const, id: "LIST" },
           { type: "Post" as const, id: "HOME-FEED" },
-        ],
+          { type: "Post" as const, id: `HOME-FEED-${feedType}` },
+        ];
+  },
 }),
-
 
     /* =========================================================
        COMMENTS
@@ -592,4 +637,6 @@ export const {
   useGetHomeFeedPostsQuery,
   useGetCommunityPostsTableQuery,
     useVotePostPollMutation,
+     useDislikePostMutation,
+      useRemoveDislikePostMutation,
 } = postApi;

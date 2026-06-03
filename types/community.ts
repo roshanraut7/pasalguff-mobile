@@ -72,6 +72,7 @@ export type CommunityItem = {
   updatedAt?: string;
   myJoinRequestId?: string | null;
 myJoinRequestStatus?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | null;
+isOwner:any;
 
   category?: CommunityCategory | null;
 
@@ -94,6 +95,8 @@ export type CommunityAccessItem = {
   canPost: boolean;
   canManage: boolean;
   permissions: CommunityPermissions;
+  joinRequestStatus:any;
+  
 };
 
 export type CommunityMemberUser = {
@@ -150,6 +153,13 @@ export type CommunityJoinRequestItem = {
   user?: CommunityMemberUser;
 };
 
+
+export type VisibleCommunityMembersQuery = {
+  communityId: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+};
 /* =========================================================
    PAYLOAD TYPES
    ========================================================= */

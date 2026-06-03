@@ -12,8 +12,10 @@ import { Share } from "react-native";
 import {
   useCreateCommentReplyMutation,
   useCreatePostCommentMutation,
+  useDislikePostMutation,
   useGetPostCommentsQuery,
   useLikePostMutation,
+  useRemoveDislikePostMutation,
   useSharePostMutation,
   useUnlikePostMutation,
 } from "@/store/api/postApi";
@@ -43,6 +45,15 @@ type UsePostInteractionsParams<TPost extends CommunityPost> = {
   commentsLimit?: number;
 };
 
+type ReactionResponse = {
+  likeCount: number;
+  dislikeCount: number;
+  liked: boolean;
+  disliked: boolean;
+  myDislikeReason: string | null;
+  approvalRate: number | null;
+};
+
 function updatePostInList<TPost extends CommunityPost>(
   posts: TPost[],
   postId: string,
@@ -60,11 +71,24 @@ export function usePostInteractions<TPost extends CommunityPost>({
   const [commentPost, setCommentPost] = useState<TPost | null>(null);
   const [commentInput, setCommentInput] = useState("");
   const [comments, setComments] = useState<FeedComment[]>([]);
+
   const [likingPostIds, setLikingPostIds] = useState<Set<string>>(
     () => new Set(),
   );
 
+  /**
+   * Dislike is used only from the main post card for now.
+   * Do not pass these controls into CommentPostModal.
+   */
+  const [dislikePostTarget, setDislikePostTarget] = useState<TPost | null>(
+    null,
+  );
+  const [dislikeReason, setDislikeReason] = useState("");
+  const [dislikeError, setDislikeError] = useState<string | null>(null);
+  const [isSubmittingDislike, setIsSubmittingDislike] = useState(false);
+
   const likingPostIdsRef = useRef<Set<string>>(new Set());
+  const dislikingPostIdsRef = useRef<Set<string>>(new Set());
 
   const activeCommentPost = useMemo(() => {
     if (!commentPost) return null;
@@ -91,6 +115,8 @@ export function usePostInteractions<TPost extends CommunityPost>({
 
   const [likePost] = useLikePostMutation();
   const [unlikePost] = useUnlikePostMutation();
+  const [dislikePost] = useDislikePostMutation();
+  const [removeDislikePost] = useRemoveDislikePostMutation();
   const [sharePost] = useSharePostMutation();
 
   const [createPostComment, { isLoading: isCreatingComment }] =
@@ -137,6 +163,27 @@ export function usePostInteractions<TPost extends CommunityPost>({
     [setPosts, updateCommentPost],
   );
 
+  /**
+   * Apply Like/Dislike state to the feed card only.
+   * Dislike is intentionally not rendered or updated in CommentPostModal yet.
+   */
+  const applyFeedReactionResponse = useCallback(
+    (postId: string, result: ReactionResponse) => {
+      setPosts((prev) =>
+        updatePostInList(prev, postId, (item) => ({
+          ...item,
+          likeCount: result.likeCount,
+          dislikeCount: result.dislikeCount,
+          isLikedByMe: result.liked,
+          isDislikedByMe: result.disliked,
+          myDislikeReason: result.myDislikeReason,
+          approvalRate: result.approvalRate,
+        })),
+      );
+    },
+    [setPosts],
+  );
+
   const openComments = useCallback((post: TPost) => {
     setCommentPost(post);
     setCommentInput("");
@@ -149,6 +196,11 @@ export function usePostInteractions<TPost extends CommunityPost>({
     setComments([]);
   }, []);
 
+  /**
+   * Like remains available inside your existing comment preview.
+   * If a previously disliked post is liked from the feed, the backend removes
+   * its dislike and the main feed state is updated from the server response.
+   */
   const handleLikePost = useCallback(
     async (post: TPost) => {
       if (likingPostIdsRef.current.has(post.id)) return;
@@ -163,7 +215,15 @@ export function usePostInteractions<TPost extends CommunityPost>({
 
       const wasLiked = Boolean(post.isLikedByMe);
       const previousLikeCount = post.likeCount ?? 0;
+      const previousDislikeCount = post.dislikeCount ?? 0;
+      const wasDisliked = Boolean(post.isDislikedByMe);
+      const previousDislikeReason = post.myDislikeReason ?? null;
+      const previousApprovalRate = post.approvalRate ?? null;
 
+      /**
+       * Optimistic update for the main feed card.
+       * Pressing Like also clears an existing Dislike in the UI.
+       */
       setPosts((prev) =>
         updatePostInList(prev, post.id, (item) => ({
           ...item,
@@ -171,9 +231,20 @@ export function usePostInteractions<TPost extends CommunityPost>({
           likeCount: wasLiked
             ? Math.max(0, (item.likeCount ?? 0) - 1)
             : (item.likeCount ?? 0) + 1,
+          isDislikedByMe: wasLiked ? item.isDislikedByMe : false,
+          dislikeCount:
+            !wasLiked && wasDisliked
+              ? Math.max(0, (item.dislikeCount ?? 0) - 1)
+              : item.dislikeCount,
+          myDislikeReason:
+            !wasLiked && wasDisliked ? null : item.myDislikeReason,
         })),
       );
 
+      /**
+       * Keep the existing Like count working in the comments post preview.
+       * Do not add or display Dislike controls/reasons there for now.
+       */
       updateCommentPost(post.id, (item) => ({
         ...item,
         isLikedByMe: !wasLiked,
@@ -193,16 +264,7 @@ export function usePostInteractions<TPost extends CommunityPost>({
               postId: post.id,
             }).unwrap();
 
-        setPosts((prev) =>
-          updatePostInList(prev, post.id, (item) => ({
-            ...item,
-            isLikedByMe: result.liked,
-            likeCount:
-              typeof result.likeCount === "number"
-                ? result.likeCount
-                : item.likeCount,
-          })),
-        );
+        applyFeedReactionResponse(post.id, result);
 
         updateCommentPost(post.id, (item) => ({
           ...item,
@@ -219,7 +281,11 @@ export function usePostInteractions<TPost extends CommunityPost>({
           updatePostInList(prev, post.id, (item) => ({
             ...item,
             isLikedByMe: wasLiked,
+            isDislikedByMe: wasDisliked,
             likeCount: previousLikeCount,
+            dislikeCount: previousDislikeCount,
+            myDislikeReason: previousDislikeReason,
+            approvalRate: previousApprovalRate,
           })),
         );
 
@@ -238,8 +304,107 @@ export function usePostInteractions<TPost extends CommunityPost>({
         });
       }
     },
-    [likePost, unlikePost, setPosts, updateCommentPost],
+    [
+      applyFeedReactionResponse,
+      likePost,
+      unlikePost,
+      setPosts,
+      updateCommentPost,
+    ],
   );
+
+  const closeDislikeModal = useCallback(() => {
+    if (isSubmittingDislike) return;
+
+    setDislikePostTarget(null);
+    setDislikeReason("");
+    setDislikeError(null);
+  }, [isSubmittingDislike]);
+
+  /**
+   * First press on Dislike opens the free-text reason modal.
+   * Second press on an already disliked post removes the dislike directly.
+   *
+   * This intentionally updates the main feed only, not CommentPostModal.
+   */
+  const handleDislikePost = useCallback(
+    async (post: TPost) => {
+      if (dislikingPostIdsRef.current.has(post.id)) return;
+
+      if (!post.isDislikedByMe) {
+        setDislikePostTarget(post);
+        setDislikeReason("");
+        setDislikeError(null);
+        return;
+      }
+
+      dislikingPostIdsRef.current.add(post.id);
+
+      try {
+        const result = await removeDislikePost({
+          communityId: post.communityId,
+          postId: post.id,
+        }).unwrap();
+
+        applyFeedReactionResponse(post.id, result);
+      } catch (error) {
+        console.log("Remove dislike failed:", error);
+      } finally {
+        dislikingPostIdsRef.current.delete(post.id);
+      }
+    },
+    [applyFeedReactionResponse, removeDislikePost],
+  );
+
+  /**
+   * Submit a written dislike reason.
+   * No options/category list is used.
+   */
+  const handleSubmitDislike = useCallback(async () => {
+    if (!dislikePostTarget || isSubmittingDislike) return;
+
+    const reason = dislikeReason.trim();
+
+    if (reason.length < 3) {
+      setDislikeError("Please write why you dislike this post.");
+      return;
+    }
+
+    if (reason.length > 250) {
+      setDislikeError("Reason cannot be longer than 250 characters.");
+      return;
+    }
+
+    setIsSubmittingDislike(true);
+    setDislikeError(null);
+
+    try {
+      const result = await dislikePost({
+        communityId: dislikePostTarget.communityId,
+        postId: dislikePostTarget.id,
+        body: {
+          reason,
+        },
+      }).unwrap();
+
+      applyFeedReactionResponse(dislikePostTarget.id, result);
+
+      setDislikePostTarget(null);
+      setDislikeReason("");
+      setDislikeError(null);
+    } catch (error) {
+      console.log("Dislike failed:", error);
+      setDislikeError("Could not submit dislike. Please try again.");
+    } finally {
+      setIsSubmittingDislike(false);
+    }
+  }, [
+    applyFeedReactionResponse,
+    dislikePost,
+    dislikePostTarget,
+    dislikeReason,
+    isSubmittingDislike,
+  ]);
 
   const handleSharePost = useCallback(
     async (post: TPost) => {
@@ -430,9 +595,22 @@ export function usePostInteractions<TPost extends CommunityPost>({
     isCreatingComment,
     isCreatingReply,
 
+    /**
+     * Feed-only Dislike modal state.
+     * Do not pass these into CommentPostModal for now.
+     */
+    dislikePostTarget,
+    dislikeReason,
+    setDislikeReason,
+    dislikeError,
+    isSubmittingDislike,
+
     openComments,
     closeComments,
     handleLikePost,
+    handleDislikePost,
+    handleSubmitDislike,
+    closeDislikeModal,
     handleSharePost,
     handleCreateComment,
     refetchComments,

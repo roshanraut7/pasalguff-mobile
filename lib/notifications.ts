@@ -30,6 +30,7 @@ export async function requestNotificationPermission() {
   );
 }
 
+// ✅ Call this ONCE at app start, not on every notification
 export async function createDefaultNotificationChannel() {
   if (Platform.OS !== "android") return;
 
@@ -43,16 +44,13 @@ export async function createDefaultNotificationChannel() {
 
 export async function getFcmToken() {
   const hasPermission = await requestNotificationPermission();
+  if (!hasPermission) return null;
 
-  if (!hasPermission) {
-    return null;
-  }
-
+  // ✅ Channel created once here during setup
   await createDefaultNotificationChannel();
 
   const messaging = getMessaging(getApp());
   const token = await getToken(messaging);
-
   return token || null;
 }
 
@@ -60,29 +58,37 @@ export function listenForFcmTokenRefresh(
   onTokenRefreshCallback: (token: string) => void,
 ) {
   const messaging = getMessaging(getApp());
-
   return onTokenRefresh(messaging, onTokenRefreshCallback);
 }
+
 export function listenForegroundNotifications(
   onNotificationReceived?: () => void,
 ) {
   const messaging = getMessaging(getApp());
 
   return onMessage(messaging, async (remoteMessage) => {
-    await createDefaultNotificationChannel();
-
-    await notifee.displayNotification({
-      title: remoteMessage.notification?.title ?? "Notification",
-      body: remoteMessage.notification?.body ?? "",
-      data: remoteMessage.data,
-      android: {
-        channelId: "default",
-        pressAction: {
-          id: "default",
-        },
-      },
-    });
-
-    onNotificationReceived?.();
+  console.log("FOREGROUND MESSAGE RECEIVED:", {
+    messageId: remoteMessage.messageId,
+    notificationId: remoteMessage.data?.notificationId,
   });
+
+  const title = (remoteMessage.data?.title as string) ?? "Notification";
+  const body = (remoteMessage.data?.body as string) ?? "";
+
+  await notifee.displayNotification({
+    title,
+    body,
+    data: remoteMessage.data,
+    android: {
+      channelId: "default",
+      pressAction: { id: "default" },
+      sound: "default",
+    },
+    ios: {
+      sound: "default",
+    },
+  });
+
+  onNotificationReceived?.();
+});
 }

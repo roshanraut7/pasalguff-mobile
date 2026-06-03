@@ -1,14 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { router } from "expo-router";
 import {
-  Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,471 +23,48 @@ import {
 } from "@/store/api/postApi";
 import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
 import { useUploadPostMediaMutation } from "@/store/api/uploadApi";
-
-import { AppRichTextEditor, useCreateEditor } from "@/components/editor/editor";
+import { useCreateEditor } from "@/components/editor/editor";
 import { DraftPostsPanel } from "@/components/post/DraftPostsPanel";
-import {
-  POST_TAGS,
-  draftPostSchema,
-  publishPostSchema,
-  stripHtml,
-} from "@/schema/post.schema";
+import { draftPostSchema, publishPostSchema, stripHtml } from "@/schema/post.schema";
 import {
   createCreatePostStyles,
   getCreatePostPalette,
 } from "@/constants/styles/create-post.styles";
 import { useAppTheme } from "@/hooks/useAppTheme";
 
-type PostMediaType = "IMAGE" | "VIDEO";
-type PostVisibility = "PUBLIC" | "COMMUNITY" | "FOLLOWERS" | "PRIVATE";
+import type {
+  CommunityPost,
+  CommunityPostMedia,
+  ComposerAttachment,
+  PostPollPayload,
+  PostTab,
+  PostTag,
+  PostVisibility,
+  UploadPostMediaResponse,
+  UploadPostMediaItem,
+} from "@/components/post/Post.types";
+import {
+  flattenErrors,
+  makeId,
+  parseLinkInput,
+  POST_VISIBILITY_OPTIONS,
+  TAG_OPTIONS,
+  FOOTER_RESERVED_SPACE,
+  MAX_ATTACHMENTS,
+} from "@/utils/post.utils";
+import {
+  CommunityPickerModal,
+  TagPickerModal,
+  VisibilityPickerModal,
+} from "@/components/post/Postpickermodals";
+import {
+  TextTab,
+  MediaTab,
+  LinkTab,
+  PollTab,
+} from "@/components/post/Postcomposertabs";
 
-type PostTag =
-  | "GENERAL"
-  | "ANNOUNCEMENT"
-  | "QUESTION"
-  | "OFFER"
-  | "EVENT"
-  | "NEWS"
-  | "HELP";
-
-type CommunityPostMedia = {
-  id?: string;
-  type: PostMediaType;
-  url: string;
-  sortOrder?: number;
-};
-
-type CommunityPostPollOption = {
-  id?: string;
-  text: string;
-  sortOrder?: number;
-};
-
-type CommunityPostPoll = {
-  id?: string;
-  question: string;
-  closesAt?: string | null;
-  options: CommunityPostPollOption[];
-};
-
-type CommunityPost = {
-  id: string;
-  communityId: string;
-  title: string | null;
-  tag: PostTag;
-  visibility?: PostVisibility;
-  content: string | null;
-  linkUrl: string | null;
-  media: CommunityPostMedia[];
-  poll?: CommunityPostPoll | null;
-};
-
-type ComposerAttachment = {
-  id: string;
-  source: "local" | "remote";
-  uri: string;
-  mediaType: PostMediaType;
-  name?: string;
-  mimeType?: string;
-};
-
-type UploadPostMediaItem = {
-  url: string;
-  filename?: string;
-  mimetype?: string;
-  size?: number;
-};
-
-type UploadPostMediaResponse = {
-  total: number;
-  items: UploadPostMediaItem[];
-};
-
-type PostPollPayload = {
-  question: string;
-  options: string[];
-  closesAt?: string | null;
-};
-
-type PostTab = "text" | "media" | "link" | "poll";
-
-type TagOptionMeta = {
-  value: PostTag;
-  label: string;
-};
-
-type VisibilityOptionMeta = {
-  value: PostVisibility;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-};
-
-const TAG_OPTIONS: TagOptionMeta[] = POST_TAGS.map((tag) => ({
-  value: tag as PostTag,
-  label: tag
-    .toLowerCase()
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" "),
-}));
-
-const POST_VISIBILITY_OPTIONS: VisibilityOptionMeta[] = [
-  {
-    value: "PUBLIC",
-    label: "Everyone",
-    icon: "earth-outline",
-  },
-  {
-    value: "COMMUNITY",
-    label: "Community",
-    icon: "people-outline",
-  },
-  {
-    value: "FOLLOWERS",
-    label: "Followers",
-    icon: "person-add-outline",
-  },
-  {
-    value: "PRIVATE",
-    label: "Only me",
-    icon: "lock-closed-outline",
-  },
-];
-
-const MAX_ATTACHMENTS = 10;
-const MAX_POLL_OPTIONS = 10;
-const FOOTER_RESERVED_SPACE = 150;
-
-let _idCounter = 0;
-
-function makeId(prefix: string): string {
-  _idCounter += 1;
-  return `${prefix}-${_idCounter}`;
-}
-
-type CommunityPickerModalProps = {
-  visible: boolean;
-  communities: {
-    id: string;
-    name: string;
-    memberCount?: number | null;
-    description?: string | null;
-    avatarImage?: string | null;
-  }[];
-  selectedId: string;
-  searchValue: string;
-  onSearchChange: (v: string) => void;
-  onSelect: (id: string) => void;
-  onClose: () => void;
-};
-
-function CommunityPickerModal({
-  visible,
-  communities,
-  selectedId,
-  searchValue,
-  onSearchChange,
-  onSelect,
-  onClose,
-}: CommunityPickerModalProps) {
-  const { colors, isDark } = useAppTheme();
-  const insets = useSafeAreaInsets();
-
-  const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
-  const styles = useMemo(() => createCreatePostStyles(p), [p]);
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
-      >
-        <View
-          style={[
-            styles.backdrop,
-            {
-              justifyContent: "flex-start",
-              paddingTop: insets.top + 18,
-              paddingHorizontal: 16,
-            },
-          ]}
-        >
-          <Pressable
-            onPress={onClose}
-            style={{
-              position: "absolute",
-              top: 0,
-              right: 0,
-              bottom: 0,
-              left: 0,
-            }}
-          />
-
-          <View
-            style={[
-              styles.pickerOverlay,
-              {
-                width: "100%",
-                maxHeight: "78%",
-              },
-            ]}
-          >
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>Post to</Text>
-
-              <Pressable onPress={onClose} style={styles.closeBtn}>
-                <Ionicons name="close" size={18} color={p.text} />
-              </Pressable>
-            </View>
-
-            <View style={styles.searchRow}>
-              <Ionicons name="search-outline" size={18} color={p.muted} />
-
-              <TextInput
-                value={searchValue}
-                onChangeText={onSearchChange}
-                placeholder="Search communities"
-                placeholderTextColor={p.placeholder}
-                style={styles.searchInput}
-                returnKeyType="search"
-                autoCorrect={false}
-                autoCapitalize="none"
-              />
-            </View>
-
-            <ScrollView
-              style={{ flexGrow: 0 }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="none"
-              contentContainerStyle={[styles.pickerList, { paddingBottom: 24 }]}
-            >
-              {communities.length === 0 ? (
-                <Text style={styles.emptyText}>No community found</Text>
-              ) : (
-                communities.map((item) => {
-                  const isSelected = item.id === selectedId;
-
-                  return (
-                    <Pressable
-                      key={item.id}
-                      onPress={() => {
-                        onSelect(item.id);
-                        onClose();
-                      }}
-                      style={[
-                        styles.communityRow,
-                        isSelected && styles.communityRowSelected,
-                      ]}
-                    >
-                      <View style={styles.communityAvatar}>
-                        {item.avatarImage ? (
-                          <Image
-                            source={{ uri: item.avatarImage }}
-                            style={styles.communityAvatarImg}
-                          />
-                        ) : (
-                          <Text style={styles.communityAvatarText}>
-                            {item.name.charAt(0).toUpperCase()}
-                          </Text>
-                        )}
-                      </View>
-
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.communityName}>{item.name}</Text>
-
-                        {item.memberCount != null ? (
-                          <Text style={styles.communityMeta}>
-                            {item.memberCount.toLocaleString()} members
-                          </Text>
-                        ) : null}
-
-                        {!!item.description ? (
-                          <Text numberOfLines={1} style={styles.communityDesc}>
-                            {item.description}
-                          </Text>
-                        ) : null}
-                      </View>
-
-                      {isSelected ? (
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={20}
-                          color={p.accentStrong}
-                        />
-                      ) : null}
-                    </Pressable>
-                  );
-                })
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
-type TagPickerModalProps = {
-  visible: boolean;
-  selectedTag: PostTag;
-  onSelect: (tag: PostTag) => void;
-  onClose: () => void;
-};
-
-function TagPickerModal({
-  visible,
-  selectedTag,
-  onSelect,
-  onClose,
-}: TagPickerModalProps) {
-  const { colors, isDark } = useAppTheme();
-
-  const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
-  const styles = useMemo(() => createCreatePostStyles(p), [p]);
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.pickerOverlay} onPress={() => {}}>
-          <View style={styles.pickerHeader}>
-            <Text style={styles.pickerTitle}>Choose tag</Text>
-
-            <Pressable onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={18} color={p.text} />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.pickerList}
-          >
-            {TAG_OPTIONS.map((item) => {
-              const isSelected = item.value === selectedTag;
-
-              return (
-                <Pressable
-                  key={item.value}
-                  onPress={() => {
-                    onSelect(item.value);
-                    onClose();
-                  }}
-                  style={[styles.tagRow, isSelected && styles.tagRowSelected]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tagLabel}>{item.label}</Text>
-                  </View>
-
-                  {isSelected ? (
-                    <Ionicons
-                      name="checkmark"
-                      size={18}
-                      color={p.accentStrong}
-                    />
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-type VisibilityPickerModalProps = {
-  visible: boolean;
-  selectedVisibility: PostVisibility;
-  options: VisibilityOptionMeta[];
-  onSelect: (visibility: PostVisibility) => void;
-  onClose: () => void;
-};
-
-function VisibilityPickerModal({
-  visible,
-  selectedVisibility,
-  options,
-  onSelect,
-  onClose,
-}: VisibilityPickerModalProps) {
-  const { colors, isDark } = useAppTheme();
-
-  const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
-  const styles = useMemo(() => createCreatePostStyles(p), [p]);
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.pickerOverlay} onPress={() => {}}>
-          <View style={styles.pickerHeader}>
-            <Text style={styles.pickerTitle}>Post visibility</Text>
-
-            <Pressable onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={18} color={p.text} />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.pickerList}
-          >
-            {options.map((item) => {
-              const isSelected = item.value === selectedVisibility;
-
-              return (
-                <Pressable
-                  key={item.value}
-                  onPress={() => {
-                    onSelect(item.value);
-                    onClose();
-                  }}
-                  style={[styles.tagRow, isSelected && styles.tagRowSelected]}
-                >
-                  <Ionicons
-                    name={item.icon}
-                    size={18}
-                    color={isSelected ? p.accentStrong : p.muted}
-                  />
-
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tagLabel}>{item.label}</Text>
-                  </View>
-
-                  {isSelected ? (
-                    <Ionicons
-                      name="checkmark"
-                      size={18}
-                      color={p.accentStrong}
-                    />
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
+// ─── Action Button ────────────────────────────────────────────────────────────
 
 function ComposerActionButton({
   label,
@@ -530,6 +104,8 @@ function ComposerActionButton({
   );
 }
 
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function CreatePostScreen() {
   const { colors, isDark } = useAppTheme();
   const { toast } = useToast();
@@ -538,18 +114,19 @@ export default function CreatePostScreen() {
   const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
   const styles = useMemo(() => createCreatePostStyles(p), [p]);
 
+  // ── Lifecycle refs ──────────────────────────────────────────────────────────
   const isMountedRef = useRef(true);
   const uploadAbortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
-
     return () => {
       isMountedRef.current = false;
       uploadAbortRef.current?.();
     };
   }, []);
 
+  // ── Toast helper ────────────────────────────────────────────────────────────
   const showStatusToast = useCallback(
     (variant: "success" | "danger", label: string, description: string) => {
       toast.show({
@@ -568,6 +145,7 @@ export default function CreatePostScreen() {
     [toast, colors.success, colors.danger],
   );
 
+  // ── UI state ────────────────────────────────────────────────────────────────
   const [postTab, setPostTab] = useState<PostTab>("text");
   const [draftsTabActive, setDraftsTabActive] = useState(false);
 
@@ -576,11 +154,10 @@ export default function CreatePostScreen() {
   const [tagModalVisible, setTagModalVisible] = useState(false);
   const [visibilityModalVisible, setVisibilityModalVisible] = useState(false);
 
+  // ── Post field state ────────────────────────────────────────────────────────
   const [selectedCommunityId, setSelectedCommunityId] = useState("");
   const [selectedTag, setSelectedTag] = useState<PostTag>("GENERAL");
-  const [selectedVisibility, setSelectedVisibility] =
-    useState<PostVisibility>("PUBLIC");
-
+  const [selectedVisibility, setSelectedVisibility] = useState<PostVisibility>("PUBLIC");
   const [title, setTitle] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [html, setHtml] = useState("<p></p>");
@@ -589,56 +166,41 @@ export default function CreatePostScreen() {
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // ── Poll state ──────────────────────────────────────────────────────────────
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
   const [pollClosesAt, setPollClosesAt] = useState("");
 
+  const linkPreview = useMemo(() => parseLinkInput(linkUrl), [linkUrl]);
+
+  // ── API hooks ───────────────────────────────────────────────────────────────
   const { data: communitiesResponse, isLoading: isLoadingCommunities } =
-    useGetMyCommunitiesQuery({
-      page: 1,
-      limit: 50,
-    });
+    useGetMyCommunitiesQuery({ page: 1, limit: 50 });
 
   const communities = communitiesResponse?.data ?? [];
 
   const { data: draftsResponse, isLoading: isLoadingDrafts } =
-    useGetMyDraftsQuery({
-      limit: 50,
-    });
+    useGetMyDraftsQuery({ limit: 50 });
 
   const drafts = (draftsResponse?.data ?? []) as CommunityPost[];
 
-  const [uploadPostMedia, { isLoading: isUploadingMedia }] =
-    useUploadPostMediaMutation();
-
-  const [createPublishedPost, { isLoading: isCreatingPost }] =
-    useCreatePublishedPostMutation();
-
-  const [createDraftPost, { isLoading: isCreatingDraft }] =
-    useCreateDraftPostMutation();
-
+  const [uploadPostMedia, { isLoading: isUploadingMedia }] = useUploadPostMediaMutation();
+  const [createPublishedPost, { isLoading: isCreatingPost }] = useCreatePublishedPostMutation();
+  const [createDraftPost, { isLoading: isCreatingDraft }] = useCreateDraftPostMutation();
   const [updatePost, { isLoading: isUpdatingPost }] = useUpdatePostMutation();
-
-  const [publishDraft, { isLoading: isPublishingDraft }] =
-    usePublishDraftMutation();
-
+  const [publishDraft, { isLoading: isPublishingDraft }] = usePublishDraftMutation();
   const [deletePost] = useDeletePostMutation();
 
   const busy =
-    isUploadingMedia ||
-    isCreatingPost ||
-    isCreatingDraft ||
-    isUpdatingPost ||
-    isPublishingDraft;
+    isUploadingMedia || isCreatingPost || isCreatingDraft || isUpdatingPost || isPublishingDraft;
 
+  // ── Editor ──────────────────────────────────────────────────────────────────
   const editor = useCreateEditor();
-
   const isEditorReadyRef = useRef(false);
   const pendingContentRef = useRef<string | null>(null);
 
   useEffect(() => {
     isEditorReadyRef.current = true;
-
     if (pendingContentRef.current !== null) {
       editor.setContent(pendingContentRef.current);
       pendingContentRef.current = null;
@@ -656,6 +218,7 @@ export default function CreatePostScreen() {
     [editor],
   );
 
+  // ── Community derived state ─────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedCommunityId && communities.length > 0) {
       setSelectedCommunityId(communities[0].id);
@@ -664,41 +227,33 @@ export default function CreatePostScreen() {
 
   const filteredCommunities = useMemo(() => {
     const q = communitySearch.trim().toLowerCase();
-
     if (!q) return communities;
-
-    return communities.filter((community) =>
-      community.name.toLowerCase().includes(q),
-    );
+    return communities.filter((c) => c.name.toLowerCase().includes(q));
   }, [communities, communitySearch]);
 
   const selectedCommunity = useMemo(
-    () => communities.find((community) => community.id === selectedCommunityId),
+    () => communities.find((c) => c.id === selectedCommunityId),
     [communities, selectedCommunityId],
   );
 
-  const selectedCommunityVisibility = (
-    selectedCommunity as { visibility?: "PUBLIC" | "PRIVATE" } | undefined
-  )?.visibility;
+  const isPrivateCommunity =
+    (selectedCommunity as { visibility?: string } | undefined)?.visibility === "PRIVATE";
 
-  const isPrivateCommunity = selectedCommunityVisibility === "PRIVATE";
-
-  const availableVisibilityOptions = useMemo(() => {
-    if (isPrivateCommunity) {
-      return POST_VISIBILITY_OPTIONS.filter((item) => item.value !== "PUBLIC");
-    }
-
-    return POST_VISIBILITY_OPTIONS;
-  }, [isPrivateCommunity]);
+  const availableVisibilityOptions = useMemo(
+    () =>
+      isPrivateCommunity
+        ? POST_VISIBILITY_OPTIONS.filter((item) => item.value !== "PUBLIC")
+        : POST_VISIBILITY_OPTIONS,
+    [isPrivateCommunity],
+  );
 
   const selectedTagMeta = useMemo(
-    () => TAG_OPTIONS.find((tag) => tag.value === selectedTag),
+    () => TAG_OPTIONS.find((t) => t.value === selectedTag),
     [selectedTag],
   );
 
   const selectedVisibilityMeta = useMemo(
-    () =>
-      POST_VISIBILITY_OPTIONS.find((item) => item.value === selectedVisibility),
+    () => POST_VISIBILITY_OPTIONS.find((item) => item.value === selectedVisibility),
     [selectedVisibility],
   );
 
@@ -708,6 +263,7 @@ export default function CreatePostScreen() {
     }
   }, [isPrivateCommunity, selectedVisibility]);
 
+  // ── Helpers ─────────────────────────────────────────────────────────────────
   const resetPoll = useCallback(() => {
     setPollQuestion("");
     setPollOptions(["", ""]);
@@ -735,21 +291,15 @@ export default function CreatePostScreen() {
   }, []);
 
   const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
   const ensureMediaPermission = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
     if (!permission.granted) {
-      showStatusToast(
-        "danger",
-        "Permission required",
-        "Media library permission is required.",
-      );
+      showStatusToast("danger", "Permission required", "Media library permission is required.");
       return false;
     }
-
     return true;
   }, [showStatusToast]);
 
@@ -758,16 +308,12 @@ export default function CreatePostScreen() {
     if (!hasPermission) return;
 
     if (attachments.length >= MAX_ATTACHMENTS) {
-      showStatusToast(
-        "danger",
-        "Limit reached",
-        `You can upload up to ${MAX_ATTACHMENTS} files only.`,
-      );
+      showStatusToast("danger", "Limit reached", `You can upload up to ${MAX_ATTACHMENTS} images only.`);
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
+      mediaTypes: ["images"],
       allowsMultipleSelection: true,
       selectionLimit: MAX_ATTACHMENTS - attachments.length,
       quality: 1,
@@ -779,10 +325,9 @@ export default function CreatePostScreen() {
       id: makeId(`local-${index}`),
       source: "local",
       uri: asset.uri,
-      mediaType: asset.type === "video" ? "VIDEO" : "IMAGE",
-      name: asset.fileName ?? undefined,
-      mimeType:
-        asset.mimeType ?? (asset.type === "video" ? "video/mp4" : "image/jpeg"),
+      mediaType: "IMAGE",
+      name: asset.fileName ?? `post-image-${Date.now()}-${index}.jpg`,
+      mimeType: asset.mimeType ?? "image/jpeg",
     }));
 
     setAttachments((prev) => [...prev, ...mapped].slice(0, MAX_ATTACHMENTS));
@@ -794,7 +339,7 @@ export default function CreatePostScreen() {
       if (!hasPermission) return;
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images", "videos"],
+        mediaTypes: ["images"],
         allowsMultipleSelection: false,
         quality: 1,
       });
@@ -802,7 +347,6 @@ export default function CreatePostScreen() {
       if (result.canceled || !result.assets?.length) return;
 
       const asset = result.assets[0];
-
       setAttachments((prev) =>
         prev.map((item) =>
           item.id === id
@@ -810,11 +354,9 @@ export default function CreatePostScreen() {
                 ...item,
                 source: "local",
                 uri: asset.uri,
-                mediaType: asset.type === "video" ? "VIDEO" : "IMAGE",
-                name: asset.fileName ?? undefined,
-                mimeType:
-                  asset.mimeType ??
-                  (asset.type === "video" ? "video/mp4" : "image/jpeg"),
+                mediaType: "IMAGE",
+                name: asset.fileName ?? `post-image-${Date.now()}.jpg`,
+                mimeType: asset.mimeType ?? "image/jpeg",
               }
             : item,
         ),
@@ -823,161 +365,90 @@ export default function CreatePostScreen() {
     [ensureMediaPermission],
   );
 
-  const flattenErrors = (issues: { path: PropertyKey[]; message: string }[]) => {
-    const next: Record<string, string> = {};
-
-    for (const issue of issues) {
-      const key = String(issue.path[0] ?? "root");
-      if (!next[key]) next[key] = issue.message;
-    }
-
-    return next;
-  };
-
+  // ── Upload helper ───────────────────────────────────────────────────────────
   const buildUploadedMediaPayload = async (): Promise<CommunityPostMedia[]> => {
     const remoteMedia: CommunityPostMedia[] = attachments
-      .filter((attachment) => attachment.source === "remote")
-      .map((attachment, index) => ({
-        type: attachment.mediaType,
-        url: attachment.uri,
-        sortOrder: index,
-      }));
+      .filter((a) => a.source === "remote")
+      .map((a, index) => ({ type: "IMAGE", url: a.uri, sortOrder: index }));
 
-    const localMedia = attachments.filter(
-      (attachment) => attachment.source === "local",
-    );
+    const localMedia = attachments.filter((a) => a.source === "local");
 
     if (!localMedia.length) {
-      return remoteMedia.map((media, index) => ({
-        ...media,
-        sortOrder: index,
-      }));
+      return remoteMedia.map((m, index) => ({ ...m, sortOrder: index }));
     }
 
     const uploadPromise = uploadPostMedia({
-      files: localMedia.map((attachment) => ({
-        uri: attachment.uri,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        mediaType: attachment.mediaType,
-      })),
+      files: localMedia.map((a) => ({ uri: a.uri, name: a.name, mimeType: a.mimeType })),
     });
 
     uploadAbortRef.current = () => uploadPromise.abort();
 
-    const uploadResponse =
-      (await uploadPromise.unwrap()) as UploadPostMediaResponse;
+    const uploadResponse = (await uploadPromise.unwrap()) as UploadPostMediaResponse;
 
-    if (!isMountedRef.current) {
-      throw new Error("UNMOUNTED");
-    }
+    if (!isMountedRef.current) throw new Error("UNMOUNTED");
 
     uploadAbortRef.current = null;
 
     const uploaded: CommunityPostMedia[] = uploadResponse.items.map(
       (item: UploadPostMediaItem, index: number) => ({
-        type: localMedia[index].mediaType,
+        type: "IMAGE",
         url: item.url,
         sortOrder: remoteMedia.length + index,
       }),
     );
 
-    return [...remoteMedia, ...uploaded].map((media, index) => ({
-      ...media,
-      sortOrder: index,
-    }));
+    return [...remoteMedia, ...uploaded].map((m, index) => ({ ...m, sortOrder: index }));
   };
 
+  // ── Poll helper ─────────────────────────────────────────────────────────────
   const buildPollPayload = useCallback(
     (requireValid: boolean): PostPollPayload | undefined => {
       if (postTab !== "poll") return undefined;
 
       const question = pollQuestion.trim();
-      const options = pollOptions.map((option) => option.trim()).filter(Boolean);
+      const options = pollOptions.map((o) => o.trim()).filter(Boolean);
       const closesAt = pollClosesAt.trim();
 
-      if (!question && options.length === 0) {
-        return undefined;
-      }
+      if (!question && options.length === 0) return undefined;
 
       if (!question) {
-        if (requireValid) {
-          setErrors((prev) => ({
-            ...prev,
-            poll: "Poll question is required.",
-          }));
-        }
-
+        if (requireValid) setErrors((prev) => ({ ...prev, poll: "Poll question is required." }));
         return undefined;
       }
 
       if (options.length < 2) {
-        if (requireValid) {
-          setErrors((prev) => ({
-            ...prev,
-            poll: "Poll must have at least 2 options.",
-          }));
-        }
-
+        if (requireValid) setErrors((prev) => ({ ...prev, poll: "Poll must have at least 2 options." }));
         return undefined;
       }
 
-      const uniqueOptions = new Set(options.map((option) => option.toLowerCase()));
-
+      const uniqueOptions = new Set(options.map((o) => o.toLowerCase()));
       if (uniqueOptions.size !== options.length) {
-        if (requireValid) {
-          setErrors((prev) => ({
-            ...prev,
-            poll: "Poll options must be unique.",
-          }));
-        }
-
+        if (requireValid) setErrors((prev) => ({ ...prev, poll: "Poll options must be unique." }));
         return undefined;
       }
 
       if (closesAt) {
         const parsedDate = new Date(closesAt);
-
         if (Number.isNaN(parsedDate.getTime())) {
-          if (requireValid) {
-            setErrors((prev) => ({
-              ...prev,
-              poll: "Poll close date must be valid.",
-            }));
-          }
-
+          if (requireValid) setErrors((prev) => ({ ...prev, poll: "Poll close date must be valid." }));
           return undefined;
         }
-
-        return {
-          question,
-          options,
-          closesAt: parsedDate.toISOString(),
-        };
+        return { question, options, closesAt: parsedDate.toISOString() };
       }
 
-      return {
-        question,
-        options,
-      };
+      return { question, options };
     },
     [pollClosesAt, pollOptions, pollQuestion, postTab],
   );
 
+  // ── Save draft ──────────────────────────────────────────────────────────────
   const saveDraft = async () => {
     try {
       setErrors({});
 
-      let media: CommunityPostMedia[];
-
-      try {
-        media = await buildUploadedMediaPayload();
-      } catch (error: any) {
-        if (error?.message === "UNMOUNTED") return;
-        throw error;
-      }
-
+      const media = postTab === "media" ? await buildUploadedMediaPayload() : [];
       const poll = buildPollPayload(false);
+      const cleanLinkUrl = postTab === "link" ? linkPreview?.cleanUrl ?? linkUrl.trim() : "";
 
       const parsed = draftPostSchema.safeParse({
         communityId: selectedCommunityId,
@@ -986,16 +457,13 @@ export default function CreatePostScreen() {
         visibility: selectedVisibility,
         html,
         plainText,
-        linkUrl,
+        linkUrl: cleanLinkUrl,
         media,
         poll,
       });
 
       if (!parsed.success) {
-        if (isMountedRef.current) {
-          setErrors(flattenErrors(parsed.error.issues));
-        }
-
+        if (isMountedRef.current) setErrors(flattenErrors(parsed.error.issues));
         return;
       }
 
@@ -1003,79 +471,51 @@ export default function CreatePostScreen() {
         title: title.trim() || undefined,
         tag: parsed.data.tag,
         visibility: selectedVisibility,
-        content: parsed.data.html,
-        linkUrl: parsed.data.linkUrl?.trim() || undefined,
-        media,
-        poll,
+        content: plainText.trim() ? parsed.data.html : undefined,
+        linkUrl: postTab === "link" ? parsed.data.linkUrl?.trim() || undefined : undefined,
+        media: postTab === "media" ? media : [],
+        poll: postTab === "poll" ? poll : undefined,
       };
 
       const updateBody = {
-        title: title.trim() || undefined,
+        title: title.trim() || null,
         tag: parsed.data.tag,
         visibility: selectedVisibility,
-        content: parsed.data.html,
-        linkUrl: parsed.data.linkUrl?.trim() || undefined,
-        media,
+        content: plainText.trim() ? parsed.data.html : null,
+        linkUrl: postTab === "link" ? parsed.data.linkUrl?.trim() || null : null,
+        media: postTab === "media" ? media : [],
       };
 
       if (activeDraftId) {
-        await updatePost({
-          communityId: selectedCommunityId,
-          postId: activeDraftId,
-          body: updateBody,
-        }).unwrap();
-
-        if (isMountedRef.current) {
-          showStatusToast(
-            "success",
-            "Draft updated",
-            "Your draft has been updated.",
-          );
-        }
+        await updatePost({ communityId: selectedCommunityId, postId: activeDraftId, body: updateBody }).unwrap();
+        if (isMountedRef.current) showStatusToast("success", "Draft updated", "Your draft has been updated.");
       } else {
-        const created = await createDraftPost({
-          communityId: selectedCommunityId,
-          body: createBody,
-        }).unwrap();
-
+        const created = await createDraftPost({ communityId: selectedCommunityId, body: createBody }).unwrap();
         if (isMountedRef.current) {
           setActiveDraftId(created.id);
           showStatusToast("success", "Draft saved", "Your draft has been saved.");
         }
       }
 
-      if (isMountedRef.current) {
-        setDraftsTabActive(true);
-      }
+      if (isMountedRef.current) setDraftsTabActive(true);
     } catch (error: any) {
       if (isMountedRef.current) {
-        showStatusToast(
-          "danger",
-          "Could not save draft",
-          error?.data?.message ?? "Try again.",
-        );
+        showStatusToast("danger", "Could not save draft", error?.data?.message ?? "Try again.");
       }
     }
   };
 
+  // ── Publish ─────────────────────────────────────────────────────────────────
   const publish = async () => {
     try {
       setErrors({});
 
-      let media: CommunityPostMedia[];
-
-      try {
-        media = await buildUploadedMediaPayload();
-      } catch (error: any) {
-        if (error?.message === "UNMOUNTED") return;
-        throw error;
-      }
-
+      const media = postTab === "media" ? await buildUploadedMediaPayload() : [];
       const poll = buildPollPayload(true);
 
-      if (postTab === "poll" && !poll) {
-        return;
-      }
+      if (postTab === "poll" && !poll) return;
+
+      const cleanLinkUrl = postTab === "link" ? linkPreview?.cleanUrl ?? linkUrl.trim() : "";
 
       const parsed = publishPostSchema.safeParse({
         communityId: selectedCommunityId,
@@ -1084,75 +524,49 @@ export default function CreatePostScreen() {
         visibility: selectedVisibility,
         html,
         plainText,
-        linkUrl,
+        linkUrl: cleanLinkUrl,
         media,
         poll,
       });
 
       if (!parsed.success) {
-        if (isMountedRef.current) {
-          setErrors(flattenErrors(parsed.error.issues));
-        }
-
+        if (isMountedRef.current) setErrors(flattenErrors(parsed.error.issues));
         return;
       }
 
       const createBody = {
-        title: title.trim(),
+        title: title.trim() || undefined,
         tag: parsed.data.tag,
         visibility: selectedVisibility,
-        content: parsed.data.html,
-        linkUrl: parsed.data.linkUrl?.trim() || undefined,
-        media,
-        poll,
+        content: plainText.trim() ? parsed.data.html : undefined,
+        linkUrl: postTab === "link" ? parsed.data.linkUrl?.trim() || undefined : undefined,
+        media: postTab === "media" ? media : [],
+        poll: postTab === "poll" ? poll : undefined,
       };
 
       const updateBody = {
-        title: title.trim(),
+        title: title.trim() || null,
         tag: parsed.data.tag,
         visibility: selectedVisibility,
-        content: parsed.data.html,
-        linkUrl: parsed.data.linkUrl?.trim() || undefined,
-        media,
+        content: plainText.trim() ? parsed.data.html : null,
+        linkUrl: postTab === "link" ? parsed.data.linkUrl?.trim() || null : null,
+        media: postTab === "media" ? media : [],
       };
 
       if (activeDraftId) {
-        await updatePost({
-          communityId: selectedCommunityId,
-          postId: activeDraftId,
-          body: updateBody,
-        }).unwrap();
-
-        await publishDraft({
-          communityId: selectedCommunityId,
-          postId: activeDraftId,
-        }).unwrap();
+        await updatePost({ communityId: selectedCommunityId, postId: activeDraftId, body: updateBody }).unwrap();
+        await publishDraft({ communityId: selectedCommunityId, postId: activeDraftId }).unwrap();
       } else {
-        await createPublishedPost({
-          communityId: selectedCommunityId,
-          body: createBody,
-        }).unwrap();
-      }
-
-      if (isMountedRef.current) {
-        showStatusToast(
-          "success",
-          "Post published",
-          "Your post is now visible in the community.",
-        );
-        resetComposer();
+        await createPublishedPost({ communityId: selectedCommunityId, body: createBody }).unwrap();
       }
     } catch (error: any) {
       if (isMountedRef.current) {
-        showStatusToast(
-          "danger",
-          "Could not publish",
-          error?.data?.message ?? "Try again.",
-        );
+        showStatusToast("danger", "Could not publish", error?.data?.message ?? "Try again.");
       }
     }
   };
 
+  // ── Draft management ────────────────────────────────────────────────────────
   const openDraft = useCallback(
     (draft: CommunityPost) => {
       setActiveDraftId(draft.id);
@@ -1163,13 +577,12 @@ export default function CreatePostScreen() {
       setLinkUrl(draft.linkUrl ?? "");
       setHtml(draft.content ?? "<p></p>");
       setPlainText(stripHtml(draft.content ?? ""));
-
       setAttachments(
-        draft.media.map((media) => ({
-          id: media.id ?? makeId("remote"),
+        draft.media.map((m) => ({
+          id: m.id ?? makeId("remote"),
           source: "remote" as const,
-          uri: media.url,
-          mediaType: media.type,
+          uri: m.url,
+          mediaType: m.type,
         })),
       );
 
@@ -1177,21 +590,14 @@ export default function CreatePostScreen() {
         setPostTab("poll");
         setPollQuestion(draft.poll.question ?? "");
         setPollOptions(
-          draft.poll.options?.length
-            ? draft.poll.options.map((option) => option.text)
-            : ["", ""],
+          draft.poll.options?.length ? draft.poll.options.map((o) => o.text) : ["", ""],
         );
         setPollClosesAt(draft.poll.closesAt ?? "");
       } else {
         resetPoll();
-
-        if (draft.media?.length) {
-          setPostTab("media");
-        } else if (draft.linkUrl) {
-          setPostTab("link");
-        } else {
-          setPostTab("text");
-        }
+        if (draft.media?.length) setPostTab("media");
+        else if (draft.linkUrl) setPostTab("link");
+        else setPostTab("text");
       }
 
       setErrors({});
@@ -1204,86 +610,36 @@ export default function CreatePostScreen() {
   const deleteDraft = useCallback(
     async (draft: CommunityPost) => {
       try {
-        await deletePost({
-          communityId: draft.communityId,
-          postId: draft.id,
-        }).unwrap();
-
+        await deletePost({ communityId: draft.communityId, postId: draft.id }).unwrap();
         if (!isMountedRef.current) return;
-
-        if (activeDraftId === draft.id) {
-          resetComposer();
-        }
-
-        showStatusToast(
-          "success",
-          "Draft deleted",
-          "The selected draft has been removed.",
-        );
+        if (activeDraftId === draft.id) resetComposer();
+        showStatusToast("success", "Draft deleted", "The selected draft has been removed.");
       } catch (error: any) {
         if (isMountedRef.current) {
-          showStatusToast(
-            "danger",
-            "Could not delete draft",
-            error?.data?.message ?? "Try again.",
-          );
+          showStatusToast("danger", "Could not delete draft", error?.data?.message ?? "Try again.");
         }
       }
     },
     [activeDraftId, deletePost, resetComposer, showStatusToast],
   );
 
-  const renderMediaTile = useCallback(
-    (item: ComposerAttachment, index: number) => {
-      const isImage = item.mediaType === "IMAGE";
+  // ── Derived ─────────────────────────────────────────────────────────────────
+  const titleRequired =
+    postTab === "poll" ||
+    ["ANNOUNCEMENT", "QUESTION", "OFFER", "EVENT", "NEWS"].includes(selectedTag);
 
-      return (
-        <View
-          key={item.id}
-          style={[styles.mediaTile, index % 3 !== 2 && styles.mediaTileGap]}
-        >
-          <View style={styles.mediaPreviewWrap}>
-            {isImage ? (
-              <Image
-                source={{ uri: item.uri }}
-                style={styles.mediaImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.mediaVideoBox}>
-                <Ionicons name="videocam-outline" size={22} color={p.text} />
-                <Text style={styles.videoText}>Video</Text>
-              </View>
-            )}
+  const sharedTabProps = {
+    p,
+    styles,
+    title,
+    setTitle,
+    titleRequired,
+    errors,
+    editor,
+    onChangeHtml: handleHtmlChange,
+  };
 
-            <View style={styles.mediaActionRow}>
-              <Pressable
-                onPress={() => replaceAttachment(item.id)}
-                style={styles.mediaActionBtn}
-              >
-                <Ionicons name="create-outline" size={15} color={p.text} />
-              </Pressable>
-
-              <Pressable
-                onPress={() => removeAttachment(item.id)}
-                style={styles.mediaActionBtn}
-              >
-                <Ionicons name="trash-outline" size={15} color={p.danger} />
-              </Pressable>
-            </View>
-
-            <View style={styles.mediaBadge}>
-              <Text numberOfLines={1} style={styles.mediaBadgeText}>
-                {item.source === "local" ? "Ready" : "Uploaded"}
-              </Text>
-            </View>
-          </View>
-        </View>
-      );
-    },
-    [p.text, p.danger, removeAttachment, replaceAttachment, styles],
-  );
-
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
@@ -1291,41 +647,36 @@ export default function CreatePostScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.contentWrap}>
+
+          {/* ── Top bar ── */}
           <View style={styles.topBar}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-              <Pressable
-                onPress={() => {
-                  router.replace("/(tabs)");
-                }}
-                style={styles.backButton}
-              >
+              <Pressable onPress={() => router.push("/")} style={styles.backButton}>
                 <Ionicons name="chevron-back" size={22} color={p.text} />
               </Pressable>
-
               <Text style={styles.screenTitle}>
                 {activeDraftId ? "Edit draft" : "Create post"}
               </Text>
             </View>
 
             <Pressable
-              onPress={() => setDraftsTabActive((value) => !value)}
+              onPress={() => setDraftsTabActive((v) => !v)}
               style={styles.draftsChip}
             >
               <Text style={styles.draftsChipText}>Drafts</Text>
-
-              {drafts.length > 0 ? (
+              {drafts.length > 0 && (
                 <View style={styles.draftsCount}>
                   <Text style={styles.draftsCountText}>{drafts.length}</Text>
                 </View>
-              ) : null}
+              )}
             </Pressable>
           </View>
 
+          {/* ── Drafts panel ── */}
           {draftsTabActive ? (
             <View style={styles.draftsContainer}>
               <View style={styles.draftsHeader}>
                 <Text style={styles.draftPanelTitle}>Your drafts</Text>
-
                 <Pressable onPress={() => setDraftsTabActive(false)}>
                   <Ionicons name="close" size={22} color={p.muted} />
                 </Pressable>
@@ -1345,8 +696,10 @@ export default function CreatePostScreen() {
                 />
               </View>
             </View>
+
           ) : (
-            <>
+            <View style={styles.contentWrap}>
+              {/* ── Community selector ── */}
               <View style={styles.communityBar}>
                 <Pressable
                   onPress={() => setCommunityModalVisible(true)}
@@ -1363,11 +716,11 @@ export default function CreatePostScreen() {
                       ? "Loading..."
                       : selectedCommunity?.name ?? "Select Community"}
                   </Text>
-
                   <Ionicons name="chevron-down" size={16} color={p.muted} />
                 </Pressable>
               </View>
 
+              {/* ── Post type tabs ── */}
               <View style={styles.postTypeTabsWrap}>
                 <Tabs
                   value={postTab}
@@ -1383,27 +736,16 @@ export default function CreatePostScreen() {
                       contentContainerStyle={styles.postTypeTabsListContent}
                     >
                       <Tabs.Indicator />
-
-                      <Tabs.Trigger value="text">
-                        <Tabs.Label>Text</Tabs.Label>
-                      </Tabs.Trigger>
-
-                      <Tabs.Trigger value="media">
-                        <Tabs.Label>Images & Video</Tabs.Label>
-                      </Tabs.Trigger>
-
-                      <Tabs.Trigger value="link">
-                        <Tabs.Label>Link</Tabs.Label>
-                      </Tabs.Trigger>
-
-                      <Tabs.Trigger value="poll">
-                        <Tabs.Label>Poll</Tabs.Label>
-                      </Tabs.Trigger>
+                      <Tabs.Trigger value="text"><Tabs.Label>Text</Tabs.Label></Tabs.Trigger>
+                      <Tabs.Trigger value="media"><Tabs.Label>Images</Tabs.Label></Tabs.Trigger>
+                      <Tabs.Trigger value="link"><Tabs.Label>Link</Tabs.Label></Tabs.Trigger>
+                      <Tabs.Trigger value="poll"><Tabs.Label>Poll</Tabs.Label></Tabs.Trigger>
                     </Tabs.ScrollView>
                   </Tabs.List>
                 </Tabs>
               </View>
 
+              {/* ── Composer scroll ── */}
               <ScrollView
                 style={styles.composerScroll}
                 keyboardShouldPersistTaps="handled"
@@ -1411,295 +753,78 @@ export default function CreatePostScreen() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={[
                   styles.scrollContent,
-                  {
-                    paddingBottom: insets.bottom + FOOTER_RESERVED_SPACE,
-                  },
+                  { paddingBottom: insets.bottom + FOOTER_RESERVED_SPACE },
                 ]}
               >
-                <View>
-                  <TextInput
-                    value={title}
-                    onChangeText={setTitle}
-                    placeholder="Write a clear title"
-                    placeholderTextColor={p.placeholder}
-                    maxLength={160}
-                    style={styles.titleInput}
-                  />
-
-                  {errors.title ? (
-                    <Text style={styles.errorText}>{errors.title}</Text>
-                  ) : null}
-                </View>
-
+                {/* Tags + visibility row */}
                 <View style={styles.tagsRow}>
-                  <Pressable
-                    onPress={() => setTagModalVisible(true)}
-                    style={styles.tagChip}
-                  >
+                  <Pressable onPress={() => setTagModalVisible(true)} style={styles.tagChip}>
                     <Ionicons name="pricetag-outline" size={14} color={p.muted} />
-
                     <Text style={styles.tagChipText}>
                       {selectedTagMeta ? selectedTagMeta.label : "Add tags"}
                     </Text>
-
                     <Ionicons name="chevron-down" size={14} color={p.muted} />
                   </Pressable>
 
-                  <Pressable
-                    onPress={() => setVisibilityModalVisible(true)}
-                    style={styles.tagChip}
-                  >
+                  <Pressable onPress={() => setVisibilityModalVisible(true)} style={styles.tagChip}>
                     <Ionicons
-                      name={selectedVisibilityMeta?.icon ?? "earth-outline"}
+                      name={(selectedVisibilityMeta?.icon ?? "earth-outline") as any}
                       size={14}
                       color={p.muted}
                     />
-
                     <Text style={styles.tagChipText}>
                       {selectedVisibilityMeta?.label ?? "Visibility"}
                     </Text>
-
                     <Ionicons name="chevron-down" size={14} color={p.muted} />
                   </Pressable>
                 </View>
 
-                {isPrivateCommunity ? (
+                {isPrivateCommunity && (
                   <Text style={styles.visibilityHintText}>
                     Public visibility is disabled in private communities.
                   </Text>
-                ) : null}
-
-                {postTab === "text" && (
-                  <>
-                    <AppRichTextEditor
-                      editor={editor}
-                      onChangeHtml={handleHtmlChange}
-                      label="Description"
-                      editorHeight={360}
-                      showToolbar
-                    />
-
-                    {errors.content ? (
-                      <Text style={styles.errorText}>{errors.content}</Text>
-                    ) : null}
-                  </>
                 )}
 
+                {/* Tab content */}
+                {postTab === "text" && <TextTab {...sharedTabProps} />}
+
                 {postTab === "media" && (
-                  <>
-                    <AppRichTextEditor
-                      editor={editor}
-                      onChangeHtml={handleHtmlChange}
-                      label="Description"
-                      editorHeight={260}
-                      showToolbar
-                    />
-
-                    {errors.content ? (
-                      <Text style={styles.errorText}>{errors.content}</Text>
-                    ) : null}
-
-                    <View style={styles.sectionCard}>
-                      <View style={styles.mediaSectionHeader}>
-                        <Text style={styles.sectionTitle}>Images & Video</Text>
-
-                        {attachments.length > 0 ? (
-                          <Pressable onPress={pickMedia} style={styles.addMoreBtn}>
-                            <Ionicons
-                              name="add"
-                              size={14}
-                              color={p.accentStrong}
-                            />
-
-                            <Text style={styles.addMoreBtnText}>Add more</Text>
-                          </Pressable>
-                        ) : null}
-                      </View>
-
-                      {attachments.length === 0 ? (
-                        <Pressable onPress={pickMedia} style={styles.mediaDropZone}>
-                          <Ionicons
-                            name="cloud-upload-outline"
-                            size={28}
-                            color={p.muted}
-                          />
-
-                          <Text style={styles.mediaDropText}>
-                            Tap to upload media
-                          </Text>
-                        </Pressable>
-                      ) : (
-                        <>
-                          <Text style={styles.uploadCountText}>
-                            {attachments.length}/{MAX_ATTACHMENTS} selected
-                          </Text>
-
-                          <View style={styles.mediaGrid}>
-                            {attachments.map((item, index) =>
-                              renderMediaTile(item, index),
-                            )}
-                          </View>
-                        </>
-                      )}
-
-                      {errors.media ? (
-                        <Text style={styles.errorText}>{errors.media}</Text>
-                      ) : null}
-                    </View>
-                  </>
+                  <MediaTab
+                    {...sharedTabProps}
+                    attachments={attachments}
+                    onPickMedia={pickMedia}
+                    onReplaceAttachment={replaceAttachment}
+                    onRemoveAttachment={removeAttachment}
+                  />
                 )}
 
                 {postTab === "link" && (
-                  <View style={styles.sectionCard}>
-                    <Text style={styles.sectionTitle}>Link</Text>
-
-                    <View style={styles.linkWrap}>
-                      <TextInput
-                        value={linkUrl}
-                        onChangeText={setLinkUrl}
-                        placeholder="Link URL"
-                        placeholderTextColor={p.placeholder}
-                        autoCapitalize="none"
-                        keyboardType="url"
-                        style={styles.linkInput}
-                      />
-                    </View>
-
-                    {errors.linkUrl ? (
-                      <Text style={styles.errorText}>{errors.linkUrl}</Text>
-                    ) : null}
-                  </View>
+                  <LinkTab
+                    {...sharedTabProps}
+                    linkUrl={linkUrl}
+                    setLinkUrl={setLinkUrl}
+                    linkPreview={linkPreview}
+                    setErrors={setErrors}
+                  />
                 )}
 
                 {postTab === "poll" && (
-                  <View style={styles.sectionCard}>
-                    <Text style={styles.sectionTitle}>Poll Question</Text>
-
-                    <View style={styles.linkWrap}>
-                      <TextInput
-                        value={pollQuestion}
-                        onChangeText={setPollQuestion}
-                        placeholder="Ask a question"
-                        placeholderTextColor={p.placeholder}
-                        maxLength={160}
-                        style={styles.linkInput}
-                      />
-                    </View>
-
-                    <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
-                      Options
-                    </Text>
-
-                    {pollOptions.map((option, index) => (
-                      <View
-                        key={`poll-option-${index}`}
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <View style={[styles.linkWrap, { flex: 1 }]}>
-                          <TextInput
-                            value={option}
-                            onChangeText={(value) => {
-                              setPollOptions((prev) =>
-                                prev.map((item, itemIndex) =>
-                                  itemIndex === index ? value : item,
-                                ),
-                              );
-                            }}
-                            placeholder={`Option ${index + 1}`}
-                            placeholderTextColor={p.placeholder}
-                            maxLength={120}
-                            style={styles.linkInput}
-                          />
-                        </View>
-
-                        {pollOptions.length > 2 ? (
-                          <Pressable
-                            onPress={() =>
-                              setPollOptions((prev) =>
-                                prev.filter((_, itemIndex) => itemIndex !== index),
-                              )
-                            }
-                            style={{
-                              width: 40,
-                              height: 40,
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <Ionicons
-                              name="trash-outline"
-                              size={18}
-                              color={p.danger}
-                            />
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    ))}
-
-                    {pollOptions.length < MAX_POLL_OPTIONS ? (
-                      <Pressable
-                        onPress={() => setPollOptions((prev) => [...prev, ""])}
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 6,
-                          paddingVertical: 8,
-                        }}
-                      >
-                        <Ionicons
-                          name="add-circle-outline"
-                          size={18}
-                          color={p.accentStrong}
-                        />
-
-                        <Text
-                          style={{
-                            color: p.accentStrong,
-                            fontFamily: "Poppins_600SemiBold",
-                            fontSize: 13,
-                          }}
-                        >
-                          Add option
-                        </Text>
-                      </Pressable>
-                    ) : null}
-
-                    <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
-                      Close Date Optional
-                    </Text>
-
-                    <View style={styles.linkWrap}>
-                      <TextInput
-                        value={pollClosesAt}
-                        onChangeText={setPollClosesAt}
-                        placeholder="Example: 2026-06-01T18:00:00"
-                        placeholderTextColor={p.placeholder}
-                        autoCapitalize="none"
-                        style={styles.linkInput}
-                      />
-                    </View>
-
-                    {errors.poll ? (
-                      <Text style={styles.errorText}>{errors.poll}</Text>
-                    ) : null}
-                  </View>
+                  <PollTab
+                    {...sharedTabProps}
+                    pollQuestion={pollQuestion}
+                    setPollQuestion={setPollQuestion}
+                    pollOptions={pollOptions}
+                    setPollOptions={setPollOptions}
+                    pollClosesAt={pollClosesAt}
+                    setPollClosesAt={setPollClosesAt}
+                  />
                 )}
               </ScrollView>
 
-              <View
-                style={[
-                  styles.footerWrap,
-                  {
-                    paddingBottom: Math.max(insets.bottom, 10),
-                  },
-                ]}
-              >
+              {/* ── Footer ── */}
+              <View style={[styles.footerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
                 <View style={styles.footerRow}>
-                  {activeDraftId ? (
+                  {activeDraftId && (
                     <ComposerActionButton
                       label="New post"
                       variant="outline"
@@ -1707,7 +832,7 @@ export default function CreatePostScreen() {
                       onPress={resetComposer}
                       styles={styles}
                     />
-                  ) : null}
+                  )}
 
                   <ComposerActionButton
                     label="Save Draft"
@@ -1726,11 +851,12 @@ export default function CreatePostScreen() {
                   />
                 </View>
               </View>
-            </>
+            </View>
           )}
         </View>
       </KeyboardAvoidingView>
 
+      {/* ── Modals ── */}
       <CommunityPickerModal
         visible={communityModalVisible}
         communities={filteredCommunities}
@@ -1747,7 +873,7 @@ export default function CreatePostScreen() {
       <TagPickerModal
         visible={tagModalVisible}
         selectedTag={selectedTag}
-        onSelect={(tag) => setSelectedTag(tag)}
+        onSelect={setSelectedTag}
         onClose={() => setTagModalVisible(false)}
       />
 
@@ -1760,4 +886,4 @@ export default function CreatePostScreen() {
       />
     </SafeAreaView>
   );
-}
+} 

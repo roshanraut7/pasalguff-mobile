@@ -6,7 +6,7 @@ import { View } from "react-native";
 export default function CreateTabRedirect() {
   useFocusEffect(
     useCallback(() => {
-      router.push("/pages/createpost");
+    router.push("/pages/createpost");
     }, []),
   );
 

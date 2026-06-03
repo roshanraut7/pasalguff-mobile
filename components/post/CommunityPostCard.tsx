@@ -1,9 +1,7 @@
 import React, {
   memo,
   useCallback,
-  useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -17,21 +15,14 @@ import {
 import { Avatar, Dialog, Menu, Surface } from "heroui-native";
 import { Ionicons } from "@expo/vector-icons";
 import Carousel from "react-native-reanimated-carousel";
-import { VideoView, useVideoPlayer } from "expo-video";
 import { Image as ExpoImage } from "expo-image";
 import RenderHTML, { defaultSystemFonts } from "react-native-render-html";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSequence,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
+import YouTubeEmbedPlayer from "./YouTubeEmbedPlayer";
 import type { CommunityPost, PostMedia, PostPoll } from "@/types/post";
 
 const systemFonts = [
@@ -49,17 +40,31 @@ type AppColors = ReturnType<typeof useAppTheme>["colors"];
 
 type CommunityPostCardProps = {
   post: CommunityPost;
+
+  /**
+   * Stops YouTube playback when feed is scrolling
+   * or when another media viewer is open.
+   */
   disableMediaPlayback?: boolean;
+
+  /**
+   * Up arrow action:
+   * - Not liked: parent calls Like API.
+   * - Already liked: parent calls Unlike API.
+   */
   onPressLike?: (post: CommunityPost) => void;
+
+  /**
+   * Down arrow action:
+   * - Not disliked: parent opens reason modal.
+   * - Already disliked: parent removes dislike.
+   */
+  onPressDislike?: (post: CommunityPost) => void;
+
   onPressComment?: (post: CommunityPost) => void;
   onPressShare?: (post: CommunityPost) => void;
   onPressAuthor?: (authorId: string) => void;
   onPressMedia?: (media: PostMedia[], startIndex: number) => void;
-
-  /**
-   * Poll option click.
-   * HomeScreen should pass this and call votePostPoll mutation.
-   */
   onPressPollOption?: (post: CommunityPost, optionId: string) => void;
 
   canDelete?: boolean;
@@ -98,6 +103,7 @@ function formatCount(value?: number | null) {
 
   if (count <= 0) return "";
   if (count < 1000) return `${count}`;
+
   if (count < 1_000_000) {
     return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
   }
@@ -153,34 +159,51 @@ const ReactionButton = memo(function ReactionButton({
   icon,
   label,
   active = false,
+  activeColor,
+  compact = false,
   onPress,
+  accessibilityLabel,
   colors,
   styles,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   active?: boolean;
+  activeColor?: string;
+  compact?: boolean;
   onPress?: () => void;
+  accessibilityLabel?: string;
   colors: AppColors;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const selectedColor = activeColor ?? colors.accent;
+
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
       onPress={onPress}
       style={({ pressed }) => [
         styles.reactionButton,
+        compact && styles.compactReactionButton,
         pressed && styles.reactionButtonPressed,
       ]}
     >
       <Ionicons
         name={icon}
-        size={18}
-        color={active ? colors.accent : colors.muted}
+        size={19}
+        color={active ? selectedColor : colors.muted}
       />
 
       <Text
         numberOfLines={1}
-        style={[styles.reactionText, active && styles.reactionTextActive]}
+        style={[
+          styles.reactionText,
+          active && {
+            color: selectedColor,
+            fontFamily: "Poppins_600SemiBold",
+          },
+        ]}
       >
         {label}
       </Text>
@@ -304,71 +327,17 @@ const PollResultCard = memo(function PollResultCard({
   );
 });
 
-const MediaTapLayer = memo(function MediaTapLayer({
-  children,
-  onSingleTap,
-  onDoubleTap,
-}: {
-  children: React.ReactNode;
-  onSingleTap?: () => void;
-  onDoubleTap?: () => void;
-}) {
-  const lastTapRef = useRef(0);
-  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-
-  useEffect(() => {
-    return () => {
-      if (singleTapTimeoutRef.current) {
-        clearTimeout(singleTapTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const handlePress = () => {
-    const now = Date.now();
-
-    if (now - lastTapRef.current < 240) {
-      if (singleTapTimeoutRef.current) {
-        clearTimeout(singleTapTimeoutRef.current);
-        singleTapTimeoutRef.current = null;
-      }
-
-      lastTapRef.current = 0;
-      onDoubleTap?.();
-
-      return;
-    }
-
-    lastTapRef.current = now;
-
-    singleTapTimeoutRef.current = setTimeout(() => {
-      onSingleTap?.();
-      lastTapRef.current = 0;
-    }, 240);
-  };
-
-  return (
-    <Pressable onPress={handlePress} style={stylesStatic.tapLayer}>
-      {children}
-    </Pressable>
-  );
-});
-
 const ImageSlide = memo(function ImageSlide({
   uri,
-  onSingleTap,
-  onDoubleTap,
+  onPress,
   styles,
 }: {
   uri: string;
-  onSingleTap?: () => void;
-  onDoubleTap?: () => void;
+  onPress?: () => void;
   styles: ReturnType<typeof createStyles>;
 }) {
   return (
-    <MediaTapLayer onSingleTap={onSingleTap} onDoubleTap={onDoubleTap}>
+    <Pressable onPress={onPress} style={stylesStatic.tapLayer}>
       <ExpoImage
         source={{ uri }}
         style={styles.slideMedia}
@@ -377,61 +346,17 @@ const ImageSlide = memo(function ImageSlide({
         transition={180}
         cachePolicy="memory-disk"
       />
-    </MediaTapLayer>
-  );
-});
-
-const VideoSlide = memo(function VideoSlide({
-  uri,
-  active,
-  onSingleTap,
-  onDoubleTap,
-  styles,
-}: {
-  uri: string;
-  active: boolean;
-  onSingleTap?: () => void;
-  onDoubleTap?: () => void;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  const player = useVideoPlayer(uri, (instance) => {
-    instance.loop = false;
-  });
-
-  useEffect(() => {
-    if (!active) {
-      player.pause();
-    }
-  }, [active, player]);
-
-  return (
-    <MediaTapLayer onSingleTap={onSingleTap} onDoubleTap={onDoubleTap}>
-      <View style={styles.slideMedia}>
-        <VideoView
-          player={player}
-          style={StyleSheet.absoluteFillObject}
-          nativeControls={active}
-          contentFit="contain"
-          allowsPictureInPicture
-        />
-      </View>
-    </MediaTapLayer>
+    </Pressable>
   );
 });
 
 const PostMediaCarousel = memo(function PostMediaCarousel({
   media,
-  disabled,
   onPressMedia,
-  onDoubleTapLike,
-  colors: _colors,
   styles,
 }: {
   media: PostMedia[];
-  disabled?: boolean;
   onPressMedia?: (media: PostMedia[], startIndex: number) => void;
-  onDoubleTapLike?: () => void;
-  colors: AppColors;
   styles: ReturnType<typeof createStyles>;
 }) {
   const { width: screenWidth } = useWindowDimensions();
@@ -440,6 +365,7 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
   const normalizedMedia = useMemo<PostMedia[]>(
     () =>
       [...media]
+        .filter((item) => item.type === "IMAGE" && Boolean(item.url))
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
         .map((item) => ({
           ...item,
@@ -448,33 +374,12 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
     [media],
   );
 
+  if (normalizedMedia.length === 0) {
+    return null;
+  }
+
   const carouselWidth = screenWidth;
   const carouselHeight = Math.min(screenWidth * 0.76, 360);
-
-  const heartScale = useSharedValue(0.6);
-  const heartOpacity = useSharedValue(0);
-
-  const heartStyle = useAnimatedStyle(() => ({
-    opacity: heartOpacity.value,
-    transform: [{ scale: heartScale.value }],
-  }));
-
-  const triggerHeart = useCallback(() => {
-    onDoubleTapLike?.();
-
-    heartOpacity.value = 1;
-    heartScale.value = 0.72;
-
-    heartScale.value = withSequence(
-      withSpring(1.08, { damping: 10, stiffness: 180 }),
-      withTiming(1, { duration: 120 }),
-    );
-
-    heartOpacity.value = withSequence(
-      withTiming(1, { duration: 70 }),
-      withTiming(0, { duration: 420 }),
-    );
-  }, [heartOpacity, heartScale, onDoubleTapLike]);
 
   return (
     <View style={styles.mediaWrap}>
@@ -494,32 +399,14 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
           gesture.activeOffsetX([-12, 12]);
           gesture.failOffsetY([-8, 8]);
         }}
-        renderItem={({ item, index: mediaIndex }) =>
-          item.type === "VIDEO" ? (
-            <VideoSlide
-              uri={item.url}
-              active={!disabled && index === mediaIndex}
-              onSingleTap={() => onPressMedia?.(normalizedMedia, mediaIndex)}
-              onDoubleTap={triggerHeart}
-              styles={styles}
-            />
-          ) : (
-            <ImageSlide
-              uri={item.url}
-              onSingleTap={() => onPressMedia?.(normalizedMedia, mediaIndex)}
-              onDoubleTap={triggerHeart}
-              styles={styles}
-            />
-          )
-        }
+        renderItem={({ item, index: mediaIndex }) => (
+          <ImageSlide
+            uri={item.url}
+            onPress={() => onPressMedia?.(normalizedMedia, mediaIndex)}
+            styles={styles}
+          />
+        )}
       />
-
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.heartOverlay, heartStyle]}
-      >
-        <Ionicons name="heart" size={88} color="#ffffff" />
-      </Animated.View>
 
       {normalizedMedia.length > 1 && (
         <View style={styles.dotsRow}>
@@ -539,6 +426,7 @@ export default function CommunityPostCard({
   post,
   disableMediaPlayback = false,
   onPressLike,
+  onPressDislike,
   onPressComment,
   onPressShare,
   onPressAuthor,
@@ -554,15 +442,26 @@ export default function CommunityPostCard({
 
   const authorName = getAuthorName(post.author);
   const authorImage = toAbsoluteFileUrl(post.author.image) ?? undefined;
-  const hasMedia = !!post.media?.length;
+  const hasMedia = Boolean(post.media?.length);
   const tagLabel = getPostTagLabel(post.tag);
+
+  /**
+   * Only YouTube is embedded now.
+   * TikTok and every other URL will appear as a normal shared link card.
+   */
+  const hasYouTubeEmbed =
+    !hasMedia &&
+    post.linkType === "VIDEO" &&
+    post.linkProvider === "YOUTUBE" &&
+    Boolean(post.linkExternalId);
 
   const [expanded, setExpanded] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const liked = Boolean(post.isLikedByMe);
-  const plainText = useMemo(() => htmlToPlainText(post.content), [post.content]);
+  const disliked = Boolean(post.isDislikedByMe);
 
+  const plainText = useMemo(() => htmlToPlainText(post.content), [post.content]);
   const shouldCollapse = plainText.length > 220;
 
   const htmlSource = useMemo(() => {
@@ -573,15 +472,13 @@ export default function CommunityPostCard({
 
   const contentWidth = Math.max(width - 24, 220);
 
-  const toggleLike = useCallback(() => {
+  const handleLike = useCallback(() => {
     onPressLike?.(post);
   }, [onPressLike, post]);
 
-  const handleDoubleTapLike = useCallback(() => {
-    if (liked) return;
-
-    onPressLike?.(post);
-  }, [liked, onPressLike, post]);
+  const handleDislike = useCallback(() => {
+    onPressDislike?.(post);
+  }, [onPressDislike, post]);
 
   const handleShare = useCallback(() => {
     onPressShare?.(post);
@@ -630,21 +527,15 @@ export default function CommunityPostCard({
           div: styles.htmlBody,
           p: styles.htmlParagraph,
           span: styles.htmlSpan,
-
           strong: styles.htmlStrong,
           b: styles.htmlStrong,
-
           em: styles.htmlEm,
           i: styles.htmlEm,
-
           u: styles.htmlUnderline,
-
           ul: styles.htmlList,
           ol: styles.htmlList,
           li: styles.htmlListItem,
-
           a: styles.htmlLink,
-
           h1: styles.htmlH1,
           h2: styles.htmlH2,
           h3: styles.htmlH3,
@@ -672,9 +563,7 @@ export default function CommunityPostCard({
           style={styles.authorRow}
         >
           <Avatar alt="" size="md" variant="soft" color="accent">
-            {authorImage ? (
-              <Avatar.Image source={{ uri: authorImage }} />
-            ) : null}
+            {authorImage ? <Avatar.Image source={{ uri: authorImage }} /> : null}
 
             <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
           </Avatar>
@@ -782,7 +671,7 @@ export default function CommunityPostCard({
 
           {shouldCollapse && (
             <Pressable
-              onPress={() => setExpanded((prev) => !prev)}
+              onPress={() => setExpanded((previous) => !previous)}
               style={styles.seeMoreWrap}
             >
               <Text style={styles.seeMoreText}>
@@ -793,26 +682,45 @@ export default function CommunityPostCard({
         </View>
       ) : null}
 
-      {!!post.linkUrl && !hasMedia && (
+      {hasYouTubeEmbed && post.linkExternalId ? (
+        <YouTubeEmbedPlayer
+          videoId={post.linkExternalId}
+          thumbnailUrl={post.linkThumbnailUrl}
+          title={post.linkTitle ?? post.title ?? "YouTube video"}
+          sourceUrl={post.linkUrl}
+          playbackDisabled={disableMediaPlayback}
+        />
+      ) : !!post.linkUrl && !hasMedia ? (
         <Pressable
           style={styles.linkCard}
           onPress={() => handleOpenLink(null, post.linkUrl ?? undefined)}
         >
-          <Ionicons name="link-outline" size={16} color={colors.link} />
+          <View style={styles.linkIconWrap}>
+            <Ionicons name="link-outline" size={18} color={colors.link} />
+          </View>
 
-          <Text numberOfLines={1} style={styles.linkText}>
-            {post.linkUrl}
-          </Text>
+          <View style={styles.linkContent}>
+            <Text numberOfLines={1} style={styles.linkTitle}>
+              {post.linkTitle?.trim() || "Shared link"}
+            </Text>
+
+            {!!post.linkDescription?.trim() && (
+              <Text numberOfLines={2} style={styles.linkDescription}>
+                {post.linkDescription}
+              </Text>
+            )}
+
+            <Text numberOfLines={1} style={styles.linkText}>
+              {post.linkUrl}
+            </Text>
+          </View>
         </Pressable>
-      )}
+      ) : null}
 
       {hasMedia ? (
         <PostMediaCarousel
           media={post.media ?? []}
-          disabled={disableMediaPlayback}
           onPressMedia={onPressMedia}
-          onDoubleTapLike={handleDoubleTapLike}
-          colors={colors}
           styles={styles}
         />
       ) : null}
@@ -826,32 +734,53 @@ export default function CommunityPostCard({
         />
       ) : null}
 
-      <View style={styles.reactionsRow}>
-        <ReactionButton
-          icon={liked ? "heart" : "heart-outline"}
-          label={actionLabel("Like", post.likeCount)}
-          active={liked}
-          onPress={toggleLike}
-          colors={colors}
-          styles={styles}
-        />
+     <View style={styles.reactionsRow}>
+  <View style={styles.voteGroup}>
+    <ReactionButton
+      compact
+      icon={liked ? "arrow-up-circle" : "arrow-up-circle-outline"}
+      label={formatCount(post.likeCount) || "Like"}
+      accessibilityLabel={liked ? "Remove like" : "Like post"}
+      active={liked}
+      activeColor={colors.accent}
+      onPress={handleLike}
+      colors={colors}
+      styles={styles}
+    />
 
-        <ReactionButton
-          icon="chatbubble-outline"
-          label={actionLabel("Comment", post.commentCount)}
-          onPress={() => onPressComment?.(post)}
-          colors={colors}
-          styles={styles}
-        />
+    <View style={styles.voteDivider} />
 
-        <ReactionButton
-          icon="share-social-outline"
-          label={actionLabel("Share", post.shareCount)}
-          onPress={handleShare}
-          colors={colors}
-          styles={styles}
-        />
-      </View>
+    <ReactionButton
+      compact
+      icon={disliked ? "arrow-down-circle" : "arrow-down-circle-outline"}
+      label={formatCount(post.dislikeCount) || "Dislike"}
+      accessibilityLabel={disliked ? "Remove dislike" : "Dislike post"}
+      active={disliked}
+      activeColor={colors.danger}
+      onPress={handleDislike}
+      colors={colors}
+      styles={styles}
+    />
+  </View>
+
+  <ReactionButton
+    icon="chatbubble-outline"
+    label={formatCount(post.commentCount) || "Comment"}
+    accessibilityLabel="Comment on post"
+    onPress={() => onPressComment?.(post)}
+    colors={colors}
+    styles={styles}
+  />
+
+  <ReactionButton
+    icon="share-social-outline"
+    label={formatCount(post.shareCount) || "Share"}
+    accessibilityLabel="Share post"
+    onPress={handleShare}
+    colors={colors}
+    styles={styles}
+  />
+</View>
 
       <Dialog isOpen={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <Dialog.Portal>
@@ -1183,21 +1112,52 @@ function createStyles(colors: AppColors) {
 
     linkCard: {
       marginHorizontal: 12,
+      marginTop: 2,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceSecondary,
-      borderRadius: 14,
-      paddingHorizontal: 10,
-      paddingVertical: 9,
+      borderRadius: 16,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
       flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+    },
+
+    linkIconWrap: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
       alignItems: "center",
-      gap: 8,
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    linkContent: {
+      flex: 1,
+      gap: 2,
+    },
+
+    linkTitle: {
+      color: colors.foreground,
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    linkDescription: {
+      color: colors.muted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
     },
 
     linkText: {
-      width: "92%",
       color: colors.link,
-      fontSize: 13,
+      fontSize: 12,
+      lineHeight: 18,
       fontFamily: "Poppins_500Medium",
     },
 
@@ -1214,15 +1174,6 @@ function createStyles(colors: AppColors) {
       width: "100%",
       height: "100%",
       backgroundColor: colors.surface,
-    },
-
-    heartOverlay: {
-      position: "absolute",
-      top: "50%",
-      left: "50%",
-      marginLeft: -44,
-      marginTop: -44,
-      zIndex: 20,
     },
 
     dotsRow: {
@@ -1377,38 +1328,62 @@ function createStyles(colors: AppColors) {
 
     reactionsRow: {
       width: "100%",
-      flexDirection: "row",
-      justifyContent: "space-between",
-      paddingTop: 6,
-      paddingHorizontal: 8,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-    },
-
-    reactionButton: {
-      width: "32.2%",
-      minHeight: 36,
-      borderRadius: 12,
-      paddingHorizontal: 6,
+      minHeight:50,
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
-      gap: 5,
+      gap:5,
+      paddingTop:7,
+      paddingHorizontal: 10,
+      borderTopWidth:StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    voteGroup:{
+     height:40,
+     flexDirection:"row",
+    alignItems:"center",
+    borderRadius:999,
+    borderWidth:StyleSheet.hairlineWidth,
+    borderColor:colors.border,
+    backgroundColor:colors.surfaceSecondary,
+    overflow:"hidden",
+
     },
 
-    reactionButtonPressed: {
-      backgroundColor: colors.segment,
+    voteDivider:{
+    width:StyleSheet.hairlineWidth,
+    height:22,
+    backgroundColor:colors.border,
+    },
+    reactionButton:{
+    flex:1,
+    minHeight:40,
+    borderRadius:12,
+    paddingHorizontal:3,
+    flexDirection:"row",
+    alignItems:"center",
+    justifyContent:"center",
+    gap:3,
     },
 
-    reactionText: {
-      color: colors.muted,
-      fontSize: 12,
-      fontFamily: "Poppins_500Medium",
+    compactReactionButton:{
+    flex:0,
+    minWidth:67,
+    paddingHorizontal:8,
+    borderRadius:0,
     },
 
-    reactionTextActive: {
-      color: colors.accent,
+    reactionButtonPressed:{
+ backgroundColor: colors.segment,
     },
+
+    reactionText:{
+   flexShrink:1,
+   color:colors.muted,
+   fontSize:11,
+   fontFamily:"Poppins_500Medium",
+  
+    },
+
 
     dialogContent: {
       gap: 14,

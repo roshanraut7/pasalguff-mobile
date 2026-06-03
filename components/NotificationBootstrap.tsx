@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Platform } from "react-native";
 import { useDispatch } from "react-redux";
 
+import { useSession } from "@/api/better-auth-client";
 import {
   getFcmToken,
   listenForegroundNotifications,
@@ -11,56 +12,77 @@ import {
   notificationApi,
   useRegisterPushTokenMutation,
 } from "@/store/api/notificationApi";
-import { useSession } from "@/api/better-auth-client";
 
 export default function NotificationBootstrap() {
   const dispatch = useDispatch();
   const { data: session } = useSession();
   const [registerPushToken] = useRegisterPushTokenMutation();
 
+  // Use only primitive userId, not the full session.user object.
+  const userId = session?.user?.id;
+
   useEffect(() => {
-    if (!session?.user) return;
+    if (!userId) return;
 
-    let unsubscribeTokenRefresh: (() => void) | undefined;
-    let unsubscribeForeground: (() => void) | undefined;
+    let cancelled = false;
 
-    async function setupNotifications() {
+    /*
+     * Register listeners immediately.
+     * This makes cleanup reliable and avoids old async setup
+     * finishing later and leaving duplicate listeners active.
+     */
+    const unsubscribeForeground = listenForegroundNotifications(() => {
+      if (cancelled) return;
+
+      dispatch(notificationApi.util.invalidateTags(["Notifications"]));
+    });
+
+    const unsubscribeTokenRefresh = listenForFcmTokenRefresh((newToken) => {
+      if (cancelled) return;
+
+      void registerPushToken({
+        token: newToken,
+        platform: Platform.OS,
+      })
+        .unwrap()
+        .then(() => {
+          console.log("Refreshed push token saved to backend");
+        })
+        .catch((error) => {
+          console.log("Failed to save refreshed push token:", error);
+        });
+    });
+
+    async function registerCurrentToken() {
       try {
         const token = await getFcmToken();
 
-        if (token) {
-          await registerPushToken({
-            token,
-            platform: Platform.OS,
-          }).unwrap();
+        if (cancelled || !token) return;
 
-          console.log("Push token saved to backend");
-        }
+        await registerPushToken({
+          token,
+          platform: Platform.OS,
+        }).unwrap();
 
-        unsubscribeTokenRefresh = listenForFcmTokenRefresh(async (newToken) => {
-          await registerPushToken({
-            token: newToken,
-            platform: Platform.OS,
-          }).unwrap();
-
-          console.log("Refreshed push token saved to backend");
-        });
-
-        unsubscribeForeground = listenForegroundNotifications(() => {
-          dispatch(notificationApi.util.invalidateTags(["Notifications"]));
-        });
+        console.log("Push token saved to backend");
       } catch (error) {
-        console.log("Notification setup failed:", error);
+        if (!cancelled) {
+          console.log("Notification setup failed:", error);
+        }
       }
     }
 
-    setupNotifications();
+    void registerCurrentToken();
 
     return () => {
-      unsubscribeTokenRefresh?.();
-      unsubscribeForeground?.();
+      cancelled = true;
+
+      unsubscribeForeground();
+      unsubscribeTokenRefresh();
+
+      console.log("Notification listeners removed");
     };
-  }, [session?.user, registerPushToken, dispatch]);
+  }, [userId, registerPushToken, dispatch]);
 
   return null;
 }
