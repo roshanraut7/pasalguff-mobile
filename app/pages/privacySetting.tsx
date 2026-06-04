@@ -186,9 +186,13 @@ export default function PrivacySettingsScreen() {
     router.push("/pages/editprofile");
   };
 
-  const handleCreateCommunity = () => {
-    router.push("/pages/createCommunity");
-  };
+const handleCreateCommunity = () => {
+  router.push("/pages/createCommunity");
+};
+
+const handleOpenPostInsights = () => {
+  router.push("/pages/postInsight");
+};
 
   const handleLogout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -420,11 +424,44 @@ export default function PrivacySettingsScreen() {
           {renderSection("Profile", PROFILE_PRIVACY_ROWS)}
 
           {renderSection("Social", SOCIAL_PRIVACY_ROWS)}
+{renderSection("Communication", COMMUNICATION_ROWS)}
 
-          {renderSection("Communication", COMMUNICATION_ROWS)}
+<View style={styles.section}>
+  <Text style={styles.sectionTitle}>Creator Tools</Text>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Session</Text>
+  <View style={styles.card}>
+    <Pressable
+      onPress={handleOpenPostInsights}
+      style={({ pressed }) => [
+        styles.compactRow,
+        {
+          opacity: pressed ? 0.75 : 1,
+        },
+      ]}
+    >
+      <View style={styles.rowLeft}>
+        <View style={styles.iconWrap}>
+          <Ionicons
+            name="stats-chart-outline"
+            size={19}
+            color={colors.accent}
+          />
+        </View>
+
+        <Text style={styles.rowTitle}>Post Insights</Text>
+      </View>
+
+      <Ionicons
+        name="chevron-forward"
+        size={18}
+        color={colors.muted}
+      />
+    </Pressable>
+  </View>
+</View>
+
+<View style={styles.section}>
+  <Text style={styles.sectionTitle}>Session</Text>
 
             <View style={styles.card}>
               <Pressable

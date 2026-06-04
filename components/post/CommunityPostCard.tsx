@@ -13,7 +13,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Avatar, Dialog, Menu, Surface } from "heroui-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons,MaterialCommunityIcons,Entypo } from "@expo/vector-icons";
 import Carousel from "react-native-reanimated-carousel";
 import { Image as ExpoImage } from "expo-image";
 import RenderHTML, { defaultSystemFonts } from "react-native-render-html";
@@ -157,19 +157,25 @@ function getPollOptionPercentage(
 
 const ReactionButton = memo(function ReactionButton({
   icon,
+  iconFamily = "ionicons",
   label,
   active = false,
   activeColor,
+  inactiveColor,
   compact = false,
   onPress,
   accessibilityLabel,
   colors,
   styles,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon:
+    | keyof typeof Ionicons.glyphMap
+    | keyof typeof MaterialCommunityIcons.glyphMap;
+  iconFamily?: "ionicons" | "material-community";
   label: string;
   active?: boolean;
   activeColor?: string;
+  inactiveColor?: string;
   compact?: boolean;
   onPress?: () => void;
   accessibilityLabel?: string;
@@ -177,6 +183,9 @@ const ReactionButton = memo(function ReactionButton({
   styles: ReturnType<typeof createStyles>;
 }) {
   const selectedColor = activeColor ?? colors.accent;
+  const iconColor = active
+    ? selectedColor
+    : inactiveColor ?? colors.muted;
 
   return (
     <Pressable
@@ -189,11 +198,19 @@ const ReactionButton = memo(function ReactionButton({
         pressed && styles.reactionButtonPressed,
       ]}
     >
-      <Ionicons
-        name={icon}
-        size={19}
-        color={active ? selectedColor : colors.muted}
-      />
+      {iconFamily === "material-community" ? (
+        <MaterialCommunityIcons
+          name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
+          size={19}
+          color={iconColor}
+        />
+      ) : (
+        <Ionicons
+          name={icon as keyof typeof Ionicons.glyphMap}
+          size={19}
+          color={iconColor}
+        />
+      )}
 
       <Text
         numberOfLines={1}
@@ -738,7 +755,8 @@ export default function CommunityPostCard({
   <View style={styles.voteGroup}>
     <ReactionButton
       compact
-      icon={liked ? "arrow-up-circle" : "arrow-up-circle-outline"}
+      iconFamily="material-community"
+       icon={liked ? "thumb-up" : "thumb-up-outline"}
       label={formatCount(post.likeCount) || "Like"}
       accessibilityLabel={liked ? "Remove like" : "Like post"}
       active={liked}
@@ -752,7 +770,8 @@ export default function CommunityPostCard({
 
     <ReactionButton
       compact
-      icon={disliked ? "arrow-down-circle" : "arrow-down-circle-outline"}
+      iconFamily="material-community"
+      icon={disliked ? "thumb-down" : "thumb-down-outline"}
       label={formatCount(post.dislikeCount) || "Dislike"}
       accessibilityLabel={disliked ? "Remove dislike" : "Dislike post"}
       active={disliked}

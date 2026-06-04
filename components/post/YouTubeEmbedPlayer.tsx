@@ -1,6 +1,7 @@
 import React, {
   memo,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -91,6 +92,7 @@ const YouTubeEmbedPlayer = memo(function YouTubeEmbedPlayer({
   thumbnailUrl,
   title,
   sourceUrl,
+  playbackDisabled = false,
 }: YouTubeEmbedPlayerProps) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -98,10 +100,12 @@ const YouTubeEmbedPlayer = memo(function YouTubeEmbedPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerFailed, setPlayerFailed] = useState(false);
 
-  /**
-   * YouTube can trigger both onOpenWindow and navigation handling
-   * from one press. This avoids opening YouTube twice.
-   */
+  useEffect(() => {
+    if (playbackDisabled) {
+      setIsPlaying(false);
+    }
+  }, [playbackDisabled]);
+
   const isOpeningYouTubeRef = useRef(false);
 
   if (!isSafeYouTubeId(videoId)) {
@@ -119,10 +123,6 @@ const YouTubeEmbedPlayer = memo(function YouTubeEmbedPlayer({
     sourceUrl?.trim() ||
     `https://www.youtube.com/watch?v=${encodedId}`;
 
-  /**
-   * The large play button loads this official YouTube embed URL
-   * inside the application WebView.
-   */
   const embedUrl =
     `https://www.youtube.com/embed/${encodedId}` +
     "?playsinline=1" +
@@ -131,14 +131,12 @@ const YouTubeEmbedPlayer = memo(function YouTubeEmbedPlayer({
     "&autoplay=1";
 
   const startInlinePlayback = useCallback(() => {
+    if (playbackDisabled) return;
+
     setPlayerFailed(false);
     setIsPlaying(true);
-  }, []);
+  }, [playbackDisabled]);
 
-  /**
-   * Try to open the installed YouTube app first.
-   * Fall back to the public HTTPS watch URL when the app cannot open.
-   */
   const openInYouTubeApp = useCallback(async () => {
     if (isOpeningYouTubeRef.current) {
       return;
@@ -169,12 +167,6 @@ const YouTubeEmbedPlayer = memo(function YouTubeEmbedPlayer({
     }
   }, [encodedId, watchUrl]);
 
-  /**
-   * Keep the embedded player inside the post card.
-   * If YouTube tries to navigate to its normal website from the
-   * official logo or "Watch on YouTube" control, stop that website
-   * from replacing the WebView and open the YouTube app instead.
-   */
   const handleShouldStartLoadWithRequest = useCallback(
     (request: { url: string }) => {
       const requestedUrl = request.url;
@@ -196,7 +188,7 @@ const YouTubeEmbedPlayer = memo(function YouTubeEmbedPlayer({
   return (
     <View style={styles.container}>
       <View style={styles.playerFrame}>
-        {isPlaying && !playerFailed ? (
+        {isPlaying && !playerFailed && !playbackDisabled ? (
           <WebView
             source={{
               uri: embedUrl,
@@ -238,6 +230,7 @@ const YouTubeEmbedPlayer = memo(function YouTubeEmbedPlayer({
             accessibilityRole="button"
             accessibilityLabel="Play YouTube video inside the app"
             onPress={startInlinePlayback}
+            disabled={playbackDisabled}
             style={styles.previewButton}
           >
             <ExpoImage
