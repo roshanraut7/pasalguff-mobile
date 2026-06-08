@@ -1,12 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,26 +21,31 @@ const permissionOptions = [
   {
     key: "canEditCommunity",
     title: "Edit community",
+    description: "Can update community information.",
     icon: "create-outline",
   },
   {
     key: "canManageMembers",
     title: "Manage members",
+    description: "Can remove, ban, and manage members.",
     icon: "people-outline",
   },
   {
     key: "canManagePosts",
     title: "Manage posts",
+    description: "Can manage community posts.",
     icon: "newspaper-outline",
   },
   {
     key: "canManageComments",
     title: "Manage comments",
+    description: "Can moderate comments.",
     icon: "chatbubbles-outline",
   },
   {
     key: "canManageReports",
     title: "Manage reports",
+    description: "Can review reports.",
     icon: "flag-outline",
   },
 ] as const;
@@ -68,14 +68,12 @@ type ModeratorPermissionFormProps = {
   mode: ModeratorPermissionFormMode;
   isVisible?: boolean;
   defaultValues?: Partial<ModeratorPermissionValues>;
-  title?: string;
-  subtitle?: string;
   isSubmitting?: boolean;
   onCancel: () => void;
   onSubmit: (values: ModeratorPermissionValues) => Promise<void> | void;
 };
 
-const MEMBER_PAGE_SIZE = 20;
+const MEMBER_PAGE_SIZE = 50;
 
 const updateModeratorPermissionSchema = z.object({
   targetUserId: z.string().trim().optional(),
@@ -133,292 +131,11 @@ function getMemberKey(member: CommunityMemberItem) {
   return member.userId || member.user?.id || member.id;
 }
 
-function mergeUniqueMembers(
-  previous: CommunityMemberItem[],
-  incoming: CommunityMemberItem[],
-) {
-  const map = new Map<string, CommunityMemberItem>();
-
-  for (const member of previous) {
-    map.set(getMemberKey(member), member);
-  }
-
-  for (const member of incoming) {
-    map.set(getMemberKey(member), member);
-  }
-
-  return Array.from(map.values());
-}
-
-function isNormalActiveMember(member: CommunityMemberItem) {
-  return (
-    member.role === "MEMBER" &&
-    member.status !== "LEFT" &&
-    member.status !== "BANNED"
-  );
-}
-
-type MemberPickerModalProps = {
-  visible: boolean;
-  members: CommunityMemberItem[];
-  selectedUserId?: string;
-  searchValue: string;
-  isLoading: boolean;
-  isFetching: boolean;
-  hasNextPage: boolean;
-  error?: unknown;
-  onSearchChange: (value: string) => void;
-  onSelect: (member: CommunityMemberItem) => void;
-  onClose: () => void;
-  onRefresh: () => void;
-  onLoadMore: () => void;
-};
-
-function MemberPickerModal({
-  visible,
-  members,
-  selectedUserId,
-  searchValue,
-  isLoading,
-  isFetching,
-  hasNextPage,
-  error,
-  onSearchChange,
-  onSelect,
-  onClose,
-  onRefresh,
-  onLoadMore,
-}: MemberPickerModalProps) {
-  const { colors } = useAppTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-
-  const renderMemberItem = useCallback(
-    ({ item }: { item: CommunityMemberItem }) => {
-      const name = getUserDisplayName(item);
-      const imageUrl = toAbsoluteFileUrl(item.user?.image);
-      const memberUserId = getMemberKey(item);
-      const selected = memberUserId === selectedUserId;
-      const canAssign = isNormalActiveMember(item);
-
-      return (
-        <Pressable
-          disabled={!canAssign}
-          onPress={() => onSelect(item)}
-          style={({ pressed }) => [
-            styles.pickerMemberRow,
-            selected && styles.pickerMemberRowSelected,
-            !canAssign && styles.memberRowDisabled,
-            pressed && canAssign ? { opacity: 0.75 } : null,
-          ]}
-        >
-          <Avatar alt={name} size="md" variant="soft" color="success">
-            {imageUrl ? <Avatar.Image source={{ uri: imageUrl }} /> : null}
-
-            <Avatar.Fallback>{getInitials(name)}</Avatar.Fallback>
-          </Avatar>
-
-          <View style={styles.memberTextWrap}>
-            <Text numberOfLines={1} style={styles.memberName}>
-              {name}
-            </Text>
-
-            <Text numberOfLines={1} style={styles.memberSubtitle}>
-              {getUserSubtitle(item)}
-            </Text>
-          </View>
-
-          {canAssign ? (
-            <Ionicons
-              name={selected ? "checkmark-circle" : "ellipse-outline"}
-              size={23}
-              color={selected ? colors.accent : colors.muted}
-            />
-          ) : (
-            <Text style={styles.memberBadge}>{item.role}</Text>
-          )}
-        </Pressable>
-      );
-    },
-    [
-      colors.accent,
-      colors.muted,
-      onSelect,
-      selectedUserId,
-      styles.memberBadge,
-      styles.memberName,
-      styles.memberRowDisabled,
-      styles.memberSubtitle,
-      styles.memberTextWrap,
-      styles.pickerMemberRow,
-      styles.pickerMemberRowSelected,
-    ],
-  );
-
-  const listEmptyComponent = useMemo(() => {
-    if (isLoading) {
-      return (
-        <View style={styles.pickerEmptyBox}>
-          <ActivityIndicator size="small" color={colors.accent} />
-
-          <Text style={styles.emptySubtitle}>Loading members...</Text>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.pickerEmptyBox}>
-        <Ionicons name="people-outline" size={24} color={colors.muted} />
-
-        <Text style={styles.emptyTitle}>No active members found</Text>
-
-        <Text style={styles.emptySubtitle}>
-          Try another search or pull down to refresh.
-        </Text>
-      </View>
-    );
-  }, [
-    colors.accent,
-    colors.muted,
-    isLoading,
-    styles.emptySubtitle,
-    styles.emptyTitle,
-    styles.pickerEmptyBox,
-  ]);
-
-  const listFooterComponent = useMemo(() => {
-    if (isFetching && members.length > 0) {
-      return (
-        <View style={styles.pickerFooter}>
-          <ActivityIndicator size="small" color={colors.accent} />
-        </View>
-      );
-    }
-
-    if (hasNextPage) {
-      return (
-        <View style={styles.pickerFooter}>
-          <Text style={styles.loadMoreText}>Scroll for more members</Text>
-        </View>
-      );
-    }
-
-    return <View style={styles.pickerFooter} />;
-  }, [
-    colors.accent,
-    hasNextPage,
-    isFetching,
-    members.length,
-    styles.loadMoreText,
-    styles.pickerFooter,
-  ]);
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView
-        style={styles.modalKeyboardWrap}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <View style={styles.pickerBackdrop}>
-          <Pressable onPress={onClose} style={styles.pickerBackdropPressable} />
-
-          <View style={styles.pickerOverlay}>
-            <View style={styles.pickerHeader}>
-  <View style={styles.pickerHeaderText}>
-    <Text numberOfLines={1} style={styles.pickerTitle}>
-      Choose active member
-    </Text>
-
-    <Text numberOfLines={2} style={styles.pickerSubtitle}>
-      Search and select a member to assign as moderator.
-    </Text>
-  </View>
-
-  <Pressable onPress={onClose} style={styles.closeButton}>
-    <Ionicons name="close" size={20} color={colors.foreground} />
-  </Pressable>
-</View>
-
-            <View style={styles.searchBox}>
-              <Ionicons name="search-outline" size={18} color={colors.muted} />
-
-              <TextInput
-                value={searchValue}
-                onChangeText={onSearchChange}
-                placeholder="Search member by name, email or business"
-                placeholderTextColor={colors.placeholder}
-                autoCapitalize="none"
-                autoCorrect={false}
-                blurOnSubmit={false}
-                returnKeyType="search"
-                style={styles.searchInput}
-              />
-
-              {searchValue ? (
-                <Pressable onPress={() => onSearchChange("")} hitSlop={10}>
-                  <Ionicons
-                    name="close-circle"
-                    size={18}
-                    color={colors.muted}
-                  />
-                </Pressable>
-              ) : null}
-            </View>
-
-            {error ? (
-              <View style={styles.inlineErrorBox}>
-                <Ionicons
-                  name="alert-circle-outline"
-                  size={17}
-                  color={colors.danger}
-                />
-
-                <Text style={styles.inlineErrorText}>
-                  Failed to load members. Pull down to refresh.
-                </Text>
-              </View>
-            ) : null}
-
-            <FlatList
-              data={members}
-              keyExtractor={(item) => getMemberKey(item)}
-              renderItem={renderMemberItem}
-              ListEmptyComponent={listEmptyComponent}
-              ListFooterComponent={listFooterComponent}
-              refreshControl={
-                <RefreshControl
-                  refreshing={isFetching && members.length === 0}
-                  onRefresh={onRefresh}
-                  tintColor={colors.accent}
-                />
-              }
-              onEndReached={onLoadMore}
-              onEndReachedThreshold={0.35}
-              keyboardShouldPersistTaps="always"
-              keyboardDismissMode="none"
-              removeClippedSubviews={false}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.pickerListContent}
-            />
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 export default function ModeratorPermissionForm({
   communityId,
   mode,
   isVisible = true,
   defaultValues,
-  title,
-  subtitle,
   isSubmitting = false,
   onCancel,
   onSubmit,
@@ -436,21 +153,14 @@ export default function ModeratorPermissionForm({
   >({});
 
   const [generalError, setGeneralError] = useState("");
-
-  const [memberPickerVisible, setMemberPickerVisible] = useState(false);
   const [selectedMemberSnapshot, setSelectedMemberSnapshot] =
     useState<CommunityMemberItem | null>(null);
 
   const [memberSearch, setMemberSearch] = useState("");
   const [debouncedMemberSearch, setDebouncedMemberSearch] = useState("");
-  const [memberPage, setMemberPage] = useState(1);
-  const [memberItems, setMemberItems] = useState<CommunityMemberItem[]>([]);
 
   const shouldFetchMembers =
-    mode === "assign" &&
-    isVisible &&
-    memberPickerVisible &&
-    Boolean(communityId);
+    mode === "assign" && isVisible && Boolean(communityId);
 
   const {
     data: membersResponse,
@@ -461,7 +171,7 @@ export default function ModeratorPermissionForm({
   } = useGetCommunityMembersQuery(
     {
       communityId,
-      page: memberPage,
+      page: 1,
       limit: MEMBER_PAGE_SIZE,
       search: debouncedMemberSearch || undefined,
       status: "ACTIVE",
@@ -472,20 +182,29 @@ export default function ModeratorPermissionForm({
     },
   );
 
-  const totalPages = Math.max(1, membersResponse?.meta?.totalPages ?? 1);
-  const hasNextMemberPage = memberPage < totalPages;
+  const activeMembers = useMemo(() => {
+    return membersResponse?.data ?? [];
+  }, [membersResponse?.data]);
 
-  const selectedMemberName = useMemo(() => {
+  const selectedMember = useMemo(() => {
     if (selectedMemberSnapshot) {
-      return getUserDisplayName(selectedMemberSnapshot);
+      return selectedMemberSnapshot;
     }
 
-    if (values.targetUserId) {
-      return "Selected member";
+    if (!values.targetUserId) {
+      return null;
     }
 
-    return "";
-  }, [selectedMemberSnapshot, values.targetUserId]);
+    return (
+      activeMembers.find(
+        (member) => getMemberKey(member) === values.targetUserId,
+      ) ?? null
+    );
+  }, [activeMembers, selectedMemberSnapshot, values.targetUserId]);
+
+  const selectedPermissionCount = useMemo(() => {
+    return permissionOptions.filter((option) => values[option.key]).length;
+  }, [values]);
 
   useEffect(() => {
     setValues({
@@ -496,84 +215,42 @@ export default function ModeratorPermissionForm({
     setErrors({});
     setGeneralError("");
     setSelectedMemberSnapshot(null);
+    setMemberSearch("");
+    setDebouncedMemberSearch("");
   }, [mode, defaultValues, isVisible]);
 
   useEffect(() => {
-    if (!isVisible) {
-      setMemberPickerVisible(false);
-      setMemberSearch("");
-      setDebouncedMemberSearch("");
-      setMemberPage(1);
-      setMemberItems([]);
-    }
-  }, [isVisible]);
-
-  useEffect(() => {
-    if (!memberPickerVisible) return;
-
-    setMemberPage(1);
-    setMemberItems([]);
-  }, [memberPickerVisible, communityId]);
-
-  useEffect(() => {
-    if (!memberPickerVisible) return;
-
-    const timer = setTimeout(() => {
-      const nextSearch = memberSearch.trim();
-
-      setDebouncedMemberSearch((previous) => {
-        if (previous === nextSearch) return previous;
-        return nextSearch;
-      });
-
-      setMemberPage((previous) => {
-        if (previous === 1) return previous;
-        return 1;
-      });
-
-      setMemberItems([]);
-    }, 450);
-
-    return () => clearTimeout(timer);
-  }, [memberSearch, memberPickerVisible]);
-
-  useEffect(() => {
-    const incoming = membersResponse?.data ?? [];
-
     if (!shouldFetchMembers) return;
 
-    setMemberItems((previous) => {
-      if (memberPage === 1) {
-        return incoming;
-      }
+    const timer = setTimeout(() => {
+      setDebouncedMemberSearch(memberSearch.trim());
+    }, 350);
 
-      return mergeUniqueMembers(previous, incoming);
-    });
-  }, [membersResponse?.data, memberPage, shouldFetchMembers]);
-
-  const openMemberPicker = useCallback(() => {
-    if (isSubmitting) return;
-
-    setMemberPickerVisible(true);
-  }, [isSubmitting]);
-
-  const closeMemberPicker = useCallback(() => {
-    setMemberPickerVisible(false);
-    setMemberSearch("");
-    setDebouncedMemberSearch("");
-    setMemberPage(1);
-    setMemberItems([]);
-  }, []);
-
-  const handleMemberSearchChange = useCallback((text: string) => {
-    setMemberSearch(text);
-  }, []);
+    return () => clearTimeout(timer);
+  }, [memberSearch, shouldFetchMembers]);
 
   const handleSelectMember = useCallback(
     (member: CommunityMemberItem) => {
-      if (!isNormalActiveMember(member) || isSubmitting) return;
+      if (isSubmitting) return;
 
       const targetUserId = getMemberKey(member);
+      const isAlreadySelected = values.targetUserId === targetUserId;
+
+      if (isAlreadySelected) {
+        setValues((previous) => ({
+          ...previous,
+          targetUserId: "",
+        }));
+
+        setSelectedMemberSnapshot(null);
+
+        setErrors((previous) => ({
+          ...previous,
+          targetUserId: undefined,
+        }));
+
+        return;
+      }
 
       setValues((previous) => ({
         ...previous,
@@ -586,10 +263,8 @@ export default function ModeratorPermissionForm({
         ...previous,
         targetUserId: undefined,
       }));
-
-      closeMemberPicker();
     },
-    [closeMemberPicker, isSubmitting],
+    [isSubmitting, values.targetUserId],
   );
 
   const setPermission = useCallback((key: PermissionKey, nextValue: boolean) => {
@@ -603,24 +278,6 @@ export default function ModeratorPermissionForm({
       [key]: undefined,
     }));
   }, []);
-
-  const handleRefreshMembers = useCallback(() => {
-    if (!shouldFetchMembers) return;
-
-    if (memberPage === 1) {
-      refetchMembers();
-      return;
-    }
-
-    setMemberPage(1);
-    setMemberItems([]);
-  }, [memberPage, refetchMembers, shouldFetchMembers]);
-
-  const handleLoadMoreMembers = useCallback(() => {
-    if (!hasNextMemberPage || isFetchingMembers || isLoadingMembers) return;
-
-    setMemberPage((previous) => previous + 1);
-  }, [hasNextMemberPage, isFetchingMembers, isLoadingMembers]);
 
   const handleSubmit = useCallback(async () => {
     setErrors({});
@@ -655,77 +312,202 @@ export default function ModeratorPermissionForm({
   }, [mode, onSubmit, values]);
 
   return (
-    <>
+    <View style={styles.formRoot}>
       <ScrollView
+        style={styles.formScroll}
         keyboardShouldPersistTaps="always"
         keyboardDismissMode="none"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.formContent}
       >
-        <View style={styles.header}>
-          <View style={styles.headerIcon}>
-            <Ionicons
-              name={
-                mode === "assign"
-                  ? "shield-checkmark-outline"
-                  : "options-outline"
-              }
-              size={21}
-              color={colors.accent}
-            />
-          </View>
-
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>
-              {title ??
-                (mode === "assign"
-                  ? "Assign moderator"
-                  : "Edit permissions")}
-            </Text>
-
-            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-          </View>
-        </View>
-
         {mode === "assign" ? (
-          <View style={styles.memberSection}>
-            <Text style={styles.sectionTitle}>Choose active member</Text>
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>Select member</Text>
 
-            <Pressable
-              disabled={isSubmitting}
-              onPress={openMemberPicker}
-              style={({ pressed }) => [
-                styles.dropdownButton,
-                values.targetUserId && styles.dropdownButtonSelected,
-                pressed && !isSubmitting ? { opacity: 0.75 } : null,
-              ]}
-            >
-              <View style={styles.dropdownIcon}>
-                <Ionicons
-                  name={values.targetUserId ? "person" : "person-outline"}
-                  size={18}
-                  color={values.targetUserId ? colors.accent : colors.muted}
-                />
+                <Text style={styles.sectionSubtitle}>
+                  {selectedMember
+                    ? `${getUserDisplayName(selectedMember)} selected`
+                    : "Choose one active member"}
+                </Text>
               </View>
 
-              <View style={{ flex: 1 }}>
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.dropdownTitle,
-                    !values.targetUserId && { color: colors.placeholder },
+              {selectedMember ? (
+                <Pressable
+                  disabled={isSubmitting}
+                  onPress={() => {
+                    setValues((previous) => ({
+                      ...previous,
+                      targetUserId: "",
+                    }));
+                    setSelectedMemberSnapshot(null);
+                  }}
+                  style={({ pressed }) => [
+                    styles.clearSelectionButton,
+                    pressed && !isSubmitting ? { opacity: 0.7 } : null,
                   ]}
                 >
-                  {selectedMemberName || "Search and select member"}
-                </Text>
+                  <Text style={styles.clearSelectionText}>Clear</Text>
+                </Pressable>
+              ) : null}
+            </View>
 
-                <Text numberOfLines={1} style={styles.dropdownSubtitle}>
-                  Tap to open searchable member dropdown
-                </Text>
+            <View style={styles.memberPickerBox}>
+              <View style={styles.memberSearchRow}>
+                <Ionicons name="search-outline" size={18} color={colors.muted} />
+
+                <TextInput
+                  value={memberSearch}
+                  onChangeText={setMemberSearch}
+                  placeholder="Search active members"
+                  placeholderTextColor={colors.placeholder}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.memberSearchInput}
+                />
+
+                {memberSearch ? (
+                  <Pressable
+                    onPress={() => {
+                      setMemberSearch("");
+                      setDebouncedMemberSearch("");
+                    }}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={colors.muted}
+                    />
+                  </Pressable>
+                ) : null}
               </View>
 
-              <Ionicons name="chevron-down" size={18} color={colors.muted} />
-            </Pressable>
+              <View style={styles.memberListDivider} />
+
+              <ScrollView
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="always"
+                showsVerticalScrollIndicator={false}
+                style={styles.memberListScroll}
+                contentContainerStyle={styles.memberListContent}
+              >
+                {isLoadingMembers ? (
+                  <View style={styles.stateBox}>
+                    <ActivityIndicator size="small" color={colors.accent} />
+
+                    <Text style={styles.stateText}>
+                      Loading active members...
+                    </Text>
+                  </View>
+                ) : null}
+
+                {membersError ? (
+                  <Pressable
+                    onPress={() => refetchMembers()}
+                    style={styles.stateBox}
+                  >
+                    <Ionicons
+                      name="alert-circle-outline"
+                      size={18}
+                      color={colors.danger}
+                    />
+
+                    <Text style={[styles.stateText, { color: colors.danger }]}>
+                      Failed to load members. Tap to retry.
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                {!isLoadingMembers &&
+                !membersError &&
+                activeMembers.length === 0 ? (
+                  <View style={styles.stateBox}>
+                    <Ionicons
+                      name="people-outline"
+                      size={18}
+                      color={colors.muted}
+                    />
+
+                    <Text style={styles.stateText}>
+                      {debouncedMemberSearch
+                        ? "No member matched your search."
+                        : "No active members found."}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {activeMembers.map((member, index) => {
+                  const memberUserId = getMemberKey(member);
+                  const name = getUserDisplayName(member);
+                  const imageUrl = toAbsoluteFileUrl(member.user?.image);
+                  const isSelected = values.targetUserId === memberUserId;
+                  const isLast = index === activeMembers.length - 1;
+
+                  return (
+                    <Pressable
+                      key={memberUserId}
+                      disabled={isSubmitting}
+                      onPress={() => handleSelectMember(member)}
+                      style={({ pressed }) => [
+                        styles.memberRow,
+                        isSelected && styles.memberRowSelected,
+                        isLast && styles.memberRowLast,
+                        pressed && !isSubmitting ? { opacity: 0.75 } : null,
+                      ]}
+                    >
+                      <Avatar alt={name} size="sm" variant="soft" color="success">
+                        {imageUrl ? (
+                          <Avatar.Image source={{ uri: imageUrl }} />
+                        ) : null}
+
+                        <Avatar.Fallback>{getInitials(name)}</Avatar.Fallback>
+                      </Avatar>
+
+                      <View style={styles.memberTextWrap}>
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.memberName,
+                            isSelected && { color: colors.accent },
+                          ]}
+                        >
+                          {name}
+                        </Text>
+
+                        <Text numberOfLines={1} style={styles.memberSubtitle}>
+                          {getUserSubtitle(member)}
+                        </Text>
+                      </View>
+
+                      {isSelected ? (
+                        <View style={styles.selectedIconWrap}>
+                          <Ionicons
+                            name="checkmark"
+                            size={15}
+                            color={colors.accentForeground}
+                          />
+                        </View>
+                      ) : (
+                        <Ionicons
+                          name="ellipse-outline"
+                          size={20}
+                          color={colors.muted}
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+
+                {isFetchingMembers && !isLoadingMembers ? (
+                  <View style={styles.stateBox}>
+                    <ActivityIndicator size="small" color={colors.accent} />
+                    <Text style={styles.stateText}>Updating list...</Text>
+                  </View>
+                ) : null}
+              </ScrollView>
+            </View>
 
             {errors.targetUserId ? (
               <Text style={styles.errorText}>{errors.targetUserId}</Text>
@@ -733,8 +515,16 @@ export default function ModeratorPermissionForm({
           </View>
         ) : null}
 
-        <View style={styles.permissionsSection}>
-          <Text style={styles.sectionTitle}>Moderator permissions</Text>
+        <View style={styles.section}>
+          <View style={styles.permissionHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionTitle}>Moderator permissions</Text>
+
+              <Text style={styles.sectionSubtitle}>
+                {selectedPermissionCount} selected
+              </Text>
+            </View>
+          </View>
 
           <View style={styles.permissionsWrap}>
             {permissionOptions.map((option) => {
@@ -759,9 +549,15 @@ export default function ModeratorPermissionForm({
                     />
                   </View>
 
-                  <Text numberOfLines={1} style={styles.permissionTitle}>
-                    {option.title}
-                  </Text>
+                  <View style={styles.permissionTextWrap}>
+                    <Text numberOfLines={1} style={styles.permissionTitle}>
+                      {option.title}
+                    </Text>
+
+                    <Text numberOfLines={2} style={styles.permissionDescription}>
+                      {option.description}
+                    </Text>
+                  </View>
 
                   <View pointerEvents="none">
                     <Checkbox
@@ -787,198 +583,224 @@ export default function ModeratorPermissionForm({
             <Text style={styles.errorBoxText}>{generalError}</Text>
           </View>
         ) : null}
-
-        <View style={styles.footer}>
-          <Pressable
-            disabled={isSubmitting}
-            onPress={onCancel}
-            style={({ pressed }) => [
-              styles.cancelButton,
-              pressed && !isSubmitting ? { opacity: 0.75 } : null,
-            ]}
-          >
-            <Text style={styles.cancelText}>Cancel</Text>
-          </Pressable>
-
-          <Pressable
-            disabled={isSubmitting}
-            onPress={handleSubmit}
-            style={({ pressed }) => [
-              styles.submitButton,
-              pressed && !isSubmitting ? { opacity: 0.8 } : null,
-              isSubmitting ? { opacity: 0.65 } : null,
-            ]}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color={colors.accentForeground} />
-            ) : (
-              <Ionicons
-                name={mode === "assign" ? "person-add-outline" : "save-outline"}
-                size={18}
-                color={colors.accentForeground}
-              />
-            )}
-
-            <Text style={styles.submitText}>
-              {mode === "assign" ? "Assign" : "Save"}
-            </Text>
-          </Pressable>
-        </View>
       </ScrollView>
 
-      <MemberPickerModal
-        visible={memberPickerVisible}
-        members={memberItems}
-        selectedUserId={values.targetUserId}
-        searchValue={memberSearch}
-        isLoading={isLoadingMembers}
-        isFetching={isFetchingMembers}
-        hasNextPage={hasNextMemberPage}
-        error={membersError}
-        onSearchChange={handleMemberSearchChange}
-        onSelect={handleSelectMember}
-        onClose={closeMemberPicker}
-        onRefresh={handleRefreshMembers}
-        onLoadMore={handleLoadMoreMembers}
-      />
-    </>
+      <View style={styles.footer}>
+        <Pressable
+          disabled={isSubmitting}
+          onPress={onCancel}
+          style={({ pressed }) => [
+            styles.cancelButton,
+            pressed && !isSubmitting ? { opacity: 0.75 } : null,
+          ]}
+        >
+          <Text style={styles.cancelText}>Cancel</Text>
+        </Pressable>
+
+        <Pressable
+          disabled={isSubmitting}
+          onPress={handleSubmit}
+          style={({ pressed }) => [
+            styles.submitButton,
+            pressed && !isSubmitting ? { opacity: 0.8 } : null,
+            isSubmitting ? { opacity: 0.65 } : null,
+          ]}
+        >
+          {isSubmitting ? (
+            <ActivityIndicator size="small" color={colors.accentForeground} />
+          ) : (
+            <Ionicons
+              name={mode === "assign" ? "person-add-outline" : "save-outline"}
+              size={18}
+              color={colors.accentForeground}
+            />
+          )}
+
+          <Text style={styles.submitText}>
+            {mode === "assign" ? "Assign" : "Save"}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
 function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
   return StyleSheet.create({
+    formRoot: {
+      flex: 1,
+    },
+
+    formScroll: {
+      flex: 1,
+    },
+
     formContent: {
-      paddingHorizontal: 18,
-      paddingTop: 4,
-      paddingBottom: 24,
+      paddingBottom: 20,
     },
 
-    header: {
+    section: {
+      marginBottom: 16,
+    },
+
+    sectionHeaderRow: {
+      marginBottom: 10,
       flexDirection: "row",
+      alignItems: "center",
       gap: 12,
-      alignItems: "center",
-      marginBottom: 16,
-    },
-
-    headerIcon: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.surfaceSecondary,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-
-    title: {
-      color: colors.foreground,
-      fontSize: 18,
-      lineHeight: 24,
-      fontFamily: "Poppins_700Bold",
-    },
-
-    subtitle: {
-      marginTop: 2,
-      color: colors.muted,
-      fontSize: 12,
-      lineHeight: 17,
-      fontFamily: "Poppins_400Regular",
-    },
-
-    memberSection: {
-      marginBottom: 16,
     },
 
     sectionTitle: {
       color: colors.foreground,
-      fontSize: 13,
-      marginBottom: 8,
+      fontSize: 14,
+      marginBottom: 3,
       fontFamily: "Poppins_700Bold",
     },
 
-    dropdownButton: {
-      minHeight: 58,
-      borderRadius: 18,
+    sectionSubtitle: {
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    clearSelectionButton: {
+      borderRadius: 999,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceSecondary,
       paddingHorizontal: 12,
-      paddingVertical: 10,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 11,
+      paddingVertical: 7,
     },
 
-    dropdownButtonSelected: {
-      borderColor: colors.accent,
-      backgroundColor: colors.surfaceTertiary,
-    },
-
-    dropdownIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-
-    dropdownTitle: {
+    clearSelectionText: {
       color: colors.foreground,
-      fontSize: 13,
+      fontSize: 12,
       fontFamily: "Poppins_700Bold",
     },
 
-    dropdownSubtitle: {
-      marginTop: 2,
-      color: colors.muted,
-      fontSize: 11,
-      fontFamily: "Poppins_400Regular",
-    },
-
-    searchBox: {
-      minHeight: 46,
-      borderRadius: 16,
+    memberPickerBox: {
       borderWidth: 1,
       borderColor: colors.border,
+      borderRadius: 20,
       backgroundColor: colors.surfaceSecondary,
+      overflow: "hidden",
+    },
+
+    memberSearchRow: {
+      minHeight: 50,
       paddingHorizontal: 13,
       flexDirection: "row",
       alignItems: "center",
-      gap: 9,
-      marginHorizontal: 16,
-      marginBottom: 10,
+      gap: 8,
+      backgroundColor: colors.surfaceSecondary,
     },
 
-    searchInput: {
+    memberSearchInput: {
       flex: 1,
+      minHeight: 48,
       color: colors.foreground,
       fontSize: 13,
       fontFamily: "Poppins_400Regular",
       paddingVertical: 0,
     },
 
-    permissionsSection: {
-      marginTop: 4,
+    memberListDivider: {
+      height: 1,
+      backgroundColor: colors.border,
     },
 
-    permissionsWrap: {
-      gap: 9,
+    memberListScroll: {
+      maxHeight: 250,
     },
 
-    permissionRow: {
+    memberListContent: {
+      flexGrow: 1,
+    },
+
+    memberRow: {
+      minHeight: 60,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    memberRowSelected: {
+      backgroundColor: colors.surfaceTertiary,
+    },
+
+    memberRowLast: {
+      borderBottomWidth: 0,
+    },
+
+    memberTextWrap: {
+      flex: 1,
+      minWidth: 0,
+    },
+
+    memberName: {
+      color: colors.foreground,
+      fontSize: 13,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    memberSubtitle: {
+      marginTop: 2,
+      color: colors.muted,
+      fontSize: 11,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    selectedIconWrap: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.accent,
+    },
+
+    stateBox: {
       minHeight: 54,
       flexDirection: "row",
       alignItems: "center",
-      gap: 11,
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+    },
+
+    stateText: {
+      flex: 1,
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_500Medium",
+    },
+
+    permissionHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginBottom: 8,
+    },
+
+    permissionsWrap: {
+      gap: 10,
+    },
+
+    permissionRow: {
+      minHeight: 70,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 18,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
+      borderRadius: 20,
+      paddingHorizontal: 13,
+      paddingVertical: 12,
       backgroundColor: colors.surfaceSecondary,
     },
 
@@ -988,9 +810,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     },
 
     permissionIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      width: 38,
+      height: 38,
+      borderRadius: 19,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.surface,
@@ -998,11 +820,23 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       borderColor: colors.border,
     },
 
-    permissionTitle: {
+    permissionTextWrap: {
       flex: 1,
+      minWidth: 0,
+    },
+
+    permissionTitle: {
       color: colors.foreground,
-      fontSize: 13,
+      fontSize: 14,
       fontFamily: "Poppins_700Bold",
+    },
+
+    permissionDescription: {
+      marginTop: 3,
+      color: colors.muted,
+      fontSize: 12,
+      lineHeight: 17,
+      fontFamily: "Poppins_400Regular",
     },
 
     errorText: {
@@ -1012,29 +846,8 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontFamily: "Poppins_500Medium",
     },
 
-    inlineErrorBox: {
-      marginHorizontal: 16,
-      marginBottom: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 14,
-      padding: 10,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      backgroundColor: colors.surfaceSecondary,
-    },
-
-    inlineErrorText: {
-      flex: 1,
-      color: colors.danger,
-      fontSize: 11,
-      lineHeight: 16,
-      fontFamily: "Poppins_500Medium",
-    },
-
     errorBox: {
-      marginTop: 14,
+      marginTop: 4,
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: 14,
@@ -1056,12 +869,16 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     footer: {
       flexDirection: "row",
       gap: 10,
-      marginTop: 18,
+      paddingTop: 12,
+      paddingBottom: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.surface,
     },
 
     cancelButton: {
       flex: 1,
-      minHeight: 48,
+      minHeight: 50,
       borderRadius: 999,
       borderWidth: 1,
       borderColor: colors.border,
@@ -1078,7 +895,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
 
     submitButton: {
       flex: 1,
-      minHeight: 48,
+      minHeight: 50,
       borderRadius: 999,
       backgroundColor: colors.accent,
       alignItems: "center",
@@ -1091,165 +908,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       color: colors.accentForeground,
       fontSize: 14,
       fontFamily: "Poppins_700Bold",
-    },
-
-    modalKeyboardWrap: {
-      flex: 1,
-    },
-
-    pickerBackdrop: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.45)",
-      justifyContent: "flex-start",
-      paddingTop: Platform.OS === "ios" ? 70 : 46,
-      paddingHorizontal: 16,
-    },
-
-    pickerBackdropPressable: {
-      position: "absolute",
-      top: 0,
-      right: 0,
-      bottom: 0,
-      left: 0,
-    },
-
-    pickerOverlay: {
-      width: "100%",
-      maxHeight: "78%",
-      borderRadius: 24,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: "hidden",
-    },
-
-    pickerHeader: {
-      paddingHorizontal: 16,
-      paddingTop: 16,
-      paddingBottom: 12,
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-      gap: 10,
-    },
-
-    pickerTitle: {
-      color: colors.foreground,
-      fontSize: 17,
-      fontFamily: "Poppins_700Bold",
-    },
-
-    pickerSubtitle: {
-      marginTop: 2,
-      color: colors.muted,
-      fontSize: 11,
-      fontFamily: "Poppins_400Regular",
-    },
-
-    closeButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.surfaceSecondary,
-      borderWidth: 1,
-      borderColor: colors.border,
-      flexShrink: 0,
-    },
-
-    pickerListContent: {
-      paddingHorizontal: 16,
-      paddingBottom: 18,
-    },
-
-    pickerMemberRow: {
-      minHeight: 62,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceSecondary,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 11,
-      marginBottom: 9,
-    },
-
-    pickerMemberRowSelected: {
-      borderColor: colors.accent,
-      backgroundColor: colors.surfaceTertiary,
-    },
-
-    memberRowDisabled: {
-      opacity: 0.5,
-    },
-
-    memberTextWrap: {
-      flex: 1,
-    },
-
-    memberName: {
-      color: colors.foreground,
-      fontSize: 13,
-      fontFamily: "Poppins_700Bold",
-    },
-
-    memberSubtitle: {
-      marginTop: 2,
-      color: colors.muted,
-      fontSize: 11,
-      fontFamily: "Poppins_400Regular",
-    },
-
-    memberBadge: {
-      color: colors.muted,
-      fontSize: 10,
-      fontFamily: "Poppins_700Bold",
-    },
-    pickerHeaderText: {
-  flex: 1,
-  minWidth: 0,
-  paddingRight: 4,
-},
-
-    pickerEmptyBox: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 18,
-      backgroundColor: colors.surfaceSecondary,
-      padding: 18,
-      alignItems: "center",
-      marginBottom: 12,
-    },
-
-    emptyTitle: {
-      marginTop: 8,
-      color: colors.foreground,
-      fontSize: 13,
-      fontFamily: "Poppins_700Bold",
-    },
-
-    emptySubtitle: {
-      marginTop: 4,
-      color: colors.muted,
-      fontSize: 11,
-      textAlign: "center",
-      fontFamily: "Poppins_400Regular",
-    },
-
-    pickerFooter: {
-      minHeight: 34,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingBottom: 6,
-    },
-
-    loadMoreText: {
-      color: colors.muted,
-      fontSize: 11,
-      fontFamily: "Poppins_400Regular",
     },
   });
 }

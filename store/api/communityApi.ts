@@ -21,6 +21,7 @@ import type {
   UpdateCommunityPayload,
   UpdateModeratorPermissionsPayload,
   CommunityDashboardOverviewResponse,
+  CommunityDashboardOverviewQuery,
   VisibleCommunityMembersQuery,
 } from "@/types/community";
 
@@ -387,18 +388,22 @@ getVisibleCommunityMembers: builder.query<
        USER-COMMUNITY ADMIN DASHBOARD
        ========================================================= */
 
-    getCommunityDashboardOverview: builder.query<
-      CommunityDashboardOverviewResponse,
-      string
-    >({
-      query: (communityId) => ({
-        url: `/communities/${communityId}/dashboard/overview`,
-        method: "GET",
-      }),
-      providesTags: (_result, _error, communityId) => [
-        { type: "Community" as const, id: communityId },
-      ],
-    }),
+  getCommunityDashboardOverview: builder.query<
+  CommunityDashboardOverviewResponse,
+  CommunityDashboardOverviewQuery
+>({
+  query: ({ communityId, year, month }) => ({
+    url: `/communities/${communityId}/dashboard/overview`,
+    method: "GET",
+    params: {
+      year,
+    },
+  }),
+
+  providesTags: (_result, _error, { communityId }) => [
+    { type: "Community" as const, id: communityId },
+  ],
+}),
 
     /* =========================================================
        ADMIN TRANSFER

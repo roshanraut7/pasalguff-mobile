@@ -9,12 +9,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
-
-export type PostInsightTimeRange =
-  | "LAST_7_DAYS"
-  | "LAST_30_DAYS"
-  | "LAST_90_DAYS"
-  | "ALL_TIME";
+import type { PostInsightTimeRange } from "@/types/analytics";
 
 type TimeRangeOption = {
   label: string;

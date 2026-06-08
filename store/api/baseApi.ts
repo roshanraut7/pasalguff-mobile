@@ -118,6 +118,7 @@ tagTypes: [
   "Follow",
   "Follower",
   "Following",
+  "PostAnalytics",
 ],
   refetchOnFocus: true,
   refetchOnReconnect: true,

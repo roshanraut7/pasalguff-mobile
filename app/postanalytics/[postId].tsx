@@ -3,7 +3,6 @@ import {
   Image,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -11,16 +10,20 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Tabs } from "heroui-native";
+
 import createPostInsightsDetailStyles, {
   type PostInsightsDetailStyles,
 } from "@/constants/styles/postsAnalytics";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { PostPoll } from "@/types/post";
+import type {
+  PostAnalyticsResponse,
+  PostInsightTimeRange,
+} from "@/types/analytics";
+import { useGetPostAnalyticsQuery } from "@/store/api/PostAnalyticsApi";
 
 import PostOverviewTab from "./overviewTab";
-import PostInsightsTimeFilter, {
-  type PostInsightTimeRange,
-} from "./timeFilter";
+import PostInsightsTimeFilter from "./timeFilter";
 
 type AnalyticsTab = "overview" | "engagement" | "feedback";
 
@@ -46,31 +49,98 @@ type InsightRouteParams = {
 
 export default function PostInsightsDetailScreen() {
   const { colors } = useAppTheme();
- const styles = useMemo(
-  () => createPostInsightsDetailStyles(colors),
-  [colors],
-);
+
+  const styles = useMemo(
+    () => createPostInsightsDetailStyles(colors),
+    [colors],
+  );
 
   const params = useLocalSearchParams<InsightRouteParams>();
 
   const [tab, setTab] = useState<AnalyticsTab>("overview");
-  const [timeRange, setTimeRange] = useState<PostInsightTimeRange>("LAST_7_DAYS");
+  const [timeRange, setTimeRange] =
+    useState<PostInsightTimeRange>("LAST_7_DAYS");
 
-  const title = readStringParam(params.title) || "Untitled post";
+  const postId = readStringParam(params.postId);
+  const communityId = readStringParam(params.communityId);
+
+  const {
+    data: analyticsData,
+    isFetching: isAnalyticsFetching,
+    isError: isAnalyticsError,
+    refetch: refetchAnalytics,
+  } = useGetPostAnalyticsQuery(
+    {
+      communityId,
+      postId,
+      range: timeRange,
+    },
+    {
+      skip: !communityId || !postId,
+    },
+  );
+
+  console.log("POST ANALYTICS PARAMS:", {
+    postId,
+    communityId,
+    timeRange,
+  });
+
+  console.log("POST ANALYTICS DATA:", analyticsData);
+  console.log("FEEDBACK DATA:", analyticsData?.feedback);
+
+  const post = analyticsData?.post;
+
+  const title =
+    post?.title ||
+    readStringParam(params.title) ||
+    "Untitled post";
+
   const communityName =
-    readStringParam(params.communityName) || "Community";
-  const tag = readStringParam(params.tag) || "GENERAL";
-  const type = readStringParam(params.type) || "TEXT";
-  const visibility = readStringParam(params.visibility) || "PUBLIC";
-  const publishedAt = readStringParam(params.publishedAt);
+    post?.community.name ||
+    readStringParam(params.communityName) ||
+    "Community";
+
+  const tag =
+    post?.tag ||
+    readStringParam(params.tag) ||
+    "GENERAL";
+
+  const type =
+    post?.type ||
+    readStringParam(params.type) ||
+    "TEXT";
+
+  const visibility =
+    post?.visibility ||
+    readStringParam(params.visibility) ||
+    "PUBLIC";
+
+  const publishedAt =
+    post?.publishedAt ||
+    readStringParam(params.publishedAt);
+
   const thumbnail = readStringParam(params.thumbnail);
 
-  const likeCount = readNumberParam(params.likeCount);
-  const dislikeCount = readNumberParam(params.dislikeCount);
-  const commentCount = readNumberParam(params.commentCount);
-  const shareCount = readNumberParam(params.shareCount);
+  const likeCount =
+    analyticsData?.engagement.likes ??
+    readNumberParam(params.likeCount);
 
-  const approvalRate = readOptionalNumberParam(params.approvalRate);
+  const dislikeCount =
+    analyticsData?.feedback.totalNegativeFeedback ??
+    analyticsData?.engagement.dislikes ??
+    readNumberParam(params.dislikeCount);
+
+  const commentCount =
+    analyticsData?.engagement.comments.total ??
+    readNumberParam(params.commentCount);
+
+  const shareCount =
+    analyticsData?.engagement.shares.total ??
+    readNumberParam(params.shareCount);
+
+  const approvalRateFromRoute =
+    readOptionalNumberParam(params.approvalRate);
 
   const poll = useMemo(() => {
     return readPollParam(params.poll);
@@ -80,19 +150,26 @@ export default function PostInsightsDetailScreen() {
 
   const totalReactions = likeCount + dislikeCount;
 
-  const totalActions =
-    likeCount +
-    dislikeCount +
-    commentCount +
-    shareCount +
-    pollVoteCount;
-
   const computedApprovalRate =
     totalReactions > 0
       ? Number(((likeCount / totalReactions) * 100).toFixed(1))
       : null;
 
-  const visibleApprovalRate = approvalRate ?? computedApprovalRate;
+  const visibleApprovalRate =
+    analyticsData?.overview.approvalRate ??
+    analyticsData?.engagement.approvalRate ??
+    approvalRateFromRoute ??
+    computedApprovalRate;
+
+  const totalActions =
+    analyticsData?.overview.totalActions ??
+    likeCount +
+      dislikeCount +
+      commentCount +
+      shareCount +
+      pollVoteCount;
+
+  const hasRequiredAnalyticsParams = Boolean(postId && communityId);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -150,49 +227,93 @@ export default function PostInsightsDetailScreen() {
         />
 
         <View style={styles.tabsSection}>
-  <Tabs
-    value={tab}
-    onValueChange={(value) => setTab(value as AnalyticsTab)}
-    variant="secondary"
-    style={{ width: "100%" }}
-  >
-    <Tabs.List>
-      <Tabs.ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.tabsListContent}
-      >
-        <Tabs.Indicator />
+          <Tabs
+            value={tab}
+            onValueChange={(value) => setTab(value as AnalyticsTab)}
+            variant="secondary"
+            style={{ width: "100%" }}
+          >
+            <Tabs.List>
+              <Tabs.ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tabsListContent}
+              >
+                <Tabs.Indicator />
 
-        <Tabs.Trigger value="overview">
-          <Tabs.Label>Overview</Tabs.Label>
-        </Tabs.Trigger>
+                <Tabs.Trigger value="overview">
+                  <Tabs.Label>Overview</Tabs.Label>
+                </Tabs.Trigger>
 
-        <Tabs.Trigger value="engagement">
-          <Tabs.Label>Engagement</Tabs.Label>
-        </Tabs.Trigger>
+                <Tabs.Trigger value="engagement">
+                  <Tabs.Label>Engagement</Tabs.Label>
+                </Tabs.Trigger>
 
-        <Tabs.Trigger value="feedback">
-          <Tabs.Label>Feedback</Tabs.Label>
-        </Tabs.Trigger>
-      </Tabs.ScrollView>
-    </Tabs.List>
-  </Tabs>
-</View>
+                <Tabs.Trigger value="feedback">
+                  <Tabs.Label>Feedback</Tabs.Label>
+                </Tabs.Trigger>
+              </Tabs.ScrollView>
+            </Tabs.List>
+          </Tabs>
+        </View>
 
-<View style={styles.analyticsFilterRow}>
-  <Text style={styles.analyticsFilterLabel}>
-    Showing analytics for
-  </Text>
+        <View style={styles.analyticsFilterRow}>
+          <Text style={styles.analyticsFilterLabel}>
+            Showing analytics for
+          </Text>
 
-  <PostInsightsTimeFilter
-    value={timeRange}
-    onChange={setTimeRange}
-  />
-</View>
+          <PostInsightsTimeFilter
+            value={timeRange}
+            onChange={setTimeRange}
+          />
+        </View>
+
+        {!hasRequiredAnalyticsParams ? (
+          <SectionCard title="Analytics unavailable" styles={styles}>
+            <View style={styles.informationBox}>
+              <Ionicons
+                name="alert-circle-outline"
+                size={18}
+                color={colors.accent}
+              />
+
+              <Text style={styles.informationText}>
+                This page needs both postId and communityId to load real
+                analytics.
+              </Text>
+            </View>
+          </SectionCard>
+        ) : null}
+
+        {isAnalyticsError ? (
+          <SectionCard title="Could not load analytics" styles={styles}>
+            <Pressable
+              onPress={() => refetchAnalytics()}
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.72 : 1,
+              })}
+            >
+              <View style={styles.informationBox}>
+                <Ionicons
+                  name="refresh-outline"
+                  size={18}
+                  color={colors.accent}
+                />
+
+                <Text style={styles.informationText}>
+                  Something went wrong while loading analytics. Tap here to
+                  retry.
+                </Text>
+              </View>
+            </Pressable>
+          </SectionCard>
+        ) : null}
 
         {tab === "overview" ? (
           <PostOverviewTab
+            analytics={analyticsData?.overview}
+            isLoading={isAnalyticsFetching}
+            isError={isAnalyticsError}
             totalActions={totalActions}
             approvalRate={visibleApprovalRate}
             commentCount={commentCount}
@@ -209,11 +330,12 @@ export default function PostInsightsDetailScreen() {
 
         {tab === "engagement" ? (
           <EngagementTab
-            likeCount={likeCount}
-            dislikeCount={dislikeCount}
-            commentCount={commentCount}
-            shareCount={shareCount}
-            approvalRate={visibleApprovalRate}
+            analytics={analyticsData?.engagement}
+            fallbackLikeCount={likeCount}
+            fallbackDislikeCount={dislikeCount}
+            fallbackCommentCount={commentCount}
+            fallbackShareCount={shareCount}
+            fallbackApprovalRate={visibleApprovalRate}
             poll={poll}
             colors={colors}
             styles={styles}
@@ -222,8 +344,9 @@ export default function PostInsightsDetailScreen() {
 
         {tab === "feedback" ? (
           <FeedbackTab
-            dislikeCount={dislikeCount}
-            approvalRate={visibleApprovalRate}
+            analytics={analyticsData?.feedback}
+            fallbackDislikeCount={dislikeCount}
+            fallbackApprovalRate={visibleApprovalRate}
             colors={colors}
             styles={styles}
           />
@@ -237,7 +360,7 @@ export default function PostInsightsDetailScreen() {
    POST PREVIEW CARD
    ========================================================= */
 
-function  PostPreviewCard({
+function PostPreviewCard({
   title,
   communityName,
   tag,
@@ -394,25 +517,45 @@ function QuickMetric({
    ========================================================= */
 
 function EngagementTab({
-  likeCount,
-  dislikeCount,
-  commentCount,
-  shareCount,
-  approvalRate,
+  analytics,
+  fallbackLikeCount,
+  fallbackDislikeCount,
+  fallbackCommentCount,
+  fallbackShareCount,
+  fallbackApprovalRate,
   poll,
   colors,
   styles,
 }: {
-  likeCount: number;
-  dislikeCount: number;
-  commentCount: number;
-  shareCount: number;
-  approvalRate: number | null;
+  analytics?: PostAnalyticsResponse["engagement"];
+  fallbackLikeCount: number;
+  fallbackDislikeCount: number;
+  fallbackCommentCount: number;
+  fallbackShareCount: number;
+  fallbackApprovalRate: number | null;
   poll: PostPoll | null;
   colors: any;
   styles: PostInsightsDetailStyles;
 }) {
-  const totalReactions = likeCount + dislikeCount;
+  const likeCount = analytics?.likes ?? fallbackLikeCount;
+  const dislikeCount = analytics?.dislikes ?? fallbackDislikeCount;
+
+  const totalReactions =
+    analytics?.totalReactions ?? likeCount + dislikeCount;
+
+  const approvalRate =
+    analytics?.approvalRate ?? fallbackApprovalRate;
+
+  const mainComments = analytics?.comments.mainComments ?? 0;
+  const replies = analytics?.comments.replies ?? 0;
+
+  const totalComments =
+    analytics?.comments.total ?? fallbackCommentCount;
+
+  const totalShares =
+    analytics?.shares.total ?? fallbackShareCount;
+
+  const sharePlatforms = analytics?.shares.platforms ?? [];
 
   return (
     <View style={styles.tabContent}>
@@ -491,52 +634,61 @@ function EngagementTab({
 
       <SectionCard title="Discussion Activity" styles={styles}>
         <InfoRow
-          label="Total Comments"
-          value={formatCompactNumber(commentCount)}
+          label="Main Comments"
+          value={formatCompactNumber(mainComments)}
+          styles={styles}
+        />
+
+        <InfoRow
+          label="Replies"
+          value={formatCompactNumber(replies)}
+          styles={styles}
+        />
+
+        <InfoRow
+          label="Total Discussion"
+          value={formatCompactNumber(totalComments)}
           styles={styles}
           last
         />
-
-        <View style={styles.informationBox}>
-          <Ionicons
-            name="chatbubble-ellipses-outline"
-            size={18}
-            color={colors.accent}
-          />
-
-          <Text style={styles.informationText}>
-            Comment and reply details will appear in this section.
-          </Text>
-        </View>
       </SectionCard>
 
       <SectionCard title="Shares" styles={styles}>
         <InfoRow
           label="Total Shares"
-          value={formatCompactNumber(shareCount)}
+          value={formatCompactNumber(totalShares)}
           styles={styles}
-          last
+          last={sharePlatforms.length === 0}
         />
 
-        <View style={styles.informationBox}>
-          <Ionicons
-            name="share-social-outline"
-            size={18}
-            color={colors.accent}
+        {sharePlatforms.map((platform, index) => (
+          <InfoRow
+            key={platform.platform}
+            label={platform.platform}
+            value={`${formatCompactNumber(platform.count)} · ${
+              platform.percentage
+            }%`}
+            styles={styles}
+            last={index === sharePlatforms.length - 1}
           />
+        ))}
 
-          <Text style={styles.informationText}>
-            Share platform details will appear in this section.
-          </Text>
-        </View>
+        {sharePlatforms.length === 0 ? (
+          <View style={styles.informationBox}>
+            <Ionicons
+              name="share-social-outline"
+              size={18}
+              color={colors.accent}
+            />
+
+            <Text style={styles.informationText}>
+              Share platform details will appear after users share this post.
+            </Text>
+          </View>
+        ) : null}
       </SectionCard>
 
-      {poll ? (
-        <PollResultsCard
-          poll={poll}
-          styles={styles}
-        />
-      ) : null}
+      {poll ? <PollResultsCard poll={poll} styles={styles} /> : null}
     </View>
   );
 }
@@ -546,22 +698,29 @@ function EngagementTab({
    ========================================================= */
 
 function FeedbackTab({
-  dislikeCount,
-  approvalRate,
+  analytics,
+  fallbackDislikeCount,
+  fallbackApprovalRate,
   colors,
   styles,
 }: {
-  dislikeCount: number;
-  approvalRate: number | null;
+  analytics?: PostAnalyticsResponse["feedback"];
+  fallbackDislikeCount: number;
+  fallbackApprovalRate: number | null;
   colors: any;
   styles: PostInsightsDetailStyles;
 }) {
+  const totalNegativeFeedback =
+    analytics?.totalNegativeFeedback ?? fallbackDislikeCount;
+
+  const anonymousFeedback = analytics?.anonymousFeedback ?? [];
+
   return (
     <View style={styles.tabContent}>
       <View style={styles.metricCardRow}>
         <MetricCard
           title="Negative Feedback"
-          value={formatCompactNumber(dislikeCount)}
+          value={formatCompactNumber(totalNegativeFeedback)}
           icon="thumbs-down-outline"
           colors={colors}
           styles={styles}
@@ -569,7 +728,7 @@ function FeedbackTab({
 
         <MetricCard
           title="Approval Rate"
-          value={formatPercentage(approvalRate)}
+          value={formatPercentage(fallbackApprovalRate)}
           icon="checkmark-circle-outline"
           colors={colors}
           styles={styles}
@@ -578,10 +737,10 @@ function FeedbackTab({
 
       <SectionCard title="Feedback Summary" styles={styles}>
         <Text style={styles.feedbackSummaryText}>
-          {dislikeCount === 0
+          {totalNegativeFeedback === 0
             ? "No users have submitted negative feedback for this post."
-            : `${dislikeCount} user${
-                dislikeCount === 1 ? "" : "s"
+            : `${totalNegativeFeedback} user${
+                totalNegativeFeedback === 1 ? "" : "s"
               } submitted negative feedback for this post.`}
         </Text>
       </SectionCard>
@@ -596,33 +755,46 @@ function FeedbackTab({
             />
           </View>
 
-          <Text style={styles.emptyFeedbackTitle}>Feedback reasons</Text>
+          <Text style={styles.emptyFeedbackTitle}>Not available yet</Text>
 
           <Text style={styles.emptyFeedbackText}>
-            Anonymous dislike reason categories will be displayed here.
+            You are currently storing dislike reason as plain text, so reason
+            category breakdown will be added later.   
           </Text>
         </View>
       </SectionCard>
 
       <SectionCard title="Recent Anonymous Feedback" styles={styles}>
-        <View style={styles.emptyFeedbackWrap}>
-          <View style={styles.emptyFeedbackIcon}>
-            <Ionicons
-              name="chatbox-ellipses-outline"
-              size={26}
-              color={colors.accent}
+        {anonymousFeedback.length > 0 ? (
+          anonymousFeedback.map((feedback, index) => (
+            <InfoRow
+              key={feedback.id}
+              label={formatDate(feedback.createdAt)}
+              value={feedback.reason || "No reason provided"}
+              styles={styles}
+              last={index === anonymousFeedback.length - 1}
             />
+          ))
+        ) : (
+          <View style={styles.emptyFeedbackWrap}>
+            <View style={styles.emptyFeedbackIcon}>
+              <Ionicons
+                name="chatbox-ellipses-outline"
+                size={26}
+                color={colors.accent}
+              />
+            </View>
+
+            <Text style={styles.emptyFeedbackTitle}>
+              No feedback messages
+            </Text>
+
+            <Text style={styles.emptyFeedbackText}>
+              Anonymous written feedback will be shown here without user names
+              or profile photos.
+            </Text>
           </View>
-
-          <Text style={styles.emptyFeedbackTitle}>
-            No feedback messages displayed
-          </Text>
-
-          <Text style={styles.emptyFeedbackText}>
-            Anonymous written feedback will be shown here without user names
-            or profile photos.
-          </Text>
-        </View>
+        )}
       </SectionCard>
     </View>
   );

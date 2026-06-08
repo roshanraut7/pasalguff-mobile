@@ -2,7 +2,9 @@ import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +20,7 @@ import { useDispatch } from "react-redux";
 import { baseApi } from "@/store/api/baseApi";
 import { signOut } from "@/api/better-auth-client";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { ChangePasswordForm } from "@/components/form/changePassword";
 
 import {
   useGetMyPrivacySettingsQuery,
@@ -151,6 +154,7 @@ function getPrivacyLabel(
 export default function PrivacySettingsScreen() {
   const { colors, isDark, setThemeMode } = useAppTheme();
   const dispatch = useDispatch();
+  const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
 
   const [selectedField, setSelectedField] =
     useState<PrivacyRowConfig | null>(null);
@@ -363,6 +367,35 @@ const handleOpenPostInsights = () => {
                   color={colors.muted}
                 />
               </Pressable>
+            <View style={styles.divider} />
+
+<Pressable
+  onPress={() => setIsPasswordModalVisible(true)}
+  style={({ pressed }) => [
+    styles.compactRow,
+    {
+      opacity: pressed ? 0.75 : 1,
+    },
+  ]}
+>
+  <View style={styles.rowLeft}>
+    <View style={styles.iconWrap}>
+      <Ionicons
+        name="key-outline"
+        size={19}
+        color={colors.accent}
+      />
+    </View>
+
+    <Text style={styles.rowTitle}>Change Password</Text>
+  </View>
+
+  <Ionicons
+    name="chevron-forward"
+    size={18}
+    color={colors.muted}
+  />
+</Pressable>  
 
               <View style={styles.divider} />
 
@@ -513,6 +546,53 @@ const handleOpenPostInsights = () => {
           ) : null}
         </ScrollView>
       </SafeAreaView>
+<Modal
+  visible={isPasswordModalVisible}
+  transparent
+  animationType="slide"
+  onRequestClose={() => setIsPasswordModalVisible(false)}
+>
+  <KeyboardAvoidingView
+    style={styles.passwordModalRoot}
+    behavior={Platform.OS === "ios" ? "padding" : "height"}
+    keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+  >
+    <Pressable
+      style={StyleSheet.absoluteFill}
+      onPress={() => setIsPasswordModalVisible(false)}
+    />
+
+    <View style={styles.passwordModalCard}>
+      <View style={styles.modalHandle} />
+
+      <View style={styles.passwordModalHeader}>
+        <Text style={styles.modalTitle}>Change Password</Text>
+
+        <Pressable
+          onPress={() => setIsPasswordModalVisible(false)}
+          hitSlop={10}
+          style={styles.closeButton}
+        >
+          <Ionicons
+            name="close"
+            size={20}
+            color={colors.foreground}
+          />
+        </Pressable>
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.passwordModalScrollContent}
+      >
+        <ChangePasswordForm
+          onSuccess={() => setIsPasswordModalVisible(false)}
+        />
+      </ScrollView>
+    </View>
+  </KeyboardAvoidingView>
+</Modal>
 
       <Modal
         visible={!!selectedField}
@@ -780,6 +860,11 @@ function createStyles(colors: any) {
       paddingBottom: 28,
       backgroundColor: colors.background,
     },
+    passwordModalRoot: {
+  flex: 1,
+  justifyContent: "flex-end",
+  backgroundColor: "rgba(0,0,0,0.35)",
+},
 
     modalHandle: {
       alignSelf: "center",
@@ -845,6 +930,39 @@ function createStyles(colors: any) {
       alignItems: "center",
       gap: 8,
     },
+passwordModalCard: {
+  maxHeight: "88%",
+  borderTopLeftRadius: 30,
+  borderTopRightRadius: 30,
+  paddingHorizontal: 18,
+  paddingTop: 10,
+  paddingBottom: 18,
+  backgroundColor: colors.background,
+},
+passwordModalScrollContent: {
+  paddingBottom: 18,
+},
+
+passwordModalHeader: {
+  marginBottom: 18,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+closeButton: {
+  position: "absolute",
+  right: 0,
+  width: 34,
+  height: 34,
+  borderRadius: 17,
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: colors.surface,
+  borderWidth: 1,
+  borderColor: colors.border,
+},
+
 
     updatingText: {
       color: colors.muted,

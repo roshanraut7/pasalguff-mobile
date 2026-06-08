@@ -78,3 +78,11 @@ export const NEPAL_DISTRICTS = [
   "Udayapur",
   "Western Rukum",
 ] as const;
+
+export function getDistrictKey(districtName: string) {
+  return districtName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}

@@ -327,7 +327,10 @@ export type CommunityDashboardOverviewResponse = {
     name: string;
     slug: string;
     visibility: CommunityVisibility;
+
   };
+
+
 
   kpis: {
     members: number;
@@ -354,4 +357,10 @@ export type CommunityDashboardOverviewResponse = {
     canManageMembers: boolean;
     canManagePosts: boolean;
   };
+  
+};
+ export type CommunityDashboardOverviewQuery = {
+  communityId: string;
+  year: number;
+  month?: number | null;
 };

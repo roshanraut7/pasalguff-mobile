@@ -968,7 +968,40 @@ export default function CommunityDetailScreen() {
                       )}
                     </Pressable>
                   ) : null}
+
                 </View>
+              </View>
+              <View>
+                {(isOwner || isModerator) ? (
+  <Pressable
+    onPress={() => {
+      router.push({
+        pathname: "/user/moderator-panel",
+        params: {
+          slug: slug ?? "",
+        },
+      });
+    }}
+    className="mt-4 flex-row items-center justify-center rounded-full bg-accent px-4 py-3"
+  >
+    <Ionicons
+      name="shield-checkmark-outline"
+      size={18}
+      color={colors.accentForeground}
+    />
+
+    <Text
+      style={{
+        marginLeft: 8,
+        color: colors.accentForeground,
+        fontSize: 14,
+        fontFamily: "Poppins_700Bold",
+      }}
+    >
+      Manage Community
+    </Text>
+  </Pressable>
+) : null}
               </View>
 
               <View

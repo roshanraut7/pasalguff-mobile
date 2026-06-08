@@ -15,10 +15,15 @@ import Svg, {
 } from "react-native-svg";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
+import type { PostAnalyticsResponse } from "@/types/analytics";
 
 type PerformanceMetric = "Views" | "Likes" | "Comments" | "Shares";
 
 type PostOverviewTabProps = {
+  analytics?: PostAnalyticsResponse["overview"];
+  isLoading?: boolean;
+  isError?: boolean;
+
   totalActions: number;
   approvalRate: number | null;
   commentCount: number;
@@ -38,75 +43,6 @@ type TrendPoint = {
   value: number;
 };
 
-type ProgressItem = {
-  label: string;
-  percentage: number;
-};
-
-type DistrictItem = ProgressItem & {
-  viewers: number;
-};
-
-/**
- * Temporary frontend preview values only.
- * Replace these later when analytics data is connected.
- */
-const PREVIEW_PERFORMANCE: Record<PerformanceMetric, TrendPoint[]> = {
-  Views: [
-    { label: "Day 1", value: 120 },
-    { label: "Day 2", value: 390 },
-    { label: "Day 3", value: 620 },
-    { label: "Day 4", value: 540 },
-    { label: "Day 5", value: 880 },
-    { label: "Day 6", value: 1120 },
-    { label: "Day 7", value: 1360 },
-  ],
-  Likes: [
-    { label: "Day 1", value: 8 },
-    { label: "Day 2", value: 21 },
-    { label: "Day 3", value: 36 },
-    { label: "Day 4", value: 48 },
-    { label: "Day 5", value: 61 },
-    { label: "Day 6", value: 82 },
-    { label: "Day 7", value: 104 },
-  ],
-  Comments: [
-    { label: "Day 1", value: 2 },
-    { label: "Day 2", value: 6 },
-    { label: "Day 3", value: 12 },
-    { label: "Day 4", value: 18 },
-    { label: "Day 5", value: 23 },
-    { label: "Day 6", value: 29 },
-    { label: "Day 7", value: 35 },
-  ],
-  Shares: [
-    { label: "Day 1", value: 1 },
-    { label: "Day 2", value: 3 },
-    { label: "Day 3", value: 5 },
-    { label: "Day 4", value: 7 },
-    { label: "Day 5", value: 10 },
-    { label: "Day 6", value: 13 },
-    { label: "Day 7", value: 18 },
-  ],
-};
-
-const PREVIEW_TRAFFIC_SOURCES: ProgressItem[] = [
-  { label: "For You Feed", percentage: 46 },
-  { label: "Community Feed", percentage: 30 },
-  { label: "Profile", percentage: 10 },
-  { label: "Search", percentage: 6 },
-  { label: "Notifications", percentage: 5 },
-  { label: "Shared Link", percentage: 3 },
-];
-
-const PREVIEW_DISTRICTS: DistrictItem[] = [
-  { label: "Kathmandu", viewers: 1240, percentage: 42 },
-  { label: "Lalitpur", viewers: 620, percentage: 22 },
-  { label: "Bhaktapur", viewers: 410, percentage: 14 },
-  { label: "Kaski", viewers: 275, percentage: 9 },
-  { label: "Chitwan", viewers: 190, percentage: 7 },
-];
-
 const PERFORMANCE_METRICS: PerformanceMetric[] = [
   "Views",
   "Likes",
@@ -115,6 +51,9 @@ const PERFORMANCE_METRICS: PerformanceMetric[] = [
 ];
 
 export default function PostOverviewTab({
+  analytics,
+  isLoading = false,
+  isError = false,
   totalActions,
   approvalRate,
   commentCount,
@@ -133,24 +72,116 @@ export default function PostOverviewTab({
   const [selectedMetric, setSelectedMetric] =
     useState<PerformanceMetric>("Views");
 
-  const activeTrendData = PREVIEW_PERFORMANCE[selectedMetric];
+  const activeTrendData = useMemo(() => {
+    if (!analytics?.performance?.length) {
+      return [];
+    }
+
+    return analytics.performance.map((item) => {
+      if (selectedMetric === "Views") {
+        return {
+          label: item.label,
+          value: item.views,
+        };
+      }
+
+      if (selectedMetric === "Likes") {
+        return {
+          label: item.label,
+          value: item.likes,
+        };
+      }
+
+      if (selectedMetric === "Comments") {
+        return {
+          label: item.label,
+          value: item.comments,
+        };
+      }
+
+      return {
+        label: item.label,
+        value: item.shares,
+      };
+    });
+  }, [analytics?.performance, selectedMetric]);
+
+  const totalViews = analytics?.totalViews ?? 0;
+  const uniqueViewers = analytics?.uniqueViewers ?? 0;
+  const averageScreenTimeSeconds =
+    analytics?.averageScreenTimeSeconds ?? 0;
+
+  const finalTotalActions = analytics?.totalActions ?? totalActions;
+  const finalApprovalRate = analytics?.approvalRate ?? approvalRate;
 
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Key Metrics</Text>
 
+      {isLoading ? (
+        <View style={styles.statusCard}>
+          <Ionicons
+            name="time-outline"
+            size={18}
+            color={colors.accent}
+          />
+
+          <Text style={styles.statusText}>
+            Loading analytics...
+          </Text>
+        </View>
+      ) : null}
+
+      {isError ? (
+        <View style={styles.statusCard}>
+          <Ionicons
+            name="alert-circle-outline"
+            size={18}
+            color={colors.accent}
+          />
+
+          <Text style={styles.statusText}>
+            Unable to load analytics. Showing available post information.
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.metricGrid}>
         <SummaryCard
           title="Total Views"
-          value={formatCompactNumber(totalActions)}
+          value={formatCompactNumber(totalViews)}
+          icon="eye-outline"
+          colors={colors}
+          styles={styles}
+        />
+
+        <SummaryCard
+          title="Unique Viewers"
+          value={formatCompactNumber(uniqueViewers)}
+          icon="people-outline"
+          colors={colors}
+          styles={styles}
+        />
+
+        <SummaryCard
+          title="Avg. Screen Time"
+          value={formatDuration(averageScreenTimeSeconds)}
+          icon="timer-outline"
+          colors={colors}
+          styles={styles}
+        />
+
+        <SummaryCard
+          title="Total Actions"
+          value={formatCompactNumber(finalTotalActions)}
           icon="pulse-outline"
           colors={colors}
           styles={styles}
         />
 
         <SummaryCard
-          title="Average Rate"
-          value={formatPercentage(approvalRate)}
+          title="Approval Rate"
+          value={formatPercentage(finalApprovalRate)}
           icon="checkmark-circle-outline"
           colors={colors}
           styles={styles}
@@ -179,7 +210,6 @@ export default function PostOverviewTab({
             icon="stats-chart-outline"
             colors={colors}
             styles={styles}
-            fullWidth
           />
         ) : null}
       </View>
@@ -187,15 +217,11 @@ export default function PostOverviewTab({
       <View style={styles.section}>
         <View style={styles.sectionTitleRow}>
           <Text style={styles.sectionTitle}>Post Performance</Text>
-
-          <View style={styles.previewBadge}>
-            <Text style={styles.previewBadgeText}>Preview</Text>
-          </View>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardDescription}>
-            Performance trend across the first 7 days.
+            Performance trend based on the selected time period.
           </Text>
 
           <View style={styles.filterRow}>
@@ -225,22 +251,28 @@ export default function PostOverviewTab({
             })}
           </View>
 
-          <LineChart
-            data={activeTrendData}
-            metric={selectedMetric}
-            colors={colors}
-            styles={styles}
-          />
+          {activeTrendData.length > 0 ? (
+            <LineChart
+              data={activeTrendData}
+              metric={selectedMetric}
+              colors={colors}
+              styles={styles}
+            />
+          ) : (
+            <EmptyState
+              icon="analytics-outline"
+              title="No performance data"
+              text="Performance data will appear after users start viewing and interacting with this post."
+              colors={colors}
+              styles={styles}
+            />
+          )}
         </View>
       </View>
 
       <View style={styles.section}>
         <View style={styles.sectionTitleRow}>
           <Text style={styles.sectionTitle}>Traffic Sources</Text>
-
-          <View style={styles.previewBadge}>
-            <Text style={styles.previewBadgeText}>Preview</Text>
-          </View>
         </View>
 
         <View style={styles.card}>
@@ -248,17 +280,28 @@ export default function PostOverviewTab({
             Where people found this post.
           </Text>
 
-          <View style={styles.progressList}>
-            {PREVIEW_TRAFFIC_SOURCES.map((source) => (
-              <ProgressRow
-                key={source.label}
-                label={source.label}
-                percentage={source.percentage}
-                colors={colors}
-                styles={styles}
-              />
-            ))}
-          </View>
+          {analytics?.trafficSources?.length ? (
+            <View style={styles.progressList}>
+              {analytics.trafficSources.map((source) => (
+                <ProgressRow
+                  key={source.source}
+                  label={source.label}
+                  percentage={source.percentage}
+                  value={`${formatCompactNumber(source.views)} views`}
+                  colors={colors}
+                  styles={styles}
+                />
+              ))}
+            </View>
+          ) : (
+            <EmptyState
+              icon="git-branch-outline"
+              title="No traffic source data"
+              text="Traffic source data will appear after this post receives views."
+              colors={colors}
+              styles={styles}
+            />
+          )}
         </View>
       </View>
 
@@ -276,18 +319,48 @@ export default function PostOverviewTab({
             Top districts viewing this post.
           </Text>
 
-          <View style={styles.progressList}>
-            {PREVIEW_DISTRICTS.map((district) => (
-              <DistrictProgressRow
-                key={district.label}
-                district={district}
-                colors={colors}
-                styles={styles}
-              />
-            ))}
-          </View>
+          {analytics?.districts?.length ? (
+            <View style={styles.progressList}>
+              {analytics.districts.map((district) => (
+                <ProgressRow
+                  key={district.district}
+                  label={district.district}
+                  percentage={district.percentage}
+                  value={`${formatCompactNumber(district.viewers)} viewers`}
+                  colors={colors}
+                  styles={styles}
+                />
+              ))}
+            </View>
+          ) : (
+            <EmptyState
+              icon="location-outline"
+              title="No district data"
+              text="District analytics will appear after users view this post."
+              colors={colors}
+              styles={styles}
+            />
+          )}
         </View>
       </View>
+
+      {analytics?.audienceInsight?.message ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Audience Insight</Text>
+
+          <View style={styles.insightCard}>
+            <Ionicons
+              name="location-outline"
+              size={20}
+              color={colors.accent}
+            />
+
+            <Text style={styles.insightText}>
+              {analytics.audienceInsight.message}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Post Details</Text>
@@ -339,22 +412,15 @@ function SummaryCard({
   icon,
   colors,
   styles,
-  fullWidth = false,
 }: {
   title: string;
   value: string;
   icon: keyof typeof Ionicons.glyphMap;
   colors: any;
   styles: ReturnType<typeof createStyles>;
-  fullWidth?: boolean;
 }) {
   return (
-    <View
-      style={[
-        styles.summaryCard,
-        fullWidth ? styles.summaryCardFull : undefined,
-      ]}
-    >
+    <View style={styles.summaryCard}>
       <View style={styles.summaryIconWrap}>
         <Ionicons name={icon} size={18} color={colors.accent} />
       </View>
@@ -398,8 +464,7 @@ function LineChart({
     1,
   );
 
-  const innerHeight =
-    chartHeight - padding.top - padding.bottom;
+  const innerHeight = chartHeight - padding.top - padding.bottom;
 
   const points = data.map((item, index) => {
     const x =
@@ -530,11 +595,13 @@ function LineChart({
 function ProgressRow({
   label,
   percentage,
+  value,
   colors,
   styles,
 }: {
   label: string;
   percentage: number;
+  value: string;
   colors: any;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -543,44 +610,10 @@ function ProgressRow({
   return (
     <View style={styles.progressRow}>
       <View style={styles.progressLabelRow}>
-        <Text style={styles.progressLabel}>{label}</Text>
-        <Text style={styles.progressValue}>{safePercentage}%</Text>
-      </View>
+        <View style={styles.progressTextWrap}>
+          <Text style={styles.progressLabel}>{label}</Text>
 
-      <View style={styles.progressTrack}>
-        <View
-          style={[
-            styles.progressFill,
-            {
-              width: `${safePercentage}%`,
-              backgroundColor: colors.accent,
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-}
-
-function DistrictProgressRow({
-  district,
-  colors,
-  styles,
-}: {
-  district: DistrictItem;
-  colors: any;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  const safePercentage = Math.max(0, Math.min(district.percentage, 100));
-
-  return (
-    <View style={styles.progressRow}>
-      <View style={styles.progressLabelRow}>
-        <View style={styles.districtLabelWrap}>
-          <Text style={styles.progressLabel}>{district.label}</Text>
-          <Text style={styles.viewerCount}>
-            {formatCompactNumber(district.viewers)} viewers
-          </Text>
+          <Text style={styles.progressSubText}>{value}</Text>
         </View>
 
         <Text style={styles.progressValue}>{safePercentage}%</Text>
@@ -602,7 +635,7 @@ function DistrictProgressRow({
 }
 
 /* =========================================================
-   DETAIL ROW
+   DETAIL / EMPTY
    ========================================================= */
 
 function DetailRow({
@@ -628,6 +661,31 @@ function DetailRow({
 
       {!last ? <View style={styles.divider} /> : null}
     </>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  text,
+  colors,
+  styles,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  text: string;
+  colors: any;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={styles.emptyWrap}>
+      <View style={styles.emptyIcon}>
+        <Ionicons name={icon} size={24} color={colors.accent} />
+      </View>
+
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyText}>{text}</Text>
+    </View>
   );
 }
 
@@ -657,6 +715,30 @@ function formatCompactNumber(value: number) {
   }
 
   return String(value);
+}
+
+function formatDuration(seconds: number) {
+  if (seconds <= 0) return "0s";
+
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (minutes < 60) {
+    return remainingSeconds > 0
+      ? `${minutes}m ${remainingSeconds}s`
+      : `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  return remainingMinutes > 0
+    ? `${hours}h ${remainingMinutes}m`
+    : `${hours}h`;
 }
 
 function formatPercentage(value: number | null) {
@@ -705,10 +787,31 @@ function createStyles(colors: any) {
       fontFamily: "Poppins_700Bold",
     },
 
+    statusCard: {
+      marginBottom: 12,
+      padding: 12,
+      borderRadius: 18,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    statusText: {
+      flex: 1,
+      color: colors.muted,
+      fontSize: 11,
+      lineHeight: 17,
+      fontFamily: "Poppins_400Regular",
+    },
+
     metricGrid: {
       flexDirection: "row",
       flexWrap: "wrap",
-      gap: 12,
+      justifyContent: "space-between",
+      rowGap: 12,
     },
 
     summaryCard: {
@@ -720,10 +823,6 @@ function createStyles(colors: any) {
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
-    },
-
-    summaryCardFull: {
-      width: "100%",
     },
 
     summaryIconWrap: {
@@ -772,22 +871,6 @@ function createStyles(colors: any) {
       fontFamily: "Poppins_700Bold",
       textTransform: "uppercase",
       letterSpacing: 0.8,
-    },
-
-    previewBadge: {
-      marginRight: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 999,
-      backgroundColor: colors.surfaceSecondary,
-    },
-
-    previewBadgeText: {
-      color: colors.accent,
-      fontSize: 9,
-      lineHeight: 12,
-      fontFamily: "Poppins_700Bold",
-      textTransform: "uppercase",
     },
 
     seeAllText: {
@@ -885,11 +968,23 @@ function createStyles(colors: any) {
       gap: 12,
     },
 
+    progressTextWrap: {
+      flex: 1,
+    },
+
     progressLabel: {
       color: colors.foreground,
       fontSize: 12,
       lineHeight: 18,
       fontFamily: "Poppins_500Medium",
+    },
+
+    progressSubText: {
+      marginTop: 1,
+      color: colors.muted,
+      fontSize: 10,
+      lineHeight: 15,
+      fontFamily: "Poppins_400Regular",
     },
 
     progressValue: {
@@ -911,18 +1006,24 @@ function createStyles(colors: any) {
       borderRadius: 999,
     },
 
-    districtLabelWrap: {
-      flex: 1,
+    insightCard: {
+      minHeight: 74,
+      padding: 14,
+      borderRadius: 22,
       flexDirection: "row",
-      alignItems: "baseline",
-      gap: 7,
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
 
-    viewerCount: {
-      color: colors.muted,
-      fontSize: 10,
-      lineHeight: 15,
-      fontFamily: "Poppins_400Regular",
+    insightText: {
+      flex: 1,
+      color: colors.foreground,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_500Medium",
     },
 
     detailRow: {
@@ -953,6 +1054,40 @@ function createStyles(colors: any) {
     divider: {
       height: 1,
       backgroundColor: colors.border,
+    },
+
+    emptyWrap: {
+      minHeight: 140,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 18,
+    },
+
+    emptyIcon: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    emptyTitle: {
+      marginTop: 12,
+      color: colors.foreground,
+      fontSize: 13,
+      lineHeight: 19,
+      fontFamily: "Poppins_700Bold",
+      textAlign: "center",
+    },
+
+    emptyText: {
+      marginTop: 5,
+      color: colors.muted,
+      fontSize: 11,
+      lineHeight: 17,
+      fontFamily: "Poppins_400Regular",
+      textAlign: "center",
     },
   });
 }

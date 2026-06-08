@@ -23,8 +23,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://pasalguff.godokan.com",
-        "EXPO_PUBLIC_AUTH_URL": "https://pasalguff.godokan.com",
+        "EXPO_PUBLIC_API_URL": "https://a2zpasal.com",
+        "EXPO_PUBLIC_AUTH_URL": "https://a2zpasal.com",
         "EXPO_PUBLIC_APP_SCHEME": "pasalguff"
       }
     },
@@ -36,8 +36,8 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://pasalguff.godokan.com",
-        "EXPO_PUBLIC_AUTH_URL": "https://pasalguff.godokan.com",
+        "EXPO_PUBLIC_API_URL": "https://a2zpasal.com",
+        "EXPO_PUBLIC_AUTH_URL": "https://a2zpasal.com",
         "EXPO_PUBLIC_APP_SCHEME": "pasalguff"
       }
     }

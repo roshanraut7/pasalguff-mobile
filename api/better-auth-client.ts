@@ -2,6 +2,7 @@ import { createAuthClient } from "better-auth/react";
 import { expoClient } from "@better-auth/expo/client";
 import { inferAdditionalFields } from "better-auth/client/plugins";
 import * as SecureStore from "expo-secure-store";
+import { getDistrictKey } from "@/constants/nepalDistricts";
 
 const BASE_URL = process.env.EXPO_PUBLIC_AUTH_URL!;
 
@@ -38,6 +39,14 @@ export const authClient = createAuthClient({
           required: false,
         },
         address: {
+          type: "string",
+          required: true,
+        },
+        districtKey:{
+         type: "string",
+         required: true,
+        },
+        districtName:{
           type: "string",
           required: true,
         },
@@ -85,10 +94,13 @@ export async function signUpWithEmail(data: {
   lastName: string;
   email: string;
   password: string;
-  address:string;
+  districtName: string;
+  address?: string;
 }) {
   const firstName = data.firstName.trim();
   const lastName = data.lastName.trim();
+  const districtName = data.districtName.trim();
+  const districtKey = getDistrictKey(districtName);
 
   const { data: result, error } = await authClient.signUp.email({
     name: `${firstName} ${lastName}`,
@@ -96,7 +108,11 @@ export async function signUpWithEmail(data: {
     lastName,
     email: data.email.trim().toLowerCase(),
     password: data.password,
-    address:data.address,
+
+    districtKey,
+    districtName,
+
+    address: data.address?.trim() || "",
   });
 
   if (error) throw new Error(error.message || "Signup failed");
@@ -111,4 +127,21 @@ export async function signOut() {
 
 export async function getAuthCookie() {
   return authClient.getCookie();
+}
+
+export async function changeMyPassword(data: {
+  currentPassword: string;
+  newPassword: string;
+}) {
+  const { data: result, error } = await authClient.changePassword({
+    currentPassword: data.currentPassword,
+    newPassword: data.newPassword,
+    revokeOtherSessions: true,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Password change failed");
+  }
+
+  return result;
 }

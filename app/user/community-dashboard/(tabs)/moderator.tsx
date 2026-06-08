@@ -3,6 +3,7 @@ import { router, useGlobalSearchParams, useLocalSearchParams } from "expo-router
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -11,9 +12,9 @@ import {
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { Avatar } from "heroui-native";
-import { Modal, Portal } from "react-native-paper";
+import { Avatar, Dialog } from "heroui-native";
 
 import DataTable from "@/components/common/data-table";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -122,9 +123,9 @@ export default function ModeratorScreen() {
   const [selectedModerator, setSelectedModerator] =
     useState<CommunityMemberItem | null>(null);
 
-  const [actionSheetVisible, setActionSheetVisible] = useState(false);
+  const [actionDialogVisible, setActionDialogVisible] = useState(false);
 
-  const [permissionFormVisible, setPermissionFormVisible] = useState(false);
+  const [permissionModalVisible, setPermissionModalVisible] = useState(false);
   const [permissionFormMode, setPermissionFormMode] =
     useState<PermissionFormMode>("assign");
   const [permissionFormModerator, setPermissionFormModerator] =
@@ -149,8 +150,8 @@ export default function ModeratorScreen() {
 
   const [updateModeratorPermissions, { isLoading: isUpdatingPermissions }] =
     useUpdateModeratorPermissionsMutation();
-    const [removeModerator, { isLoading: isRemovingModerator }] =
-  useRemoveModeratorMutation();
+
+  const [removeModerator] = useRemoveModeratorMutation();
 
   const isSubmittingPermissionForm =
     isAssigningModerator || isUpdatingPermissions;
@@ -199,7 +200,7 @@ export default function ModeratorScreen() {
     () =>
       createModeratorColumns({
         colors,
-        onActionPress: openActionSheet,
+        onActionPress: openActionDialog,
       }),
     [colors],
   );
@@ -230,34 +231,36 @@ export default function ModeratorScreen() {
     }
   }
 
-  function openActionSheet(moderator: CommunityMemberItem) {
+  function openActionDialog(moderator: CommunityMemberItem) {
     setSelectedModerator(moderator);
-    setActionSheetVisible(true);
+    setActionDialogVisible(true);
   }
 
-  function closeActionSheet() {
-    setActionSheetVisible(false);
+  function closeActionDialog() {
+    setActionDialogVisible(false);
     setSelectedModerator(null);
   }
 
-  function openAssignModeratorForm() {
-    setActionSheetVisible(false);
+  function openAssignModeratorModal() {
+    setActionDialogVisible(false);
     setSelectedModerator(null);
     setPermissionFormMode("assign");
     setPermissionFormModerator(null);
-    setPermissionFormVisible(true);
+    setPermissionModalVisible(true);
   }
 
-  function openEditPermissionForm(moderator: CommunityMemberItem) {
+  function openEditPermissionModal(moderator: CommunityMemberItem) {
+    setActionDialogVisible(false);
+    setSelectedModerator(null);
     setPermissionFormMode("edit");
     setPermissionFormModerator(moderator);
-    setPermissionFormVisible(true);
+    setPermissionModalVisible(true);
   }
 
-  function closePermissionForm() {
+  function closePermissionModal() {
     if (isSubmittingPermissionForm) return;
 
-    setPermissionFormVisible(false);
+    setPermissionModalVisible(false);
     setPermissionFormMode("assign");
     setPermissionFormModerator(null);
   }
@@ -284,7 +287,7 @@ export default function ModeratorScreen() {
           canManageReports: values.canManageReports,
         }).unwrap();
 
-        setPermissionFormVisible(false);
+        setPermissionModalVisible(false);
         setPermissionFormModerator(null);
 
         Alert.alert("Moderator assigned", "The selected member is now a moderator.");
@@ -310,7 +313,7 @@ export default function ModeratorScreen() {
         canManageReports: values.canManageReports,
       }).unwrap();
 
-      setPermissionFormVisible(false);
+      setPermissionModalVisible(false);
       setPermissionFormModerator(null);
 
       Alert.alert("Permissions updated", "Moderator permissions were updated.");
@@ -321,90 +324,90 @@ export default function ModeratorScreen() {
   }
 
   function handleModeratorAction(action: ModeratorAction) {
-  if (!selectedModerator) return;
+    if (!selectedModerator) return;
 
-  const moderator = selectedModerator;
-  const moderatorName = moderator.user.name ?? "Unknown User";
+    const moderator = selectedModerator;
+    const moderatorName = moderator.user.name ?? "Unknown User";
 
-  const actionLabel: Record<ModeratorAction, string> = {
-    view: "View profile",
-    message: "Message",
-    editPermissions: "Edit permissions",
-    activity: "View activity",
-    suspend: "Suspend moderator",
-    reactivate: "Reactivate moderator",
-    remove: "Remove moderator",
-  };
+    const actionLabel: Record<ModeratorAction, string> = {
+      view: "View profile",
+      message: "Message",
+      editPermissions: "Edit permissions",
+      activity: "View activity",
+      suspend: "Suspend moderator",
+      reactivate: "Reactivate moderator",
+      remove: "Remove moderator",
+    };
 
-  closeActionSheet();
-
-  if (action === "editPermissions") {
-    openEditPermissionForm(moderator);
-    return;
-  }
-
-  if (action === "activity") {
-    router.push({
-      pathname: "/pages/moderator-activity",
-      params: {
-        moderatorId: moderator.id,
-        userId: moderator.userId,
-        communityId: moderator.communityId,
-      },
-    });
-    return;
-  }
-
-  if (action === "remove") {
-    const targetUserId = moderator.userId ?? moderator.user?.id;
-
-    if (!communityId) {
-      Alert.alert("Missing community", "Community ID was not found.");
+    if (action === "editPermissions") {
+      openEditPermissionModal(moderator);
       return;
     }
 
-    if (!targetUserId) {
-      Alert.alert("Missing moderator", "Moderator user ID was not found.");
-      return;
-    }
+    closeActionDialog();
 
-    Alert.alert(
-      "Remove moderator",
-      `Are you sure you want to remove ${moderatorName} as a moderator? They will stay in the community as a normal member.`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
+    if (action === "activity") {
+      router.push({
+        pathname: "/pages/moderator-activity",
+        params: {
+          moderatorId: moderator.id,
+          userId: moderator.userId,
+          communityId: moderator.communityId,
         },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await removeModerator({
-                communityId,
-                targetUserId,
-              }).unwrap();
+      });
+      return;
+    }
 
-              Alert.alert(
-                "Moderator removed",
-                `${moderatorName} is now a normal community member.`,
-              );
+    if (action === "remove") {
+      const targetUserId = moderator.userId ?? moderator.user?.id;
 
-              refetch();
-            } catch (removeError) {
-              Alert.alert("Action failed", getApiErrorMessage(removeError));
-            }
+      if (!communityId) {
+        Alert.alert("Missing community", "Community ID was not found.");
+        return;
+      }
+
+      if (!targetUserId) {
+        Alert.alert("Missing moderator", "Moderator user ID was not found.");
+        return;
+      }
+
+      Alert.alert(
+        "Remove moderator",
+        `Are you sure you want to remove ${moderatorName} as a moderator? They will stay in the community as a normal member.`,
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
           },
-        },
-      ],
-    );
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await removeModerator({
+                  communityId,
+                  targetUserId,
+                }).unwrap();
 
-    return;
+                Alert.alert(
+                  "Moderator removed",
+                  `${moderatorName} is now a normal community member.`,
+                );
+
+                refetch();
+              } catch (removeError) {
+                Alert.alert("Action failed", getApiErrorMessage(removeError));
+              }
+            },
+          },
+        ],
+      );
+
+      return;
+    }
+
+    Alert.alert(actionLabel[action], `${actionLabel[action]}: ${moderatorName}`);
   }
-
-  Alert.alert(actionLabel[action], `${actionLabel[action]}: ${moderatorName}`);
-}
 
   if (!communityId) {
     return (
@@ -444,7 +447,7 @@ export default function ModeratorScreen() {
           </View>
 
           <Pressable
-            onPress={openAssignModeratorForm}
+            onPress={openAssignModeratorModal}
             style={({ pressed }) => [
               styles.addButton,
               pressed && { opacity: 0.75 },
@@ -509,161 +512,192 @@ export default function ModeratorScreen() {
         />
       </ScrollView>
 
-      <Portal>
-        <Modal
-          visible={actionSheetVisible}
-          onDismiss={closeActionSheet}
-          contentContainerStyle={styles.modalContainer}
-        >
-          <View style={styles.sheetHandle} />
+      <Dialog
+        isOpen={actionDialogVisible}
+        onOpenChange={(open) => {
+          if (!open) closeActionDialog();
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay />
 
-          <View style={styles.sheetHeader}>
-            <View style={styles.moderatorInfo}>
-              {selectedModerator ? (
-                <Avatar
-                  alt={selectedModerator.user.name ?? "Moderator"}
-                  size="lg"
-                  variant="soft"
-                  color="success"
-                >
-                  {toAbsoluteFileUrl(selectedModerator.user.image) ? (
-                    <Avatar.Image
-                      source={{
-                        uri: toAbsoluteFileUrl(selectedModerator.user.image)!,
-                      }}
-                    />
-                  ) : null}
+          <Dialog.Content style={styles.actionDialogContent}>
+            <View style={styles.dialogTopRow}>
+              <View style={{ flex: 1 }}>
+                <Dialog.Title style={styles.dialogTitle}>
+                  Moderator actions
+                </Dialog.Title>
 
-                  <Avatar.Fallback>
-                    {getModeratorInitials(selectedModerator.user.name)}
-                  </Avatar.Fallback>
-                </Avatar>
-              ) : null}
+                <Dialog.Description style={styles.dialogDescription}>
+                  Manage this moderator account.
+                </Dialog.Description>
+              </View>
 
-              <View style={styles.moderatorTextWrap}>
-                <Text numberOfLines={1} style={styles.sheetTitle}>
-                  {selectedModerator?.user.name ?? "Moderator"}
-                </Text>
+              <Dialog.Close variant="ghost" />
+            </View>
 
-                <Text numberOfLines={1} style={styles.sheetSubtitle}>
-                  {selectedModerator?.user.email ??
-                    selectedModerator?.role ??
-                    "Community moderator"}
-                </Text>
-
+            <View style={styles.sheetHeader}>
+              <View style={styles.moderatorInfo}>
                 {selectedModerator ? (
-                  <View style={styles.permissionPreview}>
-                    {getModeratorPermissions(selectedModerator).map(
-                      (permission) => (
-                        <View key={permission} style={styles.permissionChip}>
-                          <Text style={styles.permissionChipText}>
-                            {getPermissionLabel(permission)}
-                          </Text>
-                        </View>
-                      ),
-                    )}
-                  </View>
+                  <Avatar
+                    alt={selectedModerator.user.name ?? "Moderator"}
+                    size="lg"
+                    variant="soft"
+                    color="success"
+                  >
+                    {toAbsoluteFileUrl(selectedModerator.user.image) ? (
+                      <Avatar.Image
+                        source={{
+                          uri: toAbsoluteFileUrl(selectedModerator.user.image)!,
+                        }}
+                      />
+                    ) : null}
+
+                    <Avatar.Fallback>
+                      {getModeratorInitials(selectedModerator.user.name)}
+                    </Avatar.Fallback>
+                  </Avatar>
                 ) : null}
+
+                <View style={styles.moderatorTextWrap}>
+                  <Text numberOfLines={1} style={styles.sheetTitle}>
+                    {selectedModerator?.user.name ?? "Moderator"}
+                  </Text>
+
+                  <Text numberOfLines={1} style={styles.sheetSubtitle}>
+                    {selectedModerator?.user.email ??
+                      selectedModerator?.role ??
+                      "Community moderator"}
+                  </Text>
+
+                  {selectedModerator ? (
+                    <View style={styles.permissionPreview}>
+                      {getModeratorPermissions(selectedModerator).map(
+                        (permission) => (
+                          <View key={permission} style={styles.permissionChip}>
+                            <Text style={styles.permissionChipText}>
+                              {getPermissionLabel(permission)}
+                            </Text>
+                          </View>
+                        ),
+                      )}
+                    </View>
+                  ) : null}
+                </View>
               </View>
             </View>
 
-            <Pressable
-              onPress={closeActionSheet}
-              style={({ pressed }) => [
-                styles.closeButton,
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Ionicons name="close" size={21} color={colors.foreground} />
-            </Pressable>
-          </View>
-
-          <View style={styles.actionGrid}>
-            <GridAction
-              icon="person-outline"
-              label="View profile"
-              onPress={() => handleModeratorAction("view")}
-            />
-
-            <GridAction
-              icon="chatbubble-outline"
-              label="Message"
-              onPress={() => handleModeratorAction("message")}
-            />
-
-            <GridAction
-              icon="options-outline"
-              label="Permissions"
-              onPress={() => handleModeratorAction("editPermissions")}
-            />
-
-            <GridAction
-              icon="analytics-outline"
-              label="Activity"
-              onPress={() => handleModeratorAction("activity")}
-            />
-
-            {selectedModerator?.status === "ACTIVE" ? (
+            <View style={styles.actionGrid}>
               <GridAction
-                icon="pause-circle-outline"
-                label="Suspend"
+                icon="person-outline"
+                label="View profile"
+                onPress={() => handleModeratorAction("view")}
+              />
+
+              <GridAction
+                icon="chatbubble-outline"
+                label="Message"
+                onPress={() => handleModeratorAction("message")}
+              />
+
+              <GridAction
+                icon="options-outline"
+                label="Permissions"
+                onPress={() => handleModeratorAction("editPermissions")}
+              />
+
+              <GridAction
+                icon="analytics-outline"
+                label="Activity"
+                onPress={() => handleModeratorAction("activity")}
+              />
+
+              {selectedModerator?.status === "ACTIVE" ? (
+                <GridAction
+                  icon="pause-circle-outline"
+                  label="Suspend"
+                  danger
+                  onPress={() => handleModeratorAction("suspend")}
+                />
+              ) : (
+                <GridAction
+                  icon="refresh-outline"
+                  label="Reactivate"
+                  onPress={() => handleModeratorAction("reactivate")}
+                />
+              )}
+
+              <GridAction
+                icon="trash-outline"
+                label="Remove"
                 danger
-                onPress={() => handleModeratorAction("suspend")}
+                onPress={() => handleModeratorAction("remove")}
               />
-            ) : (
-              <GridAction
-                icon="refresh-outline"
-                label="Reactivate"
-                onPress={() => handleModeratorAction("reactivate")}
-              />
-            )}
+            </View>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog>
 
-            <GridAction
-              icon="trash-outline"
-              label="Remove"
-              danger
-              onPress={() => handleModeratorAction("remove")}
-            />
-          </View>
-        </Modal>
-
-        <Modal
-          visible={permissionFormVisible}
-          onDismiss={closePermissionForm}
-          contentContainerStyle={styles.formModalContainer}
+      <Modal
+        visible={permissionModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={closePermissionModal}
+      >
+        <SafeAreaView
+          edges={["top", "bottom"]}
+          style={[styles.permissionModalScreen, { backgroundColor: colors.surface }]}
         >
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.formKeyboardWrap}
+            style={styles.permissionKeyboardWrap}
           >
-            <View style={styles.sheetHandle} />
+            <View style={styles.permissionModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.permissionModalTitle}>
+                  {permissionFormMode === "assign"
+                    ? "Assign moderator"
+                    : "Edit permissions"}
+                </Text>
 
-            <ModeratorPermissionForm
-              communityId={communityId}
-              mode={permissionFormMode}
-              isVisible={permissionFormVisible}
-              defaultValues={
-                permissionFormMode === "edit"
-                  ? getModeratorDefaultValues(permissionFormModerator)
-                  : undefined
-              }
-              title={
-                permissionFormMode === "assign"
-                  ? "Assign moderator"
-                  : "Edit permissions"
-              }
-              subtitle={
-                permissionFormMode === "edit" && permissionFormModerator?.user.name
-                  ? permissionFormModerator.user.name
-                  : undefined
-              }
-              isSubmitting={isSubmittingPermissionForm}
-              onCancel={closePermissionForm}
-              onSubmit={handlePermissionFormSubmit}
-            />
+                <Text style={styles.permissionModalSubtitle}>
+                  {permissionFormMode === "edit" &&
+                  permissionFormModerator?.user.name
+                    ? permissionFormModerator.user.name
+                    : "Select member and moderator permissions."}
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={closePermissionModal}
+                disabled={isSubmittingPermissionForm}
+                style={({ pressed }) => [
+                  styles.permissionCloseButton,
+                  pressed && !isSubmittingPermissionForm ? { opacity: 0.7 } : null,
+                ]}
+              >
+                <Ionicons name="close" size={22} color={colors.foreground} />
+              </Pressable>
+            </View>
+
+            <View style={styles.permissionFormWrap}>
+              <ModeratorPermissionForm
+                communityId={communityId}
+                mode={permissionFormMode}
+                isVisible={permissionModalVisible}
+                defaultValues={
+                  permissionFormMode === "edit"
+                    ? getModeratorDefaultValues(permissionFormModerator)
+                    : undefined
+                }
+                isSubmitting={isSubmittingPermissionForm}
+                onCancel={closePermissionModal}
+                onSubmit={handlePermissionFormSubmit}
+              />
+            </View>
           </KeyboardAvoidingView>
-        </Modal>
-      </Portal>
+        </SafeAreaView>
+      </Modal>
     </>
   );
 
@@ -809,48 +843,38 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontFamily: "Poppins_400Regular",
     },
 
-    modalContainer: {
-      marginHorizontal: 0,
-      marginBottom: 0,
-      marginTop: "auto",
-      backgroundColor: colors.surface,
-      borderTopLeftRadius: 30,
-      borderTopRightRadius: 30,
-      paddingTop: 10,
-      paddingBottom: 28,
-      borderTopWidth: 1,
-      borderColor: colors.border,
-    },
-
-    formModalContainer: {
-      marginHorizontal: 0,
-      marginBottom: 0,
-      marginTop: "auto",
+    actionDialogContent: {
+      width: "94%",
       maxHeight: "88%",
+      borderRadius: 28,
       backgroundColor: colors.surface,
-      borderTopLeftRadius: 30,
-      borderTopRightRadius: 30,
-      borderTopWidth: 1,
+      borderWidth: 1,
       borderColor: colors.border,
-      overflow: "hidden",
+      padding: 16,
     },
 
-    formKeyboardWrap: {
-      maxHeight: "100%",
-      paddingTop: 10,
+    dialogTopRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+      marginBottom: 14,
     },
 
-    sheetHandle: {
-      width: 44,
-      height: 5,
-      borderRadius: 999,
-      backgroundColor: colors.border,
-      alignSelf: "center",
-      marginBottom: 10,
+    dialogTitle: {
+      color: colors.foreground,
+      fontSize: 18,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    dialogDescription: {
+      marginTop: 3,
+      color: colors.muted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
     },
 
     sheetHeader: {
-      paddingHorizontal: 18,
       paddingBottom: 16,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
@@ -872,26 +896,15 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
 
     sheetTitle: {
       color: colors.foreground,
-      fontSize: 18,
+      fontSize: 17,
       fontFamily: "Poppins_700Bold",
     },
 
     sheetSubtitle: {
       marginTop: 2,
       color: colors.muted,
-      fontSize: 13,
+      fontSize: 12,
       fontFamily: "Poppins_400Regular",
-    },
-
-    closeButton: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.surfaceSecondary,
-      borderWidth: 1,
-      borderColor: colors.border,
     },
 
     permissionPreview: {
@@ -917,7 +930,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     },
 
     actionGrid: {
-      paddingHorizontal: 22,
       paddingTop: 22,
       paddingBottom: 8,
       flexDirection: "row",
@@ -939,6 +951,57 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       lineHeight: 16,
       fontFamily: "Poppins_600SemiBold",
       textAlign: "center",
+    },
+
+    permissionModalScreen: {
+      flex: 1,
+    },
+
+    permissionKeyboardWrap: {
+      flex: 1,
+    },
+
+    permissionModalHeader: {
+      paddingHorizontal: 18,
+      paddingTop: 10,
+      paddingBottom: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+    },
+
+    permissionModalTitle: {
+      color: colors.foreground,
+      fontSize: 24,
+      lineHeight: 30,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    permissionModalSubtitle: {
+      marginTop: 4,
+      color: colors.muted,
+      fontSize: 13,
+      lineHeight: 19,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    permissionCloseButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    permissionFormWrap: {
+      flex: 1,
+      paddingHorizontal: 18,
+      paddingTop: 16,
     },
   });
 }

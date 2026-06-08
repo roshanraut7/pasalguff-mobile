@@ -46,6 +46,7 @@ export default function SignupForm() {
       lastName: "",
       email: "",
       password: "",
+      districtName: "",
       address: "",
       acceptedTerms: false,
     },
@@ -61,7 +62,8 @@ export default function SignupForm() {
         lastName: values.lastName.trim(),
         email: values.email.trim().toLowerCase(),
         password: values.password,
-        address: values.address.trim(),
+        districtName: values.districtName.trim(),
+        address: values.address?.trim() || "",
       });
 
       router.replace("/onboarding");
@@ -228,9 +230,10 @@ export default function SignupForm() {
           )}
         />
 
+        {/* DISTRICT FIELD */}
         <Controller
           control={control}
-          name="address"
+          name="districtName"
           render={({ field: { onChange, value } }) => (
             <View>
               <Text
@@ -240,7 +243,7 @@ export default function SignupForm() {
                   fontFamily: "Poppins_500Medium",
                 }}
               >
-                Address
+                District
               </Text>
 
               <Pressable
@@ -248,7 +251,9 @@ export default function SignupForm() {
                 disabled={isSubmitting}
                 className="h-12 flex-row items-center justify-between rounded-xl border border-field-border bg-field-background px-4"
                 style={{
-                  borderColor: errors.address ? colors.danger : undefined,
+                  borderColor: errors.districtName
+                    ? colors.danger
+                    : undefined,
                 }}
               >
                 <View className="flex-row items-center flex-1">
@@ -259,7 +264,9 @@ export default function SignupForm() {
                   />
 
                   <Text
-                    className={value ? "text-foreground ml-3" : "text-muted ml-3"}
+                    className={
+                      value ? "text-foreground ml-3" : "text-muted ml-3"
+                    }
                     style={{
                       fontSize: 14,
                       fontFamily: "Poppins_400Regular",
@@ -276,7 +283,7 @@ export default function SignupForm() {
                 />
               </Pressable>
 
-              {errors.address?.message ? (
+              {errors.districtName?.message ? (
                 <Text
                   style={{
                     color: colors.danger,
@@ -285,7 +292,7 @@ export default function SignupForm() {
                     fontFamily: "Poppins_400Regular",
                   }}
                 >
-                  {errors.address.message}
+                  {errors.districtName.message}
                 </Text>
               ) : null}
 
@@ -300,24 +307,37 @@ export default function SignupForm() {
                     className="rounded-t-3xl bg-background px-5 pt-5 pb-8"
                     style={{ maxHeight: "72%" }}
                   >
-                    <View className="flex-row items-center justify-between mb-4">
-                      <Text
-                        className="text-foreground"
-                        style={{
-                          fontSize: 18,
-                          fontFamily: "Poppins_600SemiBold",
-                        }}
-                      >
-                        Select District
-                      </Text>
+                    <View className="mb-4 flex-row items-center justify-between">
+                      <View>
+                        <Text
+                          className="text-foreground"
+                          style={{
+                            fontSize: 18,
+                            fontFamily: "Poppins_600SemiBold",
+                          }}
+                        >
+                          Select District
+                        </Text>
+
+                        <Text
+                          className="text-muted mt-1"
+                          style={{
+                            fontSize: 12,
+                            fontFamily: "Poppins_400Regular",
+                          }}
+                        >
+                          Choose the district where you are based.
+                        </Text>
+                      </View>
 
                       <Pressable
                         onPress={() => setIsDistrictModalOpen(false)}
-                        hitSlop={10}
+                        hitSlop={12}
+                        className="h-9 w-9 items-center justify-center rounded-full bg-field-background"
                       >
                         <Ionicons
                           name="close-outline"
-                          size={26}
+                          size={24}
                           color={colors.muted}
                         />
                       </Pressable>
@@ -366,6 +386,39 @@ export default function SignupForm() {
           )}
         />
 
+        {/* OPTIONAL ADDRESS FIELD */}
+        <Controller
+          control={control}
+          name="address"
+          render={({ field: { onChange, value } }) => (
+            <TextField isInvalid={!!errors.address}>
+              <Label>Address / Area Optional</Label>
+
+              <InputGroup className="border-field-border bg-field-background">
+                <InputGroup.Prefix isDecorative>
+                  <Ionicons
+                    name="home-outline"
+                    size={18}
+                    color={colors.muted}
+                  />
+                </InputGroup.Prefix>
+
+                <InputGroup.Input
+                  value={value}
+                  onChangeText={onChange}
+                  placeholder="Example: Baneshwor, near Civil Hospital"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+              </InputGroup>
+
+              {errors.address?.message ? (
+                <FieldError>{errors.address.message}</FieldError>
+              ) : null}
+            </TextField>
+          )}
+        />
+
         <Controller
           control={control}
           name="acceptedTerms"
@@ -397,9 +450,7 @@ export default function SignupForm() {
                 >
                   I have read and agree to the{" "}
                   <Text
-                    onPress={() =>
-                      router.push("/pages/terms-condition")
-                    }
+                    onPress={() => router.push("/pages/terms-condition")}
                     style={{
                       color: colors.success,
                       fontFamily: "Poppins_600SemiBold",
