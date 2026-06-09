@@ -279,7 +279,7 @@ export default function CommunityDetailScreen() {
     }
 
     if (isModerator) {
-      return "Moderator";
+      return "Mod";
     }
 
     if (isJoined) {
