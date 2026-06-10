@@ -38,12 +38,22 @@ export function createProfileStyles(colors: ProfileColors) {
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
     },
+     coverBackdrop: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      top: 0,
+      height: 220,
+      borderBottomLeftRadius: 34,
+      borderBottomRightRadius: 34,
+      backgroundColor: colors.coverOverlay,
+    },
     coverFallback: {
       height: 230,
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
       overflow: "hidden",
-      backgroundColor: colors.surfaceSecondary,
+      backgroundColor: colors.separator,
     },
     coverActionWrap: {
       position: "absolute",

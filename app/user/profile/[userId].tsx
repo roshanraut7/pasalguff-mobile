@@ -219,11 +219,24 @@ function CoverImage({ image }: { image?: string | null }) {
       style={[
         styles.coverFallback,
         {
-          backgroundColor: colors.surfaceSecondary,
+          backgroundColor: colors.segment,
           borderColor: colors.border,
         },
       ]}
-    />
+    >
+      <View style={styles.coverFallbackContent}>
+        <View
+          style={[
+            styles.coverFallbackIcon,
+            {
+              backgroundColor: colors.surface,
+            },
+          ]}
+        >
+          <Ionicons name="person-outline" size={30} color={colors.accent} />
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -252,7 +265,7 @@ function ProfileAvatar({
       style={[
         styles.avatarFallback,
         {
-          backgroundColor: colors.surface,
+          backgroundColor: colors.segment,
           borderColor: colors.border,
         },
       ]}
@@ -345,6 +358,52 @@ function ProfileActionButtons({
   );
 }
 
+function HeaderStatCard({
+  icon,
+  value,
+  label,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  value: string;
+  label: string;
+}) {
+  const { colors } = useAppTheme();
+
+  return (
+    <View
+      style={[
+        styles.headerStatCard,
+        {
+          backgroundColor: colors.surfaceSecondary,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.headerStatIcon,
+          {
+            backgroundColor: colors.segment,
+          },
+        ]}
+      >
+        <Ionicons name={icon} size={16} color={colors.accent} />
+      </View>
+
+      <Text
+        numberOfLines={1}
+        style={[styles.headerStatValue, { color: colors.foreground }]}
+      >
+        {value}
+      </Text>
+
+      <Text numberOfLines={1} style={[styles.headerStatLabel, { color: colors.muted }]}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 function CommunityListCard({
   community,
 }: {
@@ -372,7 +431,7 @@ function CommunityListCard({
           style={[
             styles.communityAvatarFallback,
             {
-              backgroundColor: colors.surfaceSecondary,
+              backgroundColor: colors.segment,
               borderColor: colors.border,
             },
           ]}
@@ -396,7 +455,7 @@ function CommunityListCard({
             style={[
               styles.smallPill,
               {
-                backgroundColor: colors.surfaceSecondary,
+                backgroundColor: colors.segment,
                 borderColor: colors.border,
               },
             ]}
@@ -437,7 +496,13 @@ function CommunityListCard({
         </View>
       </View>
 
-      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+      <View
+        style={[
+          styles.cardArrowWrap,
+        ]}
+      >
+        <Ionicons name="chevron-forward" size={17} color={colors.surface} />
+      </View>
     </Pressable>
   );
 }
@@ -465,11 +530,11 @@ function FollowUserCard({ item }: { item: FollowItem }) {
       ) : (
         <View
           style={[
-            styles.smallAvatarFallback,
-            {
-              backgroundColor: colors.surfaceSecondary,
-              borderColor: colors.border,
-            },
+            // styles.smallAvatarFallback,
+            // {
+            //   backgroundColor: colors.segment,
+            //   borderColor: colors.border,
+            // },
           ]}
         >
           <Text style={[styles.smallInitials, { color: colors.accent }]}>
@@ -493,10 +558,26 @@ function FollowUserCard({ item }: { item: FollowItem }) {
           >
             {user.businessName}
           </Text>
-        ) : null}
+        ) : (
+          <Text
+            numberOfLines={1}
+            style={[styles.cardMeta, { color: colors.muted }]}
+          >
+            Community member
+          </Text>
+        )}
       </View>
 
-      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+      <View
+        style={[
+          styles.cardArrowWrap,
+          {
+            backgroundColor: colors.segment,
+          },
+        ]}
+      >
+        <Ionicons name="chevron-forward" size={17} color={colors.muted} />
+      </View>
     </Pressable>
   );
 }
@@ -526,7 +607,7 @@ function InfoRow({
         style={[
           styles.infoIconWrap,
           {
-            backgroundColor: colors.surfaceSecondary,
+            backgroundColor: colors.segment,
           },
         ]}
       >
@@ -610,7 +691,16 @@ function EmptyState({
         },
       ]}
     >
-      <Ionicons name={icon} size={30} color={colors.accent} />
+      <View
+        style={[
+          styles.emptyIconWrap,
+          {
+            backgroundColor: colors.segment,
+          },
+        ]}
+      >
+        <Ionicons name={icon} size={26} color={colors.accent} />
+      </View>
 
       <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
         {title}
@@ -1001,7 +1091,20 @@ export default function PublicProfileScreen() {
           },
         ]}
       >
-        <Ionicons name="alert-circle-outline" size={34} color={colors.danger} />
+        <View
+          style={[
+            styles.errorIconWrap,
+            {
+              backgroundColor: colors.segment,
+            },
+          ]}
+        >
+          <Ionicons
+            name="alert-circle-outline"
+            size={32}
+            color={colors.danger}
+          />
+        </View>
 
         <Text style={[styles.errorTitle, { color: colors.foreground }]}>
           Profile not available
@@ -1157,6 +1260,8 @@ export default function PublicProfileScreen() {
       <View style={styles.coverSection}>
         <CoverImage image={typedProfile.coverImage} />
 
+        <View pointerEvents="none" style={styles.coverBackdrop} />
+
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="chevron-back" size={22} color="#ffffff" />
         </Pressable>
@@ -1178,31 +1283,63 @@ export default function PublicProfileScreen() {
         </View>
       </View>
 
-      <View style={styles.profileInfoSection}>
-        <Text
-          numberOfLines={1}
-          style={[styles.profileName, { color: colors.foreground }]}
-        >
-          {typedProfile.displayName}
-        </Text>
+      <View
+        style={[
+          styles.profileInfoSection,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.profileInfoTopRow}>
+          <View style={styles.profileNameWrap}>
+            <Text
+              numberOfLines={1}
+              style={[styles.profileName, { color: colors.foreground }]}
+            >
+              {typedProfile.displayName}
+            </Text>
 
-        {typedProfile.businessName ? (
-          <Text
-            numberOfLines={1}
-            style={[styles.profileSubText, { color: colors.muted }]}
-          >
-            {typedProfile.businessName}
-          </Text>
-        ) : null}
+            {typedProfile.businessName ? (
+              <Text
+                numberOfLines={1}
+                style={[styles.profileSubText, { color: colors.muted }]}
+              >
+                {typedProfile.businessName}
+              </Text>
+            ) : null}
 
-        {typedProfile.businessType ? (
-          <Text
-            numberOfLines={1}
-            style={[styles.profileBusinessType, { color: colors.muted }]}
-          >
-            {typedProfile.businessType}
-          </Text>
-        ) : null}
+            {typedProfile.businessType ? (
+              <View
+                style={[
+                  styles.businessTypePill,
+                  {
+                    backgroundColor: colors.segment,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="briefcase-outline"
+                  size={13}
+                  color={colors.accent}
+                />
+
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.businessTypePillText,
+                    {
+                      color: colors.accent,
+                    },
+                  ]}
+                >
+                  {typedProfile.businessType}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
 
         <ProfileActionButtons
           profile={typedProfile}
@@ -1213,54 +1350,24 @@ export default function PublicProfileScreen() {
           onMessage={handleMessagePress}
         />
 
-        <View style={styles.profileBadgeRow}>
-          <View
-            style={[
-              styles.profileBadge,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <Ionicons name="calendar-outline" size={14} color={colors.accent} />
+        <View style={styles.headerStatsGrid}>
+          <HeaderStatCard
+            icon="people-outline"
+            value={String(typedProfile.stats?.followersCount ?? 0)}
+            label="Followers"
+          />
 
-            <Text style={[styles.profileBadgeText, { color: colors.accent }]}>
-              Joined {formatDate(typedProfile.createdAt)}
-            </Text>
-          </View>
+          <HeaderStatCard
+            icon="person-outline"
+            value={String(typedProfile.stats?.followingCount ?? 0)}
+            label="Following"
+          />
 
-          <View
-            style={[
-              styles.profileBadge,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <Ionicons name="people-outline" size={14} color={colors.accent} />
-
-            <Text style={[styles.profileBadgeText, { color: colors.accent }]}>
-              {typedProfile.stats?.followersCount ?? 0} followers
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.profileBadge,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <Ionicons name="person-outline" size={14} color={colors.accent} />
-
-            <Text style={[styles.profileBadgeText, { color: colors.accent }]}>
-              {typedProfile.stats?.followingCount ?? 0} following
-            </Text>
-          </View>
+          <HeaderStatCard
+            icon="calendar-outline"
+            value={formatDate(typedProfile.createdAt)}
+            label="Joined"
+          />
         </View>
       </View>
 
@@ -1272,6 +1379,7 @@ export default function PublicProfileScreen() {
           styles.tabsRoot,
           {
             borderBottomColor: colors.border,
+            backgroundColor: colors.background,
           },
         ]}
       >

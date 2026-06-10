@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -34,6 +34,7 @@ export default function PostModerationScreen() {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const {
     data: community,
@@ -63,6 +64,37 @@ export default function PostModerationScreen() {
 
   const canOpenScreen = isOwner || isModerator;
 
+  const isSearchActive = Boolean(search.trim());
+
+  /**
+   * Debounce search so backend is not called on every single key press.
+   */
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 400);
+
+    return () => clearTimeout(timeout);
+  }, [search]);
+
+  /**
+   * Reset post list when community or backend search query changes.
+   */
+  useEffect(() => {
+    setCursor(undefined);
+    setPosts([]);
+  }, [community?.id, debouncedSearch]);
+
+  /**
+   * Reset everything when opening another community.
+   */
+  useEffect(() => {
+    setCursor(undefined);
+    setPosts([]);
+    setSearch("");
+    setDebouncedSearch("");
+  }, [community?.id]);
+
   const {
     data: postsResponse,
     isLoading: postsLoading,
@@ -72,6 +104,7 @@ export default function PostModerationScreen() {
       communityId: community?.id ?? "",
       limit: 10,
       cursor,
+      search: debouncedSearch || undefined,
       sortBy: "newest",
     },
     {
@@ -81,78 +114,40 @@ export default function PostModerationScreen() {
   );
 
   useEffect(() => {
-    setCursor(undefined);
-    setPosts([]);
-    setSearch("");
-  }, [community?.id]);
-
-  useEffect(() => {
-    if (!postsResponse) {
-      return;
-    }
+    if (!postsResponse) return;
 
     const incomingPosts = postsResponse.data ?? [];
 
-    setPosts((previousPosts) => {
-      if (!cursor) {
-        return incomingPosts;
-      }
+    setPosts((prev) => {
+      if (!cursor) return incomingPosts;
 
-      const existingIds = new Set(previousPosts.map((post) => post.id));
-
-      const newPosts = incomingPosts.filter(
-        (post) => !existingIds.has(post.id),
-      );
-
-      return [...previousPosts, ...newPosts];
+      const existingIds = new Set(prev.map((p) => p.id));
+      return [...prev, ...incomingPosts.filter((p) => !existingIds.has(p.id))];
     });
   }, [postsResponse, cursor]);
 
-  const filteredPosts = useMemo(() => {
-    const searchText = search.trim().toLowerCase();
-
-    if (!searchText) {
-      return posts;
-    }
-
-    return posts.filter((post: any) => {
-      const title = String(post.title ?? "").toLowerCase();
-      const content = stripHtml(post.content).toLowerCase();
-      const authorName = String(post.author?.name ?? "").toLowerCase();
-      const tag = String(post.tag ?? "").toLowerCase();
-
-      return (
-        title.includes(searchText) ||
-        content.includes(searchText) ||
-        authorName.includes(searchText) ||
-        tag.includes(searchText)
-      );
-    });
-  }, [posts, search]);
-
   const totalPostCount = community?.postCount ?? posts.length;
 
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setCursor(undefined);
+    setPosts([]);
+  }, []);
+
+  const handleClearSearch = useCallback(() => {
+    setSearch("");
+    setDebouncedSearch("");
+    setCursor(undefined);
+    setPosts([]);
+  }, []);
+
   const handleLoadMore = useCallback(() => {
-    if (postsLoading || postsFetching) {
-      return;
-    }
-
-    if (!postsResponse?.meta?.hasMore || !postsResponse?.meta?.nextCursor) {
-      return;
-    }
-
-    if (cursor === postsResponse.meta.nextCursor) {
-      return;
-    }
+    if (postsLoading || postsFetching) return;
+    if (!postsResponse?.meta?.hasMore || !postsResponse?.meta?.nextCursor) return;
+    if (cursor === postsResponse.meta.nextCursor) return;
 
     setCursor(postsResponse.meta.nextCursor ?? undefined);
-  }, [
-    postsLoading,
-    postsFetching,
-    postsResponse?.meta?.hasMore,
-    postsResponse?.meta?.nextCursor,
-    cursor,
-  ]);
+  }, [postsLoading, postsFetching, postsResponse?.meta, cursor]);
 
   const handleOpenPostDetail = useCallback(
     (post: CommunityPost) => {
@@ -176,9 +171,7 @@ export default function PostModerationScreen() {
     );
   }
 
-  if (!session?.user) {
-    return <Redirect href="/(auth)" />;
-  }
+  if (!session?.user) return <Redirect href="/(auth)" />;
 
   if (communityError || !community) {
     return (
@@ -186,9 +179,18 @@ export default function PostModerationScreen() {
         edges={["top"]}
         style={[styles.safe, { backgroundColor: colors.background }]}
       >
-        <Header title="Post Moderation" colors={colors} />
+        <Header colors={colors} />
 
         <View style={styles.center}>
+          <View
+            style={[
+              styles.emptyIcon,
+              { backgroundColor: colors.surfaceSecondary },
+            ]}
+          >
+            <Ionicons name="globe-outline" size={28} color={colors.muted} />
+          </View>
+
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
             Community not found
           </Text>
@@ -207,24 +209,23 @@ export default function PostModerationScreen() {
         edges={["top"]}
         style={[styles.safe, { backgroundColor: colors.background }]}
       >
-        <Header title="Post Moderation" colors={colors} />
+        <Header colors={colors} />
 
         <View style={styles.center}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={44}
-            color={colors.accent}
-          />
-
-          <Text
+          <View
             style={[
-              styles.emptyTitle,
-              {
-                marginTop: 14,
-                color: colors.foreground,
-              },
+              styles.emptyIcon,
+              { backgroundColor: colors.surfaceSecondary },
             ]}
           >
+            <Ionicons
+              name="lock-closed-outline"
+              size={28}
+              color={colors.accent}
+            />
+          </View>
+
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
             No permission
           </Text>
 
@@ -237,6 +238,9 @@ export default function PostModerationScreen() {
     );
   }
 
+  const showInitialLoading =
+    (postsLoading || postsFetching) && posts.length === 0;
+
   return (
     <SafeAreaView
       edges={["top"]}
@@ -244,49 +248,71 @@ export default function PostModerationScreen() {
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
       >
-        <Header title="Post Moderation" colors={colors} />
+        <Header colors={colors} />
 
         <View style={styles.kpiRow}>
-          <SmallKpi
+          <KpiCard
             label="Total Posts"
-            value={totalPostCount}
+            value={formatCount(totalPostCount)}
             icon="document-text-outline"
-            colors={colors}
-          />
-
-          <SmallKpi
-            label="Loaded"
-            value={posts.length}
-            icon="cloud-download-outline"
             colors={colors}
           />
         </View>
 
-        <View
-          style={[
-            styles.searchBox,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <Ionicons name="search-outline" size={18} color={colors.muted} />
+        <View style={styles.searchSection}>
+          <View
+            style={[
+              styles.searchBar,
+              {
+                backgroundColor: colors.surface,
+                borderColor: isSearchActive ? colors.accent : colors.border,
+              },
+            ]}
+          >
+            <Ionicons name="search-outline" size={18} color={colors.accent} />
 
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search posts, author or tag..."
-            placeholderTextColor={colors.muted}
-            style={[styles.searchInput, { color: colors.foreground }]}
-          />
+            <TextInput
+              value={search}
+              onChangeText={handleSearchChange}
+              placeholder="Search posts, author or tag…"
+              placeholderTextColor={colors.muted}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[styles.searchInput, { color: colors.foreground }]}
+            />
 
-          {search.length > 0 ? (
-            <Pressable onPress={() => setSearch("")}>
-              <Ionicons name="close-circle" size={18} color={colors.muted} />
-            </Pressable>
+            {isSearchActive ? (
+              <Pressable
+                onPress={handleClearSearch}
+                hitSlop={10}
+                style={({ pressed }) => [
+                  styles.clearButton,
+                  {
+                    backgroundColor: colors.surfaceSecondary,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="close" size={15} color={colors.muted} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {isSearchActive ? (
+            <View style={styles.searchMetaRow}>
+              <Text style={[styles.searchMetaText, { color: colors.muted }]}>
+                Searching backend for:{" "}
+                <Text style={{ color: colors.accent }}>{search.trim()}</Text>
+              </Text>
+
+              {postsFetching ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : null}
+            </View>
           ) : null}
         </View>
 
@@ -296,56 +322,54 @@ export default function PostModerationScreen() {
               Community Posts
             </Text>
 
-            <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>
-              Tap a card to view full post
+            <Text style={[styles.sectionSub, { color: colors.muted }]}>
+              {isSearchActive
+                ? "Search results from backend"
+                : "Tap a card to view full post"}
             </Text>
           </View>
 
           <Text style={[styles.sectionCount, { color: colors.muted }]}>
-            {filteredPosts.length} shown
+            {posts.length} shown
           </Text>
         </View>
 
-        {postsLoading && posts.length === 0 ? (
+        {showInitialLoading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="small" color={colors.accent} />
           </View>
-        ) : filteredPosts.length === 0 ? (
+        ) : posts.length === 0 ? (
           <View
             style={[
               styles.emptyCard,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
+              { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
             <Ionicons
               name="document-text-outline"
-              size={38}
+              size={36}
               color={colors.accent}
             />
 
             <Text
               style={[
                 styles.emptyTitle,
-                {
-                  marginTop: 12,
-                  color: colors.foreground,
-                },
+                { color: colors.foreground, marginTop: 12 },
               ]}
             >
               No posts found
             </Text>
 
             <Text style={[styles.emptyText, { color: colors.muted }]}>
-              No posts match your current search.
+              {isSearchActive
+                ? "No posts match your search."
+                : "No posts in this community yet."}
             </Text>
           </View>
         ) : (
           <View style={styles.postGrid}>
-            {filteredPosts.map((post) => (
-              <SmallPostGridCard
+            {posts.map((post) => (
+              <PostGridCard
                 key={post.id}
                 post={post}
                 colors={colors}
@@ -357,22 +381,30 @@ export default function PostModerationScreen() {
               <Pressable
                 onPress={handleLoadMore}
                 disabled={postsFetching}
-                style={[
-                  styles.loadMoreButton,
+                style={({ pressed }) => [
+                  styles.loadMoreBtn,
                   {
                     backgroundColor: colors.surface,
                     borderColor: colors.border,
+                    opacity: pressed || postsFetching ? 0.7 : 1,
                   },
                 ]}
               >
                 {postsFetching ? (
                   <ActivityIndicator size="small" color={colors.accent} />
                 ) : (
-                  <Text
-                    style={[styles.loadMoreText, { color: colors.accent }]}
-                  >
-                    Load more
-                  </Text>
+                  <>
+                    <Ionicons
+                      name="arrow-down-outline"
+                      size={15}
+                      color={colors.accent}
+                    />
+                    <Text
+                      style={[styles.loadMoreText, { color: colors.accent }]}
+                    >
+                      Load more
+                    </Text>
+                  </>
                 )}
               </Pressable>
             ) : null}
@@ -384,21 +416,20 @@ export default function PostModerationScreen() {
 }
 
 function Header({
-  title,
   colors,
 }: {
-  title: string;
   colors: ReturnType<typeof useAppTheme>["colors"];
 }) {
   return (
     <View style={styles.header}>
       <Pressable
         onPress={() => router.back()}
-        style={[
-          styles.backButton,
+        style={({ pressed }) => [
+          styles.backBtn,
           {
             backgroundColor: colors.surface,
             borderColor: colors.border,
+            opacity: pressed ? 0.7 : 1,
           },
         ]}
       >
@@ -407,10 +438,10 @@ function Header({
 
       <View style={{ flex: 1 }}>
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-          {title}
+          Post Moderation
         </Text>
 
-        <Text style={[styles.headerSubtitle, { color: colors.muted }]}>
+        <Text style={[styles.headerSub, { color: colors.muted }]}>
           Community moderation
         </Text>
       </View>
@@ -418,7 +449,7 @@ function Header({
   );
 }
 
-function SmallKpi({
+function KpiCard({
   label,
   value,
   icon,
@@ -432,38 +463,28 @@ function SmallKpi({
   return (
     <View
       style={[
-        styles.smallKpi,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
+        styles.kpiCard,
+        { backgroundColor: colors.surface, borderColor: colors.border },
       ]}
     >
       <View
-        style={[
-          styles.smallKpiIcon,
-          {
-            backgroundColor: colors.surfaceSecondary,
-          },
-        ]}
+        style={[styles.kpiIconWrap, { backgroundColor: colors.surfaceSecondary }]}
       >
-        <Ionicons name={icon} size={17} color={colors.accent} />
+        <Ionicons name={icon} size={18} color={colors.accent} />
       </View>
 
       <View>
-        <Text style={[styles.smallKpiValue, { color: colors.foreground }]}>
+        <Text style={[styles.kpiValue, { color: colors.foreground }]}>
           {value}
         </Text>
 
-        <Text style={[styles.smallKpiLabel, { color: colors.muted }]}>
-          {label}
-        </Text>
+        <Text style={[styles.kpiLabel, { color: colors.muted }]}>{label}</Text>
       </View>
     </View>
   );
 }
 
-function SmallPostGridCard({
+function PostGridCard({
   post,
   colors,
   onPress,
@@ -480,64 +501,51 @@ function SmallPostGridCard({
   const content = stripHtml(typedPost.content);
   const tag = typedPost.tag ?? typedPost.type ?? "POST";
   const createdAt = typedPost.createdAt ?? typedPost.publishedAt ?? null;
+
   const firstMediaUrl = getFirstMediaUrl(
     Array.isArray(typedPost.media) ? typedPost.media : [],
   );
 
-  const previewText = title || content || "No post content";
+  const previewText = title || content || "No content";
 
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
-        styles.gridPostCard,
+        styles.postCard,
         {
           backgroundColor: colors.surface,
           borderColor: colors.border,
-          opacity: pressed ? 0.8 : 1,
+          opacity: pressed ? 0.75 : 1,
         },
       ]}
     >
-      <View style={styles.gridImageWrap}>
+      <View
+        style={[styles.cardThumb, { backgroundColor: colors.surfaceSecondary }]}
+      >
         {firstMediaUrl ? (
           <Image
             source={{ uri: firstMediaUrl }}
-            style={styles.gridImage}
+            style={styles.cardThumbImg}
             resizeMode="cover"
           />
         ) : (
-          <View
-            style={[
-              styles.gridImagePlaceholder,
-              {
-                backgroundColor: colors.surfaceSecondary,
-              },
-            ]}
-          >
-            <Ionicons
-              name="document-text-outline"
-              size={26}
-              color={colors.accent}
-            />
-          </View>
+          <Ionicons
+            name="document-text-outline"
+            size={24}
+            color={colors.accent}
+          />
         )}
 
         <View
           style={[
-            styles.gridTagBadge,
-            {
-              backgroundColor: colors.surface,
-            },
+            styles.tagPill,
+            { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
         >
           <Text
             numberOfLines={1}
-            style={[
-              styles.gridTagText,
-              {
-                color: colors.accent,
-              },
-            ]}
+            style={[styles.tagText, { color: colors.accent }]}
           >
             {String(tag).toLowerCase()}
           </Text>
@@ -546,20 +554,15 @@ function SmallPostGridCard({
 
       <Text
         numberOfLines={2}
-        style={[
-          styles.gridPostTitle,
-          {
-            color: colors.foreground,
-          },
-        ]}
+        style={[styles.cardTitle, { color: colors.foreground }]}
       >
         {previewText}
       </Text>
 
-      <View style={styles.gridAuthorRow}>
+      <View style={styles.cardAuthorRow}>
         <View
           style={[
-            styles.gridAvatar,
+            styles.cardAvatar,
             {
               backgroundColor: colors.surfaceSecondary,
               borderColor: colors.border,
@@ -569,47 +572,34 @@ function SmallPostGridCard({
           {authorAvatar ? (
             <Image
               source={{ uri: authorAvatar }}
-              style={styles.gridAvatarImage}
+              style={styles.cardAvatarImg}
               resizeMode="cover"
             />
           ) : (
-            <Ionicons name="person-outline" size={12} color={colors.accent} />
+            <Ionicons name="person-outline" size={11} color={colors.accent} />
           )}
         </View>
 
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text
             numberOfLines={1}
-            style={[
-              styles.gridAuthorName,
-              {
-                color: colors.foreground,
-              },
-            ]}
+            style={[styles.cardAuthorName, { color: colors.foreground }]}
           >
             {authorName}
           </Text>
 
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.gridPostDate,
-              {
-                color: colors.muted,
-              },
-            ]}
-          >
+          <Text numberOfLines={1} style={[styles.cardDate, { color: colors.muted }]}>
             {formatDate(createdAt)}
           </Text>
         </View>
       </View>
 
-      <View style={styles.viewRow}>
+      <View style={[styles.viewRow, { borderTopColor: colors.border }]}>
         <Text style={[styles.viewText, { color: colors.accent }]}>
           View details
         </Text>
 
-        <Ionicons name="chevron-forward" size={14} color={colors.accent} />
+        <Ionicons name="chevron-forward" size={13} color={colors.accent} />
       </View>
     </Pressable>
   );
@@ -621,9 +611,7 @@ function getAuthorName(author?: {
   lastName?: string | null;
   businessName?: string | null;
 }) {
-  if (!author) {
-    return "Unknown";
-  }
+  if (!author) return "Unknown";
 
   const fullName = [author.firstName, author.lastName]
     .filter(Boolean)
@@ -634,9 +622,7 @@ function getAuthorName(author?: {
 }
 
 function stripHtml(value?: string | null) {
-  if (!value) {
-    return "";
-  }
+  if (!value) return "";
 
   return String(value)
     .replace(/<\/li>/gi, "\n")
@@ -651,31 +637,19 @@ function stripHtml(value?: string | null) {
 function getFirstMediaUrl(media: any[]) {
   const first = media[0];
 
-  if (!first) {
-    return null;
-  }
-
-  if (first.url) {
-    return toAbsoluteFileUrl(first.url);
-  }
-
-  if (first.fileUrl) {
-    return toAbsoluteFileUrl(first.fileUrl);
-  }
+  if (!first) return null;
+  if (first.url) return toAbsoluteFileUrl(first.url);
+  if (first.fileUrl) return toAbsoluteFileUrl(first.fileUrl);
 
   return null;
 }
 
 function formatDate(value?: string | null) {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
+  if (Number.isNaN(date.getTime())) return "-";
 
   return date.toLocaleDateString(undefined, {
     day: "2-digit",
@@ -684,21 +658,29 @@ function formatDate(value?: string | null) {
   });
 }
 
+function formatCount(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+
+  return String(n);
+}
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
   },
 
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 120,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
   },
 
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 32,
+    gap: 12,
   },
 
   header: {
@@ -706,199 +688,223 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     paddingTop: 10,
-    marginBottom: 20,
+    marginBottom: 16,
   },
 
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
   },
 
   headerTitle: {
-    fontSize: 25,
-    lineHeight: 32,
+    fontSize: 22,
+    lineHeight: 28,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: -0.3,
   },
 
-  headerSubtitle: {
-    marginTop: 2,
-    fontSize: 13,
+  headerSub: {
+    fontSize: 12,
     fontFamily: "Poppins_400Regular",
+    marginTop: 1,
   },
 
   kpiRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 18,
+    marginBottom: 14,
   },
 
-  smallKpi: {
-    flex: 1,
+  kpiCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    borderWidth: 1,
+    gap: 12,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 20,
     padding: 14,
   },
 
-  smallKpiIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  kpiIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  smallKpiValue: {
-    fontSize: 18,
+  kpiValue: {
+    fontSize: 22,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: -0.4,
+    lineHeight: 28,
   },
 
-  smallKpiLabel: {
-    marginTop: 1,
+  kpiLabel: {
     fontSize: 11,
-    fontFamily: "Poppins_400Regular",
+    fontFamily: "Poppins_500Medium",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 1,
   },
 
-  searchBox: {
+  searchSection: {
+    marginBottom: 14,
+  },
+
+  searchBar: {
     minHeight: 50,
-    borderRadius: 18,
+    borderRadius: 17,
     borderWidth: 1,
-    paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 18,
+    paddingHorizontal: 14,
   },
 
   searchInput: {
     flex: 1,
     fontSize: 14,
     fontFamily: "Poppins_400Regular",
-    paddingVertical: 8,
+    paddingVertical: 0,
+  },
+
+  clearButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  searchMetaRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  searchMetaText: {
+    flex: 1,
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
   },
 
   sectionHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "flex-end",
     justifyContent: "space-between",
     marginBottom: 12,
+    marginTop: 4,
   },
 
   sectionTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: -0.2,
   },
 
-  sectionSubtitle: {
-    marginTop: 2,
-    fontSize: 12,
+  sectionSub: {
+    fontSize: 11,
     fontFamily: "Poppins_400Regular",
+    marginTop: 2,
   },
 
   sectionCount: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: "Poppins_500Medium",
-  },
-
-  loadingBox: {
-    paddingVertical: 30,
   },
 
   postGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 10,
   },
 
-  gridPostCard: {
-    width: "48%",
-    borderWidth: 1,
+  postCard: {
+    width: "48.5%",
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 22,
     padding: 10,
-    minHeight: 238,
+    minHeight: 230,
   },
 
-  gridImageWrap: {
+  cardThumb: {
     width: "100%",
-    height: 96,
-    borderRadius: 16,
+    height: 88,
+    borderRadius: 14,
     overflow: "hidden",
-    position: "relative",
-    marginBottom: 10,
-  },
-
-  gridImage: {
-    width: "100%",
-    height: "100%",
-  },
-
-  gridImagePlaceholder: {
-    width: "100%",
-    height: "100%",
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 10,
+    position: "relative",
   },
 
-  gridTagBadge: {
+  cardThumbImg: {
+    width: "100%",
+    height: "100%",
+  },
+
+  tagPill: {
     position: "absolute",
     left: 6,
     bottom: 6,
-    maxWidth: "85%",
     borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 7,
-    paddingVertical: 4,
+    paddingVertical: 3,
+    maxWidth: "80%",
   },
 
-  gridTagText: {
+  tagText: {
     fontSize: 9,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: 0.2,
   },
 
-  gridPostTitle: {
-    minHeight: 38,
+  cardTitle: {
     fontSize: 12,
     lineHeight: 18,
     fontFamily: "Poppins_700Bold",
     marginBottom: 8,
+    minHeight: 36,
+    letterSpacing: -0.1,
   },
 
-  gridAuthorRow: {
+  cardAuthorRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
     marginBottom: 10,
   },
 
-  gridAvatar: {
+  cardAvatar: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
 
-  gridAvatarImage: {
+  cardAvatarImg: {
     width: "100%",
     height: "100%",
   },
 
-  gridAuthorName: {
+  cardAuthorName: {
     fontSize: 10.5,
     fontFamily: "Poppins_600SemiBold",
   },
 
-  gridPostDate: {
-    marginTop: 1,
+  cardDate: {
     fontSize: 9.5,
     fontFamily: "Poppins_400Regular",
+    marginTop: 1,
   },
 
   viewRow: {
@@ -906,46 +912,65 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 8,
   },
 
   viewText: {
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: 0.1,
   },
 
-  emptyCard: {
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-  },
-
-  emptyTitle: {
-    fontSize: 18,
-    fontFamily: "Poppins_700Bold",
-    textAlign: "center",
-  },
-
-  emptyText: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 22,
-    fontFamily: "Poppins_400Regular",
-    textAlign: "center",
-  },
-
-  loadMoreButton: {
+  loadMoreBtn: {
     width: "100%",
-    borderWidth: 1,
+    height: 48,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
-    minHeight: 46,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 6,
+    gap: 7,
+    marginTop: 4,
   },
 
   loadMoreText: {
     fontSize: 13,
     fontFamily: "Poppins_700Bold",
+  },
+
+  loadingBox: {
+    paddingVertical: 32,
+    alignItems: "center",
+  },
+
+  emptyIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  emptyCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: "center",
+    gap: 6,
+  },
+
+  emptyTitle: {
+    fontSize: 17,
+    fontFamily: "Poppins_700Bold",
+    textAlign: "center",
+    letterSpacing: -0.2,
+  },
+
+  emptyText: {
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
+    textAlign: "center",
   },
 });

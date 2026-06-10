@@ -23,6 +23,9 @@ export const lightColors = {
   segmentForeground: "#166534",
   backdrop: "rgba(0,0,0,0.20)",
   link: "#15803d",
+    coverOverlay: "rgba(0,0,0,0.22)",
+  coverActionBackground: "rgba(0,0,0,0.35)",
+  coverActionForeground: "#ffffff",
 };
 
 export const darkColors = {
@@ -48,6 +51,9 @@ export const darkColors = {
   segmentForeground: "#ffffff",
   backdrop: "rgba(0,0,0,0.45)",
   link: "#4ade80",
+  coverOverlay: "rgba(0,0,0,0.45)",
+  coverActionBackground: "rgba(0,0,0,0.45)",
+  coverActionForeground: "#ffffff",
 };
 
 export type AppColorName =

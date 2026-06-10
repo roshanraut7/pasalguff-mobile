@@ -182,7 +182,6 @@ import ModerationMenuItem from "@/components/moderationItem";
                 styles.backButton,
                 {
                   backgroundColor: colors.surface,
-                  borderColor: colors.border,
                 },
               ]}
             >
@@ -540,8 +539,6 @@ import ModerationMenuItem from "@/components/moderationItem";
     backButton: {
       width: 42,
       height: 42,
-      borderRadius: 21,
-      borderWidth: 1,
       alignItems: "center",
       justifyContent: "center",
     },

@@ -26,7 +26,6 @@ import {
 } from "@/store/api/communityApi";
 
 import { useDeletePostMutation } from "@/store/api/postApi";
-
 import PostMediaViewer from "@/components/post/PostMediaViewer";
 import YouTubeEmbedPlayer from "@/components/post/YouTubeEmbedPlayer";
 
@@ -93,14 +92,10 @@ export default function PostModerationDetailScreen() {
 
   const handleOpenLink = useCallback(async (url?: string | null) => {
     if (!url) return;
-
     const finalUrl =
-      /^https?:\/\//i.test(url) ||
-      /^mailto:/i.test(url) ||
-      /^tel:/i.test(url)
+      /^https?:\/\//i.test(url) || /^mailto:/i.test(url) || /^tel:/i.test(url)
         ? url
         : `https://${url}`;
-
     try {
       await Linking.openURL(finalUrl);
     } catch (error) {
@@ -109,35 +104,26 @@ export default function PostModerationDetailScreen() {
   }, []);
 
   const handleDeletePost = useCallback(() => {
-    if (!community?.id || !post?.id) {
-      return;
-    }
+    if (!community?.id || !post?.id) return;
 
     Alert.alert(
       "Delete post",
-      "Are you sure you want to delete this post from the community?",
+      "Are you sure you want to permanently delete this post from the community?",
       [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
+        { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
             try {
               setDeleting(true);
-
               await deletePost({
                 communityId: community.id,
                 postId: post.id,
               }).unwrap();
-
               Alert.alert("Success", "Post deleted successfully.");
               router.back();
             } catch (error: any) {
-              console.log("Delete post failed:", error);
-
               Alert.alert(
                 "Could not delete post",
                 error?.data?.message ??
@@ -154,37 +140,23 @@ export default function PostModerationDetailScreen() {
 
   const handleManageComments = useCallback(() => {
     if (!post?.id) return;
-
     const typedPost = post as any;
-
     const postTitle =
       typedPost.title ||
       htmlToPlainText(typedPost.content).slice(0, 60) ||
       "Post Comments";
-
     router.push({
       pathname: "/user/moderator-panel/comments",
-      params: {
-        slug: slug ?? "",
-        postId: post.id,
-        postTitle,
-      },
+      params: { slug: slug ?? "", postId: post.id, postTitle },
     });
   }, [post, slug]);
 
   const handleOpenAuthor = useCallback(() => {
     const authorId = (post as any)?.author?.id;
-
-    if (!authorId || !community?.id || authorId === session?.user?.id) {
-      return;
-    }
-
+    if (!authorId || !community?.id || authorId === session?.user?.id) return;
     router.push({
       pathname: "/user/profile/[userId]",
-      params: {
-        userId: authorId,
-        sourceCommunityId: community.id,
-      },
+      params: { userId: authorId, sourceCommunityId: community.id },
     });
   }, [community?.id, post, session?.user?.id]);
 
@@ -196,9 +168,7 @@ export default function PostModerationDetailScreen() {
     );
   }
 
-  if (!session?.user) {
-    return <Redirect href="/(auth)" />;
-  }
+  if (!session?.user) return <Redirect href="/(auth)" />;
 
   if (communityError || !community || !post) {
     return (
@@ -206,13 +176,14 @@ export default function PostModerationDetailScreen() {
         edges={["top"]}
         style={[styles.safe, { backgroundColor: colors.background }]}
       >
-        <Header title="Post Detail" colors={colors} />
-
+        <Header colors={colors} />
         <View style={styles.center}>
+          <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceSecondary }]}>
+            <Ionicons name="document-outline" size={28} color={colors.muted} />
+          </View>
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
             Post not found
           </Text>
-
           <Text style={[styles.emptyText, { color: colors.muted }]}>
             This post could not be loaded.
           </Text>
@@ -227,30 +198,17 @@ export default function PostModerationDetailScreen() {
         edges={["top"]}
         style={[styles.safe, { backgroundColor: colors.background }]}
       >
-        <Header title="Post Detail" colors={colors} />
-
+        <Header colors={colors} />
         <View style={styles.center}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={44}
-            color={colors.accent}
-          />
-
-          <Text
-            style={[
-              styles.emptyTitle,
-              {
-                marginTop: 14,
-                color: colors.foreground,
-              },
-            ]}
-          >
+          <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceSecondary }]}>
+            <Ionicons name="lock-closed-outline" size={28} color={colors.accent} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
             No permission
           </Text>
-
           <Text style={[styles.emptyText, { color: colors.muted }]}>
-            Only owner or moderators with post-management permission can view
-            this moderation page.
+            Only owners or moderators with post-management permission can view
+            this page.
           </Text>
         </View>
       </SafeAreaView>
@@ -269,12 +227,10 @@ export default function PostModerationDetailScreen() {
   );
 
   const hasMedia = media.length > 0;
-
   const hasYouTubeEmbed =
     typedPost.linkType === "VIDEO" &&
     typedPost.linkProvider === "YOUTUBE" &&
     Boolean(typedPost.linkExternalId);
-
   const hasNormalLink =
     Boolean(typedPost.linkUrl) && !hasYouTubeEmbed && !hasMedia;
 
@@ -282,7 +238,7 @@ export default function PostModerationDetailScreen() {
     ? { html: `<div>${typedPost.content}</div>` }
     : null;
 
-  const contentWidth = Math.max(width - 40, 240);
+  const contentWidth = Math.max(width - 64, 240);
 
   return (
     <SafeAreaView
@@ -293,21 +249,22 @@ export default function PostModerationDetailScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        <Header title="Post Detail" colors={colors} />
+        <Header colors={colors} />
 
+        {/* Moderator context badge */}
+      
+        {/* Main card */}
         <View
           style={[
-            styles.detailCard,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
+            styles.card,
+            { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
         >
+          {/* ── Author row ─────────────────────────────── */}
           <Pressable onPress={handleOpenAuthor} style={styles.authorRow}>
             <View
               style={[
-                styles.avatar,
+                styles.avatarWrap,
                 {
                   backgroundColor: colors.surfaceSecondary,
                   borderColor: colors.border,
@@ -329,14 +286,13 @@ export default function PostModerationDetailScreen() {
               )}
             </View>
 
-            <View style={{ flex: 1 }}>
+            <View style={styles.authorMeta}>
               <Text
                 numberOfLines={1}
                 style={[styles.authorName, { color: colors.foreground }]}
               >
                 {authorName}
               </Text>
-
               <Text
                 numberOfLines={1}
                 style={[styles.postDate, { color: colors.muted }]}
@@ -348,10 +304,8 @@ export default function PostModerationDetailScreen() {
             {tag ? (
               <View
                 style={[
-                  styles.tagBadge,
-                  {
-                    backgroundColor: colors.surfaceSecondary,
-                  },
+                  styles.tagPill,
+                  { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
                 ]}
               >
                 <Text
@@ -364,72 +318,76 @@ export default function PostModerationDetailScreen() {
             ) : null}
           </Pressable>
 
-          {typedPost.title ? (
-            <Text style={[styles.postTitle, { color: colors.foreground }]}>
-              {typedPost.title}
-            </Text>
-          ) : null}
+          <View style={[styles.innerDivider, { backgroundColor: colors.border }]} />
 
-          {htmlSource ? (
-            <RenderHTML
-              contentWidth={contentWidth}
-              source={htmlSource}
-              systemFonts={systemFonts}
-              ignoredDomTags={["label"]}
-              baseStyle={{
-                color: colors.foreground,
-                fontSize: 15,
-                lineHeight: 24,
-                fontFamily: "Poppins_400Regular",
-              }}
-              tagsStyles={{
-                p: {
-                  color: colors.foreground,
-                  fontSize: 15,
-                  lineHeight: 24,
-                  marginTop: 0,
-                  marginBottom: 8,
-                  fontFamily: "Poppins_400Regular",
-                },
-                strong: {
-                  color: colors.foreground,
-                  fontFamily: "Poppins_700Bold",
-                  fontWeight: "700",
-                },
-                b: {
-                  color: colors.foreground,
-                  fontFamily: "Poppins_700Bold",
-                  fontWeight: "700",
-                },
-                em: {
-                  color: colors.foreground,
-                  fontFamily: "Poppins_400Italic",
-                  fontStyle: "italic",
-                },
-                a: {
-                  color: colors.link,
-                  textDecorationLine: "underline",
-                },
-                li: {
-                  color: colors.foreground,
-                  fontSize: 15,
-                  lineHeight: 24,
-                  marginBottom: 4,
-                  fontFamily: "Poppins_400Regular",
-                },
-              }}
-              renderersProps={{
-                a: {
-                  onPress: (_event, href) => handleOpenLink(href),
-                },
-              }}
-            />
-          ) : (
-            <Text style={[styles.noContentText, { color: colors.muted }]}>
-              No written content.
-            </Text>
-          )}
+          {/* ── Post content ───────────────────────────── */}
+          <View style={styles.contentSection}>
+            {typedPost.title ? (
+              <Text style={[styles.postTitle, { color: colors.foreground }]}>
+                {typedPost.title}
+              </Text>
+            ) : null}
 
+            {htmlSource ? (
+              <RenderHTML
+                contentWidth={contentWidth}
+                source={htmlSource}
+                systemFonts={systemFonts}
+                ignoredDomTags={["label"]}
+                baseStyle={{
+                  color: colors.foreground,
+                  fontSize: 14,
+                  lineHeight: 22,
+                  fontFamily: "Poppins_400Regular",
+                }}
+                tagsStyles={{
+                  p: {
+                    color: colors.foreground,
+                    fontSize: 14,
+                    lineHeight: 22,
+                    marginTop: 0,
+                    marginBottom: 8,
+                    fontFamily: "Poppins_400Regular",
+                  },
+                  strong: {
+                    color: colors.foreground,
+                    fontFamily: "Poppins_700Bold",
+                    fontWeight: "700",
+                  },
+                  b: {
+                    color: colors.foreground,
+                    fontFamily: "Poppins_700Bold",
+                    fontWeight: "700",
+                  },
+                  em: {
+                    color: colors.foreground,
+                    fontFamily: "Poppins_400Italic",
+                    fontStyle: "italic",
+                  },
+                  a: {
+                    color: colors.link,
+                    textDecorationLine: "underline",
+                  },
+                  li: {
+                    color: colors.foreground,
+                    fontSize: 14,
+                    lineHeight: 22,
+                    marginBottom: 4,
+                    fontFamily: "Poppins_400Regular",
+                  },
+                }}
+                renderersProps={{
+                  a: { onPress: (_event, href) => handleOpenLink(href) },
+                }}
+              />
+            ) : (
+              <Text style={[styles.noContent, { color: colors.muted }]}>
+                No written content.
+              </Text>
+            )}
+          </View>
+
+          {/* ── YouTube embed ──────────────────────────── */}
           {hasYouTubeEmbed ? (
             <View style={styles.mediaSection}>
               <YouTubeEmbedPlayer
@@ -442,6 +400,7 @@ export default function PostModerationDetailScreen() {
             </View>
           ) : null}
 
+          {/* ── Link card ──────────────────────────────── */}
           {hasNormalLink ? (
             <Pressable
               onPress={() => handleOpenLink(typedPost.linkUrl)}
@@ -462,26 +421,24 @@ export default function PostModerationDetailScreen() {
                   },
                 ]}
               >
-                <Ionicons name="link-outline" size={18} color={colors.link} />
+                <Ionicons name="link-outline" size={17} color={colors.link} />
               </View>
 
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text
                   numberOfLines={1}
                   style={[styles.linkTitle, { color: colors.foreground }]}
                 >
                   {typedPost.linkTitle?.trim() || "Shared link"}
                 </Text>
-
                 {typedPost.linkDescription?.trim() ? (
                   <Text
                     numberOfLines={2}
-                    style={[styles.linkDescription, { color: colors.muted }]}
+                    style={[styles.linkDesc, { color: colors.muted }]}
                   >
                     {typedPost.linkDescription}
                   </Text>
                 ) : null}
-
                 <Text
                   numberOfLines={1}
                   style={[styles.linkUrl, { color: colors.link }]}
@@ -489,79 +446,54 @@ export default function PostModerationDetailScreen() {
                   {typedPost.linkUrl}
                 </Text>
               </View>
+
+              <Ionicons
+                name="chevron-forward"
+                size={15}
+                color={colors.muted}
+                style={{ alignSelf: "center" }}
+              />
             </Pressable>
           ) : null}
 
+          {/* ── Media grid ────────────────────────────── */}
           {hasMedia ? (
             <View style={styles.mediaSection}>
-              <View style={styles.mediaGrid}>
-                {media.slice(0, 4).map((item, index) => {
-                  const isLastVisible =
-                    index === 3 && media.length > 4;
-
-                  return (
-                    <Pressable
-                      key={item.id ?? `${item.url}-${index}`}
-                      onPress={() => {
-                        setViewerIndex(index);
-                        setViewerOpen(true);
-                      }}
-                      style={[
-                        styles.mediaTile,
-                        {
-                          width: media.length === 1 ? "100%" : "48.5%",
-                          height: media.length === 1 ? 260 : 150,
-                        },
-                      ]}
-                    >
-                      <ExpoImage
-                        source={{ uri: item.url }}
-                        style={styles.mediaTileImage}
-                        contentFit="cover"
-                        transition={180}
-                        cachePolicy="memory-disk"
-                      />
-
-                      {isLastVisible ? (
-                        <View style={styles.moreOverlay}>
-                          <Text style={styles.moreOverlayText}>
-                            +{media.length - 4}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-
+              <MediaGrid
+                media={media}
+                onPressItem={(index) => {
+                  setViewerIndex(index);
+                  setViewerOpen(true);
+                }}
+              />
               <Text style={[styles.mediaHint, { color: colors.muted }]}>
                 Tap image to view full screen
               </Text>
             </View>
           ) : null}
 
-          <View style={styles.statsGrid}>
+          <View style={[styles.innerDivider, { backgroundColor: colors.border }]} />
+
+          {/* ── Stats row ─────────────────────────────── */}
+          <View style={styles.statsRow}>
             <StatCard
               label="Likes"
               value={typedPost.likeCount ?? 0}
               icon="thumbs-up-outline"
               colors={colors}
             />
-
             <StatCard
               label="Dislikes"
               value={typedPost.dislikeCount ?? 0}
               icon="thumbs-down-outline"
               colors={colors}
             />
-
             <StatCard
-              label="Comments"
+              label="Comment"
               value={typedPost.commentCount ?? 0}
               icon="chatbubble-outline"
               colors={colors}
             />
-
             <StatCard
               label="Shares"
               value={typedPost.shareCount ?? 0}
@@ -570,12 +502,15 @@ export default function PostModerationDetailScreen() {
             />
           </View>
 
+          <View style={[styles.innerDivider, { backgroundColor: colors.border }]} />
+
+          {/* ── Actions ───────────────────────────────── */}
           <View style={styles.actionRow}>
             {canManageComments ? (
               <Pressable
                 onPress={handleManageComments}
                 style={[
-                  styles.actionButton,
+                  styles.actionBtn,
                   {
                     backgroundColor: colors.surfaceSecondary,
                     borderColor: colors.border,
@@ -587,8 +522,7 @@ export default function PostModerationDetailScreen() {
                   size={16}
                   color={colors.accent}
                 />
-
-                <Text style={[styles.commentText, { color: colors.accent }]}>
+                <Text style={[styles.actionBtnText, { color: colors.accent }]}>
                   Comments
                 </Text>
               </Pressable>
@@ -598,19 +532,17 @@ export default function PostModerationDetailScreen() {
               onPress={handleDeletePost}
               disabled={deleting}
               style={[
-                styles.actionButton,
+                styles.actionBtn,
+                styles.deleteBtn,
                 {
                   backgroundColor: colors.danger,
                   borderColor: colors.danger,
-                  opacity: deleting ? 0.7 : 1,
+                  opacity: deleting ? 0.65 : 1,
                 },
               ]}
             >
               {deleting ? (
-                <ActivityIndicator
-                  size="small"
-                  color={colors.dangerForeground}
-                />
+                <ActivityIndicator size="small" color={colors.dangerForeground} />
               ) : (
                 <>
                   <Ionicons
@@ -618,16 +550,13 @@ export default function PostModerationDetailScreen() {
                     size={16}
                     color={colors.dangerForeground}
                   />
-
                   <Text
                     style={[
-                      styles.deleteText,
-                      {
-                        color: colors.dangerForeground,
-                      },
+                      styles.actionBtnText,
+                      { color: colors.dangerForeground },
                     ]}
                   >
-                    Delete
+                    Delete Post
                   </Text>
                 </>
               )}
@@ -646,11 +575,13 @@ export default function PostModerationDetailScreen() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
 function Header({
-  title,
   colors,
 }: {
-  title: string;
   colors: ReturnType<typeof useAppTheme>["colors"];
 }) {
   return (
@@ -658,11 +589,8 @@ function Header({
       <Pressable
         onPress={() => router.back()}
         style={[
-          styles.backButton,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-          },
+          styles.backBtn,
+          { backgroundColor: colors.surface, borderColor: colors.border },
         ]}
       >
         <Ionicons name="chevron-back" size={20} color={colors.foreground} />
@@ -670,12 +598,103 @@ function Header({
 
       <View style={{ flex: 1 }}>
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-          {title}
+          Post Detail
         </Text>
-
-        <Text style={[styles.headerSubtitle, { color: colors.muted }]}>
+        <Text style={[styles.headerSub, { color: colors.muted }]}>
           Full moderation review
         </Text>
+      </View>
+    </View>
+  );
+}
+
+function MediaGrid({
+  media,
+  onPressItem,
+}: {
+  media: PostMedia[];
+  onPressItem: (index: number) => void;
+}) {
+  const count = media.length;
+
+  // single
+  if (count === 1) {
+    return (
+      <Pressable
+        onPress={() => onPressItem(0)}
+        style={styles.mediaSingle}
+      >
+        <ExpoImage
+          source={{ uri: media[0].url }}
+          style={styles.mediaSingleImg}
+          contentFit="cover"
+          transition={180}
+          cachePolicy="memory-disk"
+        />
+      </Pressable>
+    );
+  }
+
+  // 2 side-by-side
+  if (count === 2) {
+    return (
+      <View style={styles.mediaRow}>
+        {media.map((item, idx) => (
+          <Pressable
+            key={item.id ?? `${item.url}-${idx}`}
+            onPress={() => onPressItem(idx)}
+            style={styles.mediaHalf}
+          >
+            <ExpoImage
+              source={{ uri: item.url }}
+              style={styles.mediaTileImg}
+              contentFit="cover"
+              transition={180}
+              cachePolicy="memory-disk"
+            />
+          </Pressable>
+        ))}
+      </View>
+    );
+  }
+
+  // 3+ — 1 large hero + small strip
+  return (
+    <View style={{ gap: 6 }}>
+      <Pressable onPress={() => onPressItem(0)} style={styles.mediaHero}>
+        <ExpoImage
+          source={{ uri: media[0].url }}
+          style={styles.mediaTileImg}
+          contentFit="cover"
+          transition={180}
+          cachePolicy="memory-disk"
+        />
+      </Pressable>
+      <View style={styles.mediaRow}>
+        {media.slice(1, 4).map((item, idx) => {
+          const realIndex = idx + 1;
+          const isLast = realIndex === 3 && count > 4;
+          return (
+            <Pressable
+              key={item.id ?? `${item.url}-${realIndex}`}
+              onPress={() => onPressItem(realIndex)}
+              style={styles.mediaThird}
+            >
+              <ExpoImage
+                source={{ uri: item.url }}
+                style={styles.mediaTileImg}
+                contentFit="cover"
+                transition={180}
+                cachePolicy="memory-disk"
+              />
+              {isLast ? (
+                <View style={styles.moreOverlay}>
+                  <Text style={styles.moreText}>+{count - 4}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -696,27 +715,25 @@ function StatCard({
     <View
       style={[
         styles.statCard,
-        {
-          backgroundColor: colors.surfaceSecondary,
-        },
+        { backgroundColor: colors.surfaceSecondary },
       ]}
     >
-      <Ionicons name={icon} size={16} color={colors.accent} />
-
-      <Text style={[styles.statValue, { color: colors.foreground }]}>
-        {value}
+      <Ionicons name={icon} size={18} color={colors.accent} />
+      <Text style={[styles.statVal, { color: colors.foreground }]}>
+        {formatCount(value)}
       </Text>
-
       <Text style={[styles.statLabel, { color: colors.muted }]}>{label}</Text>
     </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
 function parsePostData(value?: string | string[]) {
   const raw = Array.isArray(value) ? value[0] : value;
-
   if (!raw) return null;
-
   try {
     return JSON.parse(decodeURIComponent(raw)) as CommunityPost;
   } catch {
@@ -735,30 +752,22 @@ function getAuthorName(author?: {
   businessName?: string | null;
 }) {
   if (!author) return "Unknown user";
-
   const fullName = [author.firstName, author.lastName]
     .filter(Boolean)
     .join(" ")
     .trim();
-
   return author.name || fullName || author.businessName || "Unknown user";
 }
 
 function getInitials(name: string) {
   const parts = name.split(" ").filter(Boolean);
-
   if (!parts.length) return "U";
-
-  if (parts.length === 1) {
-    return parts[0]?.charAt(0)?.toUpperCase() || "U";
-  }
-
+  if (parts.length === 1) return parts[0]?.charAt(0)?.toUpperCase() || "U";
   return `${parts[0]?.charAt(0) ?? ""}${parts[1]?.charAt(0) ?? ""}`.toUpperCase();
 }
 
 function htmlToPlainText(html?: string | null) {
   if (!html) return "";
-
   return String(html)
     .replace(/<\/li>/gi, "\n")
     .replace(/<li[^>]*>/gi, "• ")
@@ -771,7 +780,6 @@ function htmlToPlainText(html?: string | null) {
 
 function getPostTagLabel(tag?: string | null) {
   if (!tag) return null;
-
   return String(tag)
     .toLowerCase()
     .split("_")
@@ -791,11 +799,8 @@ function getNormalizedImageMedia(media: any[]): PostMedia[] {
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return "-";
-
   return date.toLocaleDateString(undefined, {
     day: "2-digit",
     month: "short",
@@ -803,153 +808,231 @@ function formatDate(value?: string | null) {
   });
 }
 
+/** Compact number formatting: 1200 → 1.2k */
+function formatCount(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-  },
+  safe: { flex: 1 },
 
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 120,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
   },
 
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 32,
+    gap: 12,
   },
 
+  // ── Header ──────────────────────────────────────
   header: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     paddingTop: 10,
-    marginBottom: 20,
+    marginBottom: 14,
   },
 
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
   },
 
   headerTitle: {
-    fontSize: 25,
-    lineHeight: 32,
+    fontSize: 22,
+    lineHeight: 28,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: -0.3,
   },
 
-  headerSubtitle: {
-    marginTop: 2,
-    fontSize: 13,
+  headerSub: {
+    fontSize: 12,
     fontFamily: "Poppins_400Regular",
+    marginTop: 1,
   },
 
-  detailCard: {
-    borderWidth: 1,
-    borderRadius: 28,
-    padding: 16,
+  // ── Mod badge ───────────────────────────────────
+  modBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 12,
+  },
+
+  modDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+
+  modBadgeText: {
+    fontSize: 12,
+    fontFamily: "Poppins_500Medium",
+    flex: 1,
+  },
+
+  // ── Card shell ──────────────────────────────────
+  card: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 26,
     overflow: "hidden",
   },
 
+  innerDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 16,
+  },
+
+  // ── Author ──────────────────────────────────────
   authorRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 16,
+    gap: 10,
+    padding: 16,
   },
 
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
+  avatarWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
 
-  avatarImage: {
-    width: "100%",
-    height: "100%",
-  },
+  avatarImage: { width: "100%", height: "100%" },
 
   avatarInitial: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: "Poppins_700Bold",
   },
 
+  authorMeta: { flex: 1, minWidth: 0 },
+
   authorName: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: -0.1,
   },
 
   postDate: {
-    marginTop: 2,
     fontSize: 12,
     fontFamily: "Poppins_400Regular",
+    marginTop: 2,
   },
 
-  tagBadge: {
-    maxWidth: 110,
+  tagPill: {
     borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingVertical: 5,
   },
 
   tagText: {
     fontSize: 10,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: 0.2,
+  },
+
+  // ── Content ─────────────────────────────────────
+  contentSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
 
   postTitle: {
-    fontSize: 21,
-    lineHeight: 30,
+    fontSize: 18,
+    lineHeight: 26,
     fontFamily: "Poppins_700Bold",
-    marginBottom: 10,
+    marginBottom: 8,
+    letterSpacing: -0.3,
   },
 
-  noContentText: {
-    fontSize: 14,
-    lineHeight: 22,
+  noContent: {
+    fontSize: 13,
     fontFamily: "Poppins_400Regular",
   },
 
+  // ── Media ───────────────────────────────────────
   mediaSection: {
-    marginTop: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
   },
 
-  mediaGrid: {
+  mediaSingle: {
+    borderRadius: 18,
+    overflow: "hidden",
+    height: 220,
+  },
+
+  mediaSingleImg: {
+    width: "100%",
+    height: "100%",
+  },
+
+  mediaRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+    gap: 6,
   },
 
-  mediaTile: {
-    borderRadius: 20,
+  mediaHalf: {
+    flex: 1,
+    height: 140,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+
+  mediaHero: {
+    height: 180,
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+
+  mediaThird: {
+    flex: 1,
+    height: 100,
+    borderRadius: 14,
     overflow: "hidden",
     position: "relative",
   },
 
-  mediaTileImage: {
+  mediaTileImg: {
     width: "100%",
     height: "100%",
   },
 
   moreOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.48)",
+    backgroundColor: "rgba(0,0,0,0.52)",
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: 14,
   },
 
-  moreOverlayText: {
+  moreText: {
     color: "#ffffff",
-    fontSize: 24,
+    fontSize: 20,
     fontFamily: "Poppins_700Bold",
   },
 
@@ -959,9 +1042,11 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
 
+  // ── Link card ───────────────────────────────────
   linkCard: {
-    marginTop: 14,
-    borderWidth: 1,
+    marginHorizontal: 16,
+    marginBottom: 14,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 18,
     padding: 12,
     flexDirection: "row",
@@ -972,94 +1057,111 @@ const styles = StyleSheet.create({
   linkIconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
 
   linkTitle: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
     fontFamily: "Poppins_700Bold",
+    lineHeight: 19,
   },
 
-  linkDescription: {
-    marginTop: 2,
+  linkDesc: {
     fontSize: 12,
-    lineHeight: 18,
     fontFamily: "Poppins_400Regular",
+    lineHeight: 17,
+    marginTop: 2,
   },
 
   linkUrl: {
-    marginTop: 3,
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: "Poppins_500Medium",
+    marginTop: 4,
   },
 
-  statsGrid: {
+  // ── Stats ───────────────────────────────────────
+  statsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 18,
+    gap: 8,
+    padding: 16,
   },
 
   statCard: {
-    width: "48%",
-    borderRadius: 18,
-    padding: 12,
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    gap: 4,
   },
 
-  statValue: {
-    marginTop: 6,
-    fontSize: 18,
+  statVal: {
+    fontSize: 17,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: -0.3,
   },
 
   statLabel: {
-    marginTop: 1,
-    fontSize: 11,
-    fontFamily: "Poppins_400Regular",
+    fontSize: 10,
+    fontFamily: "Poppins_500Medium",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
 
+  // ── Actions ─────────────────────────────────────
   actionRow: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 20,
+    padding: 16,
   },
 
-  actionButton: {
+  actionBtn: {
     flex: 1,
-    minHeight: 48,
-    borderWidth: 1,
+    height: 48,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
     flexDirection: "row",
-    gap: 8,
     alignItems: "center",
     justifyContent: "center",
+    gap: 7,
   },
 
-  commentText: {
-    fontSize: 13,
-    fontFamily: "Poppins_700Bold",
+  deleteBtn: {
+    // accent styles applied via inline props
   },
 
-  deleteText: {
+  actionBtnText: {
     fontSize: 13,
     fontFamily: "Poppins_700Bold",
+    letterSpacing: 0.1,
+  },
+
+  // ── Empty states ─────────────────────────────────
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
   },
 
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontFamily: "Poppins_700Bold",
     textAlign: "center",
+    letterSpacing: -0.2,
   },
 
   emptyText: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 20,
     fontFamily: "Poppins_400Regular",
     textAlign: "center",
+    marginTop: 4,
   },
 });

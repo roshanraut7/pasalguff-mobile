@@ -360,44 +360,6 @@ export default function CommentModerationScreen() {
       >
         <Header title="Comment Moderation" colors={colors} />
 
-        <View
-          style={[
-            styles.summaryCard,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.summaryIcon,
-              {
-                backgroundColor: colors.surfaceSecondary,
-              },
-            ]}
-          >
-            <Ionicons
-              name="chatbubble-ellipses-outline"
-              size={24}
-              color={colors.accent}
-            />
-          </View>
-
-          <View style={{ flex: 1 }}>
-            <Text
-              numberOfLines={1}
-              style={[styles.summaryTitle, { color: colors.foreground }]}
-            >
-              {postTitle || "Post Comments"}
-            </Text>
-
-            <Text style={[styles.summaryText, { color: colors.muted }]}>
-              Review and delete comments from this selected post.
-            </Text>
-          </View>
-        </View>
-
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
             Comments

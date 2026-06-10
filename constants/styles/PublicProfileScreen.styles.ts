@@ -23,17 +23,26 @@ export const styles = StyleSheet.create({
     padding: 24,
   },
 
+  errorIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   errorTitle: {
-    marginTop: 12,
-    fontSize: 18,
+    marginTop: 14,
+    fontSize: 22,
+    lineHeight: 30,
     fontFamily: "Poppins_700Bold",
     textAlign: "center",
   },
 
   errorText: {
     marginTop: 6,
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 22,
     fontFamily: "Poppins_400Regular",
     textAlign: "center",
   },
@@ -46,55 +55,93 @@ export const styles = StyleSheet.create({
   coverImage: {
     width: "100%",
     height: 220,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    borderBottomLeftRadius: 34,
+    borderBottomRightRadius: 34,
   },
 
   coverFallback: {
     width: "100%",
     height: 220,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    borderBottomLeftRadius: 34,
+    borderBottomRightRadius: 34,
     borderBottomWidth: 1,
+    overflow: "hidden",
+  },
+
+  coverFallbackContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  coverFallbackIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    opacity: 0.9,
+  },
+
+  coverBackdrop: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 220,
+    borderBottomLeftRadius: 34,
+    borderBottomRightRadius: 34,
+    backgroundColor: "rgba(0,0,0,0.26)",
   },
 
   backButton: {
     position: "absolute",
-    left: 20,
-    top: 20,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    left: 18,
+    top: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.25)",
+    backgroundColor: "rgba(0,0,0,0.36)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+    borderColor: "rgba(255,255,255,0.26)",
+    zIndex: 20,
   },
 
   avatarFloatingWrap: {
     position: "absolute",
-    left: 24,
+    left: 22,
     bottom: -56,
+    zIndex: 30,
   },
 
   avatarOuter: {
     width: 116,
     height: 116,
-    borderRadius: 58,
+    borderRadius: 999,
     padding: 4,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 8,
   },
 
   avatarImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 54,
+    borderRadius: 999,
   },
 
   avatarFallback: {
     width: "100%",
     height: "100%",
-    borderRadius: 54,
+    borderRadius: 999,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -106,21 +153,33 @@ export const styles = StyleSheet.create({
   },
 
   profileInfoSection: {
-    paddingTop: 68,
-    paddingHorizontal: 32,
-    paddingBottom: 20,
+    marginHorizontal: 12,
+    marginTop: 0,
+    paddingTop: 70,
+    paddingHorizontal: 12,
+    paddingBottom: 18,
+  },
+
+  profileInfoTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+
+  profileNameWrap: {
+    flex: 1,
   },
 
   profileName: {
-    fontSize: 34,
-    lineHeight: 42,
+    fontSize: 30,
+    lineHeight: 38,
     fontFamily: "Poppins_700Bold",
   },
 
   profileSubText: {
     marginTop: 4,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 21,
     fontFamily: "Poppins_500Medium",
   },
 
@@ -129,6 +188,24 @@ export const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontFamily: "Poppins_500Medium",
+  },
+
+  businessTypePill: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+
+  businessTypePillText: {
+    maxWidth: 220,
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: "Poppins_700Bold",
   },
 
   profileActionRow: {
@@ -148,7 +225,47 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: 7,
+  },
+
+  headerStatsGrid: {
+    marginTop: 16,
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  headerStatCard: {
+    flex: 1,
+    minHeight: 86,
+  
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  headerStatIcon: {
+    // width: 30,
+    // height: 30,
+    // borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+
+  headerStatValue: {
+    fontSize: 14,
+    lineHeight: 19,
+    fontFamily: "Poppins_700Bold",
+    textAlign: "center",
+  },
+
+  headerStatLabel: {
+    marginTop: 2,
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Poppins_500Medium",
+    textAlign: "center",
   },
 
   profileBadgeRow: {
@@ -175,12 +292,13 @@ export const styles = StyleSheet.create({
   },
 
   tabsRoot: {
+    marginTop: 18,
     borderBottomWidth: 1,
   },
 
   tabsScrollContent: {
     flexDirection: "row",
-    gap: 28,
+    gap: 22,
     paddingLeft: 20,
     paddingRight: 28,
   },
@@ -195,23 +313,32 @@ export const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 14,
     borderWidth: 1,
-    borderRadius: 22,
+    borderRadius: 24,
     padding: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
 
   communityAvatar: {
     width: 58,
     height: 58,
-    borderRadius: 29,
+    borderRadius: 999,
   },
 
   communityAvatarFallback: {
     width: 58,
     height: 58,
-    borderRadius: 29,
+    borderRadius: 999,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -242,11 +369,12 @@ export const styles = StyleSheet.create({
   smallPillText: {
     fontSize: 10,
     lineHeight: 13,
-    fontFamily: "Poppins_600SemiBold",
+    fontFamily: "Poppins_700Bold",
+    textTransform: "capitalize",
   },
 
   communityStatsRow: {
-    marginTop: 7,
+    marginTop: 8,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
@@ -268,23 +396,32 @@ export const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 14,
     borderWidth: 1,
-    borderRadius: 22,
+    borderRadius: 24,
     padding: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
 
   smallAvatar: {
     width: 54,
     height: 54,
-    borderRadius: 27,
+    borderRadius: 999,
   },
 
   smallAvatarFallback: {
     width: 54,
     height: 54,
-    borderRadius: 27,
+    borderRadius: 999,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -295,7 +432,16 @@ export const styles = StyleSheet.create({
     fontFamily: "Poppins_700Bold",
   },
 
+  cardArrowWrap: {
+    // width: 32,
+    // height: 32,
+    // borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   cardTitle: {
+    flexShrink: 1,
     fontSize: 15,
     lineHeight: 21,
     fontFamily: "Poppins_700Bold",
@@ -304,7 +450,7 @@ export const styles = StyleSheet.create({
   cardMeta: {
     marginTop: 3,
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 18,
     fontFamily: "Poppins_400Regular",
   },
 
@@ -315,18 +461,17 @@ export const styles = StyleSheet.create({
   },
 
   infoRow: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 14,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 12,
   },
 
   infoIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -338,7 +483,7 @@ export const styles = StyleSheet.create({
   },
 
   infoValue: {
-    marginTop: 3,
+    marginTop: 4,
     fontSize: 15,
     lineHeight: 22,
     fontFamily: "Poppins_600SemiBold",
@@ -348,9 +493,27 @@ export const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 14,
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 22,
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 26,
     alignItems: "center",
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+
+  emptyIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   emptyTitle: {
@@ -364,7 +527,7 @@ export const styles = StyleSheet.create({
   emptyText: {
     marginTop: 6,
     fontSize: 13,
-    lineHeight: 20,
+    lineHeight: 21,
     fontFamily: "Poppins_400Regular",
     textAlign: "center",
   },

@@ -32,8 +32,6 @@ import {
   useJoinCommunityMutation,
 } from "@/store/api/communityApi";
 
-import { useRemoveCommunityMemberMutation } from "@/store/api/communityMemberManagementApi";
-
 import {
   useGetCommunityGuidelinesQuery,
   type CommunityGuidelineItem,
@@ -47,6 +45,18 @@ import {
 import type { CommunityMemberItem } from "@/types/community";
 import type { CommunityPost } from "@/types/post";
 
+function getMemberListKey(member: CommunityMemberItem, index?: number) {
+  /**
+   * Some visible-member APIs return the membership `id` as undefined or duplicated.
+   * React needs a stable unique key, so user.id is the safest first choice.
+   */
+  return String(
+    member.user?.id ??
+      member.id ??
+      `${member.role ?? "member"}-${member.user?.email ?? "unknown"}-${index ?? 0}`,
+  );
+}
+
 export default function CommunityDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { data: session, isPending } = useSession();
@@ -57,10 +67,9 @@ export default function CommunityDetailScreen() {
   const [isJoining, setIsJoining] = useState(false);
   const [isCancellingRequest, setIsCancellingRequest] = useState(false);
 
-  /*
-   * Used only to show Pending immediately after submitting
-   * a private-community request, before the refreshed API
-   * response reaches the screen.
+  /**
+   * Local instant state for private community request.
+   * It prevents the UI from looking unchanged while the API refreshes.
    */
   const [submittedPrivateRequest, setSubmittedPrivateRequest] =
     useState(false);
@@ -71,7 +80,6 @@ export default function CommunityDetailScreen() {
 
   const [memberPage, setMemberPage] = useState(1);
   const [memberItems, setMemberItems] = useState<CommunityMemberItem[]>([]);
-  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const { viewer, openViewer, closeViewer } = usePostMediaViewer();
 
@@ -99,13 +107,6 @@ export default function CommunityDetailScreen() {
     sessionUser: session?.user,
   });
 
-  /*
-   * Loads the community shell by slug.
-   *
-   * Important:
-   * Your backend CommunityQueryService.findOne() must allow
-   * private communities to load as locked previews.
-   */
   const {
     data: community,
     isLoading: communityLoading,
@@ -116,13 +117,6 @@ export default function CommunityDetailScreen() {
     refetchOnMountOrArgChange: true,
   });
 
-  /*
-   * Loads the logged-in viewer's access information.
-   * For a pending private request this should return:
-   * - isMember: false
-   * - canView: false
-   * - joinRequestStatus: "PENDING"
-   */
   const {
     data: access,
     isLoading: accessLoading,
@@ -138,8 +132,7 @@ export default function CommunityDetailScreen() {
     community?.isOwner === true;
 
   const isModerator =
-    access?.role === "MODERATOR" ||
-    community?.myRole === "MODERATOR";
+    access?.role === "MODERATOR" || community?.myRole === "MODERATOR";
 
   const isJoined =
     Boolean(access?.isMember) ||
@@ -148,14 +141,6 @@ export default function CommunityDetailScreen() {
     community?.myRole === "MODERATOR" ||
     community?.myRole === "MEMBER";
 
-  /*
-   * Use both backend sources because:
-   * - community response includes myJoinRequestStatus
-   * - access response includes joinRequestStatus
-   * - submittedPrivateRequest updates the UI instantly after pressing Join
-   *
-   * The !isJoined check prevents showing Pending after approval.
-   */
   const isJoinRequestPending =
     !isJoined &&
     (submittedPrivateRequest ||
@@ -163,10 +148,7 @@ export default function CommunityDetailScreen() {
       access?.joinRequestStatus === "PENDING");
 
   const isPrivateLocked =
-    community?.visibility === "PRIVATE" &&
-    !isJoined &&
-    !isOwner &&
-    !isModerator;
+    community?.visibility === "PRIVATE" && !isJoined && !isOwner && !isModerator;
 
   const canViewContent =
     Boolean(access?.canView) ||
@@ -175,28 +157,17 @@ export default function CommunityDetailScreen() {
     isOwner ||
     isModerator;
 
-  const canManageMembers =
-    isOwner || Boolean(access?.permissions?.canManageMembers);
-
-  const canManagePosts =
-    isOwner || Boolean(access?.permissions?.canManagePosts);
-
-  /*
-   * A pending private-community user must not load members.
-   * An approved joined user, owner or moderator can load them.
+  /**
+   * This slug page is now only a viewing page.
+   * Admin/moderator actions are handled in the dedicated manage pages.
    */
+  const canOpenManagePage = isOwner || isModerator;
+
   const canLoadMembers =
     !!session?.user &&
     !!community?.id &&
     (isJoined || isOwner || isModerator);
 
-  /*
-   * Normal joined-user member list endpoint.
-   * This must call:
-   * GET /communities/:communityId/visible-members
-   *
-   * Do not use the management-members query here.
-   */
   const {
     data: membersResponse,
     isLoading: membersLoading,
@@ -214,11 +185,6 @@ export default function CommunityDetailScreen() {
     },
   );
 
-  /*
-   * Protected content loads only when:
-   * - community is public, or
-   * - user is approved member/owner/moderator.
-   */
   const {
     data: postsResponse,
     isLoading: postsLoading,
@@ -255,7 +221,6 @@ export default function CommunityDetailScreen() {
   const [joinCommunity] = useJoinCommunityMutation();
   const [cancelMyJoinRequest] = useCancelMyJoinRequestMutation();
   const [deletePost] = useDeletePostMutation();
-  const [removeCommunityMember] = useRemoveCommunityMemberMutation();
 
   const coverUrl = toAbsoluteFileUrl(community?.coverImage);
   const avatarUrl = toAbsoluteFileUrl(community?.avatarImage);
@@ -267,9 +232,7 @@ export default function CommunityDetailScreen() {
     !!community && !isOwner && !isJoined && isJoinRequestPending;
 
   const memberCount =
-    community?.memberCount ??
-    membersResponse?.meta?.total ??
-    memberItems.length;
+    community?.memberCount ?? membersResponse?.meta?.total ?? memberItems.length;
 
   const totalPostCount = community?.postCount ?? postItems.length;
 
@@ -279,7 +242,7 @@ export default function CommunityDetailScreen() {
     }
 
     if (isModerator) {
-      return "Mod";
+      return "Moderator";
     }
 
     if (isJoined) {
@@ -293,9 +256,6 @@ export default function CommunityDetailScreen() {
     ? "Pending"
     : roleLabel ?? "Visitor";
 
-  /*
-   * Reset screen data when opening another community.
-   */
   useEffect(() => {
     setTab("posts");
 
@@ -305,26 +265,18 @@ export default function CommunityDetailScreen() {
 
     setMemberPage(1);
     setMemberItems([]);
-    setRemovingMemberId(null);
 
     setSubmittedPrivateRequest(false);
 
     closeComments();
   }, [community?.id, closeComments]);
 
-  /*
-   * Once the user is approved and becomes a joined member,
-   * remove the temporary local pending state.
-   */
   useEffect(() => {
     if (isJoined) {
       setSubmittedPrivateRequest(false);
     }
   }, [isJoined]);
 
-  /*
-   * Store paginated post responses in local screen state.
-   */
   useEffect(() => {
     if (!postsResponse) {
       return;
@@ -338,7 +290,6 @@ export default function CommunityDetailScreen() {
       }
 
       const existingIds = new Set(previousItems.map((item) => item.id));
-
       const newItems = incomingPosts.filter(
         (item) => !existingIds.has(item.id),
       );
@@ -347,9 +298,6 @@ export default function CommunityDetailScreen() {
     });
   }, [postsResponse, postCursor]);
 
-  /*
-   * Store paginated visible-member responses in local screen state.
-   */
   useEffect(() => {
     if (!membersResponse) {
       return;
@@ -362,15 +310,42 @@ export default function CommunityDetailScreen() {
         return incomingMembers;
       }
 
-      const existingIds = new Set(previousItems.map((item) => item.id));
-
-      const newItems = incomingMembers.filter(
-        (item) => !existingIds.has(item.id),
+      const existingMemberKeys = new Set(
+        previousItems.map((item, index) => getMemberListKey(item, index)),
       );
+
+      const newItems = incomingMembers.filter((item, index) => {
+        const memberKey = getMemberListKey(item, index);
+
+        if (existingMemberKeys.has(memberKey)) {
+          return false;
+        }
+
+        existingMemberKeys.add(memberKey);
+        return true;
+      });
 
       return [...previousItems, ...newItems];
     });
   }, [membersResponse, memberPage]);
+
+  const handleManageCommunity = useCallback(() => {
+    if (!slug) {
+      return;
+    }
+
+    /**
+     * Keep all admin/moderator actions away from this detail page.
+     * If your admin dashboard route is different, change only this pathname.
+     */
+    router.push({
+      pathname: "/user/moderator-panel",
+      params: {
+        slug,
+        mode: isOwner ? "admin" : "moderator",
+      },
+    });
+  }, [isOwner, slug]);
 
   const handleJoin = useCallback(async () => {
     if (!community?.id) {
@@ -388,16 +363,9 @@ export default function CommunityDetailScreen() {
       setMemberItems([]);
 
       if (community.visibility === "PRIVATE") {
-        /*
-         * Private community:
-         * the user submitted a request but is not a member yet.
-         */
         setSubmittedPrivateRequest(true);
 
-        await Promise.allSettled([
-          refetchCommunity(),
-          refetchAccess(),
-        ]);
+        await Promise.allSettled([refetchCommunity(), refetchAccess()]);
 
         Alert.alert(
           "Request sent",
@@ -407,14 +375,7 @@ export default function CommunityDetailScreen() {
         return;
       }
 
-      /*
-       * Public community:
-       * the user becomes an ACTIVE member immediately.
-       */
-      await Promise.allSettled([
-        refetchCommunity(),
-        refetchAccess(),
-      ]);
+      await Promise.allSettled([refetchCommunity(), refetchAccess()]);
     } catch (error: any) {
       console.log("Join community failed:", error);
 
@@ -460,10 +421,7 @@ export default function CommunityDetailScreen() {
               setMemberPage(1);
               setMemberItems([]);
 
-              await Promise.allSettled([
-                refetchCommunity(),
-                refetchAccess(),
-              ]);
+              await Promise.allSettled([refetchCommunity(), refetchAccess()]);
             } catch (error: any) {
               console.log("Cancel join request failed:", error);
 
@@ -479,12 +437,7 @@ export default function CommunityDetailScreen() {
         },
       ],
     );
-  }, [
-    community?.id,
-    cancelMyJoinRequest,
-    refetchCommunity,
-    refetchAccess,
-  ]);
+  }, [community?.id, cancelMyJoinRequest, refetchCommunity, refetchAccess]);
 
   const handleDeletePost = useCallback(
     async (post: CommunityPost) => {
@@ -529,85 +482,6 @@ export default function CommunityDetailScreen() {
       commentPost?.id,
       closeComments,
       refetchCommunity,
-    ],
-  );
-
-  const handleRemoveMember = useCallback(
-    (member: CommunityMemberItem) => {
-      if (!community?.id) {
-        return;
-      }
-
-      const targetUserId = member.user.id;
-
-      if (!targetUserId) {
-        return;
-      }
-
-      if (targetUserId === session?.user?.id) {
-        Alert.alert("Not allowed", "You cannot remove yourself.");
-        return;
-      }
-
-      if (member.role === "ADMIN") {
-        Alert.alert("Not allowed", "You cannot remove the community owner.");
-        return;
-      }
-
-      Alert.alert(
-        "Remove member",
-        `Are you sure you want to remove ${
-          member.user.name ?? "this member"
-        } from this community?`,
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Remove",
-            style: "destructive",
-            onPress: async () => {
-              try {
-                setRemovingMemberId(targetUserId);
-
-                await removeCommunityMember({
-                  communityId: community.id,
-                  targetUserId,
-                }).unwrap();
-
-                setMemberItems((previousItems) =>
-                  previousItems.filter(
-                    (item) => item.user.id !== targetUserId,
-                  ),
-                );
-
-                await Promise.allSettled([
-                  refetchCommunity(),
-                  refetchAccess(),
-                ]);
-              } catch (error: any) {
-                console.log("Remove member failed:", error);
-
-                Alert.alert(
-                  "Could not remove member",
-                  error?.data?.message ??
-                    "Something went wrong while removing this member.",
-                );
-              } finally {
-                setRemovingMemberId(null);
-              }
-            },
-          },
-        ],
-      );
-    },
-    [
-      community?.id,
-      removeCommunityMember,
-      refetchCommunity,
-      refetchAccess,
-      session?.user?.id,
     ],
   );
 
@@ -736,10 +610,7 @@ export default function CommunityDetailScreen() {
   if (isPending || communityLoading || accessLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator
-          size="large"
-          color={colors.accent}
-        />
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
@@ -750,13 +621,14 @@ export default function CommunityDetailScreen() {
 
   if (communityError || !community) {
     return (
-      <SafeAreaView
-        className="flex-1 bg-background"
-        edges={["top"]}
-      >
+      <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
         <View className="flex-1 items-center justify-center px-6">
+          <View className="mb-4 h-[64px] w-[64px] items-center justify-center rounded-full bg-segment">
+            <Ionicons name="alert-circle-outline" size={30} color={colors.accent} />
+          </View>
+
           <Text
-            className="text-foreground"
+            className="text-center text-foreground"
             style={{
               fontSize: 24,
               fontFamily: "Poppins_700Bold",
@@ -766,7 +638,7 @@ export default function CommunityDetailScreen() {
           </Text>
 
           <Text
-            className="mt-2 text-muted"
+            className="mt-2 text-center text-muted"
             style={{
               fontSize: 14,
               lineHeight: 22,
@@ -782,10 +654,7 @@ export default function CommunityDetailScreen() {
 
   return (
     <>
-      <SafeAreaView
-        className="flex-1 bg-background"
-        edges={["top"]}
-      >
+      <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
         <ScrollView
           className="bg-background"
           contentContainerStyle={{ paddingBottom: 120 }}
@@ -800,40 +669,47 @@ export default function CommunityDetailScreen() {
                   source={{ uri: coverUrl }}
                   style={{
                     width: "100%",
-                    height: 220,
-                    borderBottomLeftRadius: 30,
-                    borderBottomRightRadius: 30,
+                    height: 214,
+                    borderBottomLeftRadius: 32,
+                    borderBottomRightRadius: 32,
                   }}
                   resizeMode="cover"
                 />
               ) : (
                 <View
-                  className="bg-segment"
                   style={{
-                    height: 220,
-                    borderBottomLeftRadius: 30,
-                    borderBottomRightRadius: 30,
+                    height: 214,
+                    borderBottomLeftRadius: 32,
+                    borderBottomRightRadius: 32,
                   }}
                 />
               )}
+
+              <View
+                pointerEvents="none"
+                className="absolute inset-0"
+                style={{
+                  height: 214,
+                  borderBottomLeftRadius: 32,
+                  borderBottomRightRadius: 32,
+                  backgroundColor: colors.separator,
+                }}
+              />
 
               <View className="absolute left-5 top-5">
                 <Pressable
                   onPress={() => {
                     router.replace("/(tabs)");
                   }}
-                  className="h-[42px] w-[42px] items-center justify-center rounded-full border border-white/20 bg-white/15"
+                  className="h-[42px] w-[42px] items-center justify-center rounded-full"
+                  style={{ backgroundColor: colors.coverActionBackground }}
                 >
-                  <Ionicons
-                    name="chevron-back"
-                    size={20}
-                    color="#ffffff"
-                  />
+                  <Ionicons name="chevron-back" size={22} color={colors.surface} />
                 </Pressable>
               </View>
 
-              <View className="absolute -bottom-[52px] left-5">
-                <View className="h-[112px] w-[112px] items-center justify-center overflow-hidden rounded-full border-4 border-background bg-surface">
+              <View className="absolute -bottom-[48px] left-5">
+                <View className="h-[104px] w-[104px] items-center justify-center overflow-hidden rounded-full border-4 border-background bg-surface">
                   {avatarUrl ? (
                     <Image
                       source={{ uri: avatarUrl }}
@@ -847,7 +723,7 @@ export default function CommunityDetailScreen() {
                     <View className="h-full w-full items-center justify-center bg-segment">
                       <Ionicons
                         name="people-outline"
-                        size={40}
+                        size={38}
                         color={colors.accent}
                       />
                     </View>
@@ -856,9 +732,9 @@ export default function CommunityDetailScreen() {
               </View>
             </View>
 
-            <View className="px-5 pt-[66px]">
+            <View className="px-5 pt-[62px]">
               <View className="flex-row items-start justify-between">
-                <View style={{ width: "72%" }}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
                   <Text
                     className="text-foreground"
                     style={{
@@ -870,21 +746,30 @@ export default function CommunityDetailScreen() {
                     {community.name}
                   </Text>
 
-                  <Text
-                    className="mt-1 text-muted"
-                    style={{
-                      fontSize: 14,
-                      lineHeight: 22,
-                      fontFamily: "Poppins_500Medium",
-                    }}
+                  <View
+                    className="mt-2 flex-row flex-wrap items-center"
+                    style={{ gap: 8 }}
                   >
-                    {community.category?.name ?? "Unknown"} •{" "}
-                    {community.visibility}
-                  </Text>
+                    <SmallChip
+                      icon="grid-outline"
+                      label={community.category?.name ?? "Unknown"}
+                      colors={colors}
+                    />
+
+                    <SmallChip
+                      icon={
+                        community.visibility === "PRIVATE"
+                          ? "lock-closed-outline"
+                          : "earth-outline"
+                      }
+                      label={community.visibility}
+                      colors={colors}
+                    />
+                  </View>
 
                   {community.description ? (
                     <Text
-                      className="mt-3 text-muted"
+                      className="mt-4 text-muted"
                       style={{
                         fontSize: 14,
                         lineHeight: 22,
@@ -896,118 +781,71 @@ export default function CommunityDetailScreen() {
                   ) : null}
                 </View>
 
-                <View style={{ width: "26%", alignItems: "flex-end" }}>
+                <View
+                  style={{
+                    minWidth: 96,
+                    maxWidth: 132,
+                    alignItems: "flex-end",
+                  }}
+                >
                   {roleLabel ? (
-                    <View className="rounded-full bg-segment px-3 py-2">
-                      <Text
-                        style={{
-                          color: colors.segmentForeground,
-                          fontSize: 12,
-                          fontFamily: "Poppins_600SemiBold",
-                        }}
-                      >
-                        {roleLabel}
-                      </Text>
-                    </View>
-                  ) : showCancelRequestButton ? (
-                    <Pressable
-                      onPress={handleCancelJoinRequest}
-                      disabled={isCancellingRequest}
-                      style={{
-                        minWidth: 116,
-                        minHeight: 36,
-                        borderRadius: 999,
-                        borderWidth: 1,
-                        borderColor: colors.danger,
-                        backgroundColor: colors.surfaceSecondary,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                      }}
-                    >
-                      {isCancellingRequest ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.danger}
-                        />
-                      ) : (
-                        <Text
-                          numberOfLines={1}
-                          style={{
-                            color: colors.danger,
-                            fontSize: 12,
-                            fontFamily: "Poppins_700Bold",
-                          }}
-                        >
-                          Cancel Request
-                        </Text>
-                      )}
-                    </Pressable>
-                  ) : showJoinButton ? (
-                    <Pressable
-                      onPress={handleJoin}
-                      disabled={isJoining}
-                      className="rounded-full bg-accent px-4 py-2"
-                    >
-                      {isJoining ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.accentForeground}
-                        />
-                      ) : (
-                        <Text
-                          style={{
-                            color: colors.accentForeground,
-                            fontSize: 12,
-                            fontFamily: "Poppins_600SemiBold",
-                          }}
-                        >
-                          Join
-                        </Text>
-                      )}
-                    </Pressable>
+                    <RoleStatusChip
+                      icon="shield-checkmark-outline"
+                      label={roleLabel}
+                      colors={colors}
+                    />
                   ) : null}
 
+                  {canOpenManagePage ? (
+                    <View style={{ marginTop: roleLabel ? 8 : 0 }}>
+                      <ManageCommunityButton
+                        colors={colors}
+                        onPress={handleManageCommunity}
+                      />
+                    </View>
+                  ) : (
+                    <HeaderAction
+                      showJoinButton={showJoinButton}
+                      showCancelRequestButton={showCancelRequestButton}
+                      isJoining={isJoining}
+                      isCancellingRequest={isCancellingRequest}
+                      colors={colors}
+                      onJoin={handleJoin}
+                      onCancelRequest={handleCancelJoinRequest}
+                    />
+                  )}
                 </View>
               </View>
-              <View>
-                {(isOwner || isModerator) ? (
-  <Pressable
-    onPress={() => {
-      router.push({
-        pathname: "/user/moderator-panel",
-        params: {
-          slug: slug ?? "",
-        },
-      });
-    }}
-    className="mt-4 flex-row items-center justify-center rounded-full bg-accent px-4 py-3"
-  >
-    <Ionicons
-      name="shield-checkmark-outline"
-      size={18}
-      color={colors.accentForeground}
-    />
 
-    <Text
-      style={{
-        marginLeft: 8,
-        color: colors.accentForeground,
-        fontSize: 14,
-        fontFamily: "Poppins_700Bold",
-      }}
-    >
-      Manage Community
-    </Text>
-  </Pressable>
-) : null}
-              </View>
+              {isJoinRequestPending ? (
+                <View className="mt-4 rounded-[18px] bg-segment px-4 py-3">
+                  <View className="flex-row items-center">
+                    <Ionicons name="time-outline" size={18} color={colors.accent} />
+                    <Text
+                      className="ml-2 text-foreground"
+                      style={{
+                        fontSize: 13,
+                        fontFamily: "Poppins_600SemiBold",
+                      }}
+                    >
+                      Join request pending
+                    </Text>
+                  </View>
 
-              <View
-                className="mt-5 flex-row items-center"
-                style={{ gap: 22 }}
-              >
+                  <Text
+                    className="mt-1 text-muted"
+                    style={{
+                      fontSize: 12,
+                      lineHeight: 19,
+                      fontFamily: "Poppins_400Regular",
+                    }}
+                  >
+                    The admin needs to approve your request before you can view locked content.
+                  </Text>
+                </View>
+              ) : null}
+
+              <View className="mt-5 flex-row items-center" style={{ gap: 22 }}>
                 <InlineStat
                   icon="document-text-outline"
                   value={String(totalPostCount)}
@@ -1024,7 +862,7 @@ export default function CommunityDetailScreen() {
               </View>
             </View>
 
-            <View className="mt-6">
+            <View className="mt-4">
               <Tabs
                 value={tab}
                 onValueChange={setTab}
@@ -1063,7 +901,7 @@ export default function CommunityDetailScreen() {
                   </Tabs.ScrollView>
                 </Tabs.List>
 
-                <View className="pt-3">
+                <View style={{ paddingTop: 6 }}>
                   <Tabs.Content value="posts">
                     <View className="bg-background">
                       {isPrivateLocked ? (
@@ -1072,34 +910,16 @@ export default function CommunityDetailScreen() {
                           colors={colors}
                         />
                       ) : postsLoading && postItems.length === 0 ? (
-                        <View className="py-8">
-                          <ActivityIndicator
-                            size="small"
-                            color={colors.accent}
-                          />
-                        </View>
+                        <LoadingBlock colors={colors} />
                       ) : postsError ? (
-                        <Text
-                          className="mt-2 px-5"
-                          style={{
-                            color: colors.danger,
-                            fontSize: 14,
-                            fontFamily: "Poppins_500Medium",
-                          }}
-                        >
-                          Failed to load posts.
-                        </Text>
+                        <ErrorText message="Failed to load posts." colors={colors} />
                       ) : postItems.length === 0 ? (
-                        <Text
-                          className="mt-2 px-5 text-muted"
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 22,
-                            fontFamily: "Poppins_400Regular",
-                          }}
-                        >
-                          No posts yet.
-                        </Text>
+                        <EmptyState
+                          icon="document-text-outline"
+                          title="No posts yet"
+                          description="Community posts will appear here."
+                          colors={colors}
+                        />
                       ) : (
                         <View className="mt-2">
                           {postItems.map((post) => {
@@ -1116,7 +936,7 @@ export default function CommunityDetailScreen() {
                                 onPressShare={handleSharePost}
                                 onPressAuthor={handleAuthorPress}
                                 onPressMedia={openViewer}
-                                canDelete={canManagePosts || isOwnPost}
+                                canDelete={isOwnPost}
                                 isDeleting={deletingPostId === post.id}
                                 onDelete={handleDeletePost}
                               />
@@ -1125,10 +945,7 @@ export default function CommunityDetailScreen() {
 
                           {postsFetching && postItems.length > 0 ? (
                             <View className="py-5">
-                              <ActivityIndicator
-                                size="small"
-                                color={colors.accent}
-                              />
+                              <ActivityIndicator size="small" color={colors.accent} />
                             </View>
                           ) : null}
 
@@ -1136,7 +953,7 @@ export default function CommunityDetailScreen() {
                           postItems.length > 0 &&
                           !postsResponse.meta.hasMore ? (
                             <Text
-                              className="py-4 text-center text-muted"
+                              className="pt-2 pb-1 text-center text-muted"
                               style={{
                                 fontSize: 12,
                                 fontFamily: "Poppins_400Regular",
@@ -1151,10 +968,7 @@ export default function CommunityDetailScreen() {
                   </Tabs.Content>
 
                   <Tabs.Content value="about">
-                    <View
-                      className="px-5 pt-2"
-                      style={{ rowGap: 12 }}
-                    >
+                    <View className="px-5 pt-1" style={{ rowGap: 10 }}>
                       <InfoRow
                         icon="people-outline"
                         label="Community Name"
@@ -1194,7 +1008,7 @@ export default function CommunityDetailScreen() {
                   </Tabs.Content>
 
                   <Tabs.Content value="guidelines">
-                    <View className="bg-background px-5 pt-2">
+                    <View className="bg-background px-5 pt-1">
                       {isPrivateLocked ? (
                         <PrivateLockedMessage
                           isPending={isJoinRequestPending}
@@ -1202,46 +1016,19 @@ export default function CommunityDetailScreen() {
                         />
                       ) : guidelinesLoading ||
                         (guidelinesFetching && guidelineItems.length === 0) ? (
-                        <View className="py-6">
-                          <ActivityIndicator
-                            size="small"
-                            color={colors.accent}
-                          />
-                        </View>
+                        <LoadingBlock colors={colors} />
                       ) : guidelinesError ? (
-                        <Text
-                          style={{
-                            color: colors.danger,
-                            fontSize: 14,
-                            fontFamily: "Poppins_500Medium",
-                          }}
-                        >
-                          Failed to load guidelines.
-                        </Text>
+                        <ErrorText
+                          message="Failed to load guidelines."
+                          colors={colors}
+                        />
                       ) : guidelineItems.length === 0 ? (
-                        <View className="rounded-[22px] bg-surface px-4 py-5">
-                          <Text
-                            className="text-foreground"
-                            style={{
-                              fontSize: 16,
-                              fontFamily: "Poppins_700Bold",
-                            }}
-                          >
-                            No guidelines yet
-                          </Text>
-
-                          <Text
-                            className="mt-1 text-muted"
-                            style={{
-                              fontSize: 14,
-                              lineHeight: 22,
-                              fontFamily: "Poppins_400Regular",
-                            }}
-                          >
-                            Community guidelines will appear here once the admin
-                            adds them.
-                          </Text>
-                        </View>
+                        <EmptyState
+                          icon="reader-outline"
+                          title="No guidelines yet"
+                          description="Community guidelines will appear here once the admin adds them."
+                          colors={colors}
+                        />
                       ) : (
                         <Accordion
                           selectionMode="single"
@@ -1272,87 +1059,44 @@ export default function CommunityDetailScreen() {
                   </Tabs.Content>
 
                   <Tabs.Content value="members">
-                    <View className="bg-background px-5 pt-2">
+                    <View className="bg-background px-5 pt-1">
                       {isPrivateLocked ? (
                         <PrivateLockedMessage
                           isPending={isJoinRequestPending}
                           colors={colors}
                         />
                       ) : !isJoined && !isOwner && !isModerator ? (
-                        <Text
-                          className="text-muted"
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 22,
-                            fontFamily: "Poppins_400Regular",
-                          }}
-                        >
-                          Join this community to view members.
-                        </Text>
+                        <EmptyState
+                          icon="lock-closed-outline"
+                          title="Members are locked"
+                          description="Join this community to view members."
+                          colors={colors}
+                        />
                       ) : membersLoading && memberItems.length === 0 ? (
-                        <View className="py-6">
-                          <ActivityIndicator
-                            size="small"
-                            color={colors.accent}
-                          />
-                        </View>
+                        <LoadingBlock colors={colors} />
                       ) : membersError ? (
-                        <Text
-                          style={{
-                            color: colors.danger,
-                            fontSize: 14,
-                            fontFamily: "Poppins_500Medium",
-                          }}
-                        >
-                          Failed to load members.
-                        </Text>
+                        <ErrorText message="Failed to load members." colors={colors} />
                       ) : memberItems.length === 0 ? (
-                        <Text
-                          className="text-muted"
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 22,
-                            fontFamily: "Poppins_400Regular",
-                          }}
-                        >
-                          No members found.
-                        </Text>
+                        <EmptyState
+                          icon="people-outline"
+                          title="No members found"
+                          description="Members will appear here after they join this community."
+                          colors={colors}
+                        />
                       ) : (
-                        <View style={{ rowGap: 12 }}>
-                          {memberItems.map((member) => {
+                        <View style={{ rowGap: 10 }}>
+                          {memberItems.map((member, index) => {
                             const memberAvatar =
-                              toAbsoluteFileUrl(member.user.image) ?? null;
-
-                            const isSelf =
-                              member.user.id === session?.user?.id;
-
-                            const isAdminMember = member.role === "ADMIN";
-
-                            const isActiveMember =
-                              !member.status || member.status === "ACTIVE";
-
-                            const canRemoveMember =
-                              canManageMembers &&
-                              !isSelf &&
-                              !isAdminMember &&
-                              isActiveMember;
+                              toAbsoluteFileUrl(member.user?.image) ?? null;
 
                             return (
                               <MemberRow
-                                key={member.id}
+                                key={getMemberListKey(member, index)}
                                 member={member}
                                 memberAvatar={memberAvatar}
-                                canManageMembers={canManageMembers}
-                                canRemoveMember={canRemoveMember}
-                                isRemoving={
-                                  removingMemberId === member.user.id
-                                }
                                 colors={colors}
                                 onPressProfile={() =>
-                                  handleMemberPress(member.user.id)
-                                }
-                                onRemoveMember={() =>
-                                  handleRemoveMember(member)
+                                  handleMemberPress(member.user?.id)
                                 }
                               />
                             );
@@ -1360,10 +1104,7 @@ export default function CommunityDetailScreen() {
 
                           {membersFetching && memberItems.length > 0 ? (
                             <View className="py-5">
-                              <ActivityIndicator
-                                size="small"
-                                color={colors.accent}
-                              />
+                              <ActivityIndicator size="small" color={colors.accent} />
                             </View>
                           ) : null}
 
@@ -1372,7 +1113,7 @@ export default function CommunityDetailScreen() {
                           membersResponse.meta.page >=
                             membersResponse.meta.totalPages ? (
                             <Text
-                              className="py-4 text-center text-muted"
+                              className="pt-2 pb-1 text-center text-muted"
                               style={{
                                 fontSize: 12,
                                 fontFamily: "Poppins_400Regular",
@@ -1397,8 +1138,7 @@ export default function CommunityDetailScreen() {
         post={activeCommentPost}
         comments={comments}
         isLoading={
-          (isLoadingComments || isFetchingComments) &&
-          comments.length === 0
+          (isLoadingComments || isFetchingComments) && comments.length === 0
         }
         isCreating={isCreatingComment || isCreatingReply}
         inputValue={commentInput}
@@ -1424,51 +1164,60 @@ export default function CommunityDetailScreen() {
   );
 }
 
-function PrivateLockedMessage({
-  isPending,
+function ManageCommunityButton({
+  colors,
+  onPress,
+}: {
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-row items-center rounded-full border border-border bg-surface px-3 py-2"
+      style={{
+        minHeight: 34,
+      }}
+    >
+      <Ionicons name="settings-outline" size={15} color={colors.accent} />
+
+      <Text
+        style={{
+          marginLeft: 5,
+          color: colors.accent,
+          fontSize: 12,
+          fontFamily: "Poppins_700Bold",
+        }}
+      >
+        Manage
+      </Text>
+    </Pressable>
+  );
+}
+
+function RoleStatusChip({
+  icon,
+  label,
   colors,
 }: {
-  isPending: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
   colors: ReturnType<typeof useAppTheme>["colors"];
 }) {
   return (
-    <View className="mx-5 mt-2 rounded-[22px] border border-border bg-surface px-4 py-5">
-      <View className="flex-row items-start">
-        <View className="mr-3 h-[38px] w-[38px] items-center justify-center rounded-full bg-segment">
-          <Ionicons
-            name={isPending ? "time-outline" : "lock-closed-outline"}
-            size={20}
-            color={colors.accent}
-          />
-        </View>
+    <View className="flex-row items-center rounded-full bg-segment px-3 py-2">
+      <Ionicons name={icon} size={14} color={colors.accent} />
 
-        <View style={{ flex: 1 }}>
-          <Text
-            className="text-foreground"
-            style={{
-              fontSize: 16,
-              fontFamily: "Poppins_700Bold",
-            }}
-          >
-            {isPending
-              ? "Waiting for admin verification"
-              : "Private community"}
-          </Text>
-
-          <Text
-            className="mt-1 text-muted"
-            style={{
-              fontSize: 14,
-              lineHeight: 22,
-              fontFamily: "Poppins_400Regular",
-            }}
-          >
-            {isPending
-              ? "Your join request is pending. Please wait for verification from the admin to unlock this community."
-              : "Join this private community first. After admin approval, posts, guidelines and members will be unlocked."}
-          </Text>
-        </View>
-      </View>
+      <Text
+        className="ml-1 text-foreground"
+        numberOfLines={1}
+        style={{
+          fontSize: 11,
+          fontFamily: "Poppins_700Bold",
+        }}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -1487,11 +1236,7 @@ function InlineStat({
   return (
     <View className="flex-row items-center">
       <View className="mr-2 h-[34px] w-[34px] items-center justify-center rounded-full bg-segment">
-        <Ionicons
-          name={icon}
-          size={18}
-          color={colors.accent}
-        />
+        <Ionicons name={icon} size={18} color={colors.accent} />
       </View>
 
       <Text
@@ -1517,6 +1262,159 @@ function InlineStat({
   );
 }
 
+function HeaderAction({
+  showJoinButton,
+  showCancelRequestButton,
+  isJoining,
+  isCancellingRequest,
+  colors,
+  onJoin,
+  onCancelRequest,
+}: {
+  showJoinButton: boolean;
+  showCancelRequestButton: boolean;
+  isJoining: boolean;
+  isCancellingRequest: boolean;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  onJoin: () => void;
+  onCancelRequest: () => void;
+}) {
+  if (showCancelRequestButton) {
+    return (
+      <Pressable
+        onPress={onCancelRequest}
+        disabled={isCancellingRequest}
+        style={{
+          minHeight: 34,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: colors.danger,
+          backgroundColor: colors.surfaceSecondary,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: 12,
+          paddingVertical: 7,
+        }}
+      >
+        {isCancellingRequest ? (
+          <ActivityIndicator size="small" color={colors.danger} />
+        ) : (
+          <Text
+            numberOfLines={1}
+            style={{
+              color: colors.danger,
+              fontSize: 11,
+              fontFamily: "Poppins_700Bold",
+            }}
+          >
+            Cancel
+          </Text>
+        )}
+      </Pressable>
+    );
+  }
+
+  if (showJoinButton) {
+    return (
+      <Pressable
+        onPress={onJoin}
+        disabled={isJoining}
+        className="rounded-full bg-accent px-4 py-2"
+      >
+        {isJoining ? (
+          <ActivityIndicator size="small" color={colors.accentForeground} />
+        ) : (
+          <Text
+            style={{
+              color: colors.accentForeground,
+              fontSize: 12,
+              fontFamily: "Poppins_700Bold",
+            }}
+          >
+            Join
+          </Text>
+        )}
+      </Pressable>
+    );
+  }
+
+  return null;
+}
+
+function PrivateLockedMessage({
+  isPending,
+  colors,
+}: {
+  isPending: boolean;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  return (
+    <View className="mx-5 mt-2 rounded-[24px] border border-border bg-surface px-4 py-5">
+      <View className="flex-row items-start">
+        <View className="mr-3 h-[40px] w-[40px] items-center justify-center rounded-full bg-segment">
+          <Ionicons
+            name={isPending ? "time-outline" : "lock-closed-outline"}
+            size={21}
+            color={colors.accent}
+          />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text
+            className="text-foreground"
+            style={{
+              fontSize: 16,
+              fontFamily: "Poppins_700Bold",
+            }}
+          >
+            {isPending ? "Waiting for admin approval" : "Private community"}
+          </Text>
+
+          <Text
+            className="mt-1 text-muted"
+            style={{
+              fontSize: 14,
+              lineHeight: 22,
+              fontFamily: "Poppins_400Regular",
+            }}
+          >
+            {isPending
+              ? "Your join request is pending. After approval, posts, guidelines and members will be unlocked."
+              : "Join this private community first. After admin approval, posts, guidelines and members will be unlocked."}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function SmallChip({
+  icon,
+  label,
+  colors,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  return (
+    <View className="flex-row items-center rounded-full bg-segment px-3 py-1.5">
+      <Ionicons name={icon} size={13} color={colors.accent} />
+
+      <Text
+        className="ml-1 text-foreground"
+        numberOfLines={1}
+        style={{
+          fontSize: 11,
+          fontFamily: "Poppins_600SemiBold",
+        }}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 function GuidelineAccordionItem({
   guideline,
   index,
@@ -1529,10 +1427,7 @@ function GuidelineAccordionItem({
   return (
     <Accordion.Item value={guideline.id}>
       <Accordion.Trigger className="px-4 py-4">
-        <View
-          className="flex-row items-center"
-          style={{ flex: 1 }}
-        >
+        <View className="flex-row items-center" style={{ flex: 1 }}>
           <View className="mr-3 h-[30px] w-[30px] items-center justify-center rounded-full bg-segment">
             <Text
               style={{
@@ -1584,139 +1479,70 @@ function GuidelineAccordionItem({
 function MemberRow({
   member,
   memberAvatar,
-  canManageMembers,
-  canRemoveMember,
-  isRemoving,
   colors,
   onPressProfile,
-  onRemoveMember,
 }: {
   member: CommunityMemberItem;
   memberAvatar: string | null;
-  canManageMembers: boolean;
-  canRemoveMember: boolean;
-  isRemoving: boolean;
   colors: ReturnType<typeof useAppTheme>["colors"];
   onPressProfile: () => void;
-  onRemoveMember: () => void;
 }) {
   return (
-    <View
-      className="flex-row items-center rounded-[20px] border border-border bg-surface px-4 py-3"
+    <Pressable
+      onPress={onPressProfile}
+      android_ripple={{ color: colors.surfaceSecondary }}
+      className="flex-row items-center rounded-[22px] border border-border bg-surface px-4 py-3"
       style={{ width: "100%" }}
     >
-      <Pressable
-        onPress={onPressProfile}
-        android_ripple={{ color: colors.surfaceSecondary }}
-        className="flex-row items-center"
-        style={{ flex: 1 }}
-      >
-        <View className="mr-3 h-[48px] w-[48px] overflow-hidden rounded-full border border-border bg-segment">
-          {memberAvatar ? (
-            <Image
-              source={{ uri: memberAvatar }}
-              style={{
-                width: "100%",
-                height: "100%",
-              }}
-              resizeMode="cover"
-            />
-          ) : (
-            <View className="h-full w-full items-center justify-center">
-              <Ionicons
-                name="person-outline"
-                size={20}
-                color={colors.accent}
-              />
-            </View>
-          )}
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <Text
-            className="text-foreground"
-            numberOfLines={1}
+      <View className="mr-3 h-[50px] w-[50px] overflow-hidden rounded-full border border-border bg-segment">
+        {memberAvatar ? (
+          <Image
+            source={{ uri: memberAvatar }}
             style={{
-              fontSize: 15,
-              fontFamily: "Poppins_600SemiBold",
+              width: "100%",
+              height: "100%",
             }}
-          >
-            {member.user.name ?? "Unknown User"}
-          </Text>
+            resizeMode="cover"
+          />
+        ) : (
+          <View className="h-full w-full items-center justify-center">
+            <Ionicons name="person-outline" size={21} color={colors.accent} />
+          </View>
+        )}
+      </View>
 
-          <Text
-            className="mt-1 text-muted"
-            numberOfLines={1}
-            style={{
-              fontSize: 13,
-              fontFamily: "Poppins_400Regular",
-            }}
-          >
-            {member.role}
-            {canManageMembers && member.status
-              ? ` • ${member.status}`
-              : ""}
-          </Text>
-
-          {canManageMembers && member.user.email ? (
-            <Text
-              className="mt-1 text-muted"
-              numberOfLines={1}
-              style={{
-                fontSize: 12,
-                fontFamily: "Poppins_400Regular",
-              }}
-            >
-              {member.user.email}
-            </Text>
-          ) : null}
-        </View>
-      </Pressable>
-
-      {canRemoveMember ? (
-        <Pressable
-          onPress={onRemoveMember}
-          disabled={isRemoving}
-          className="ml-3 flex-row items-center rounded-full px-3 py-2"
+      <View style={{ flex: 1 }}>
+        <Text
+          className="text-foreground"
+          numberOfLines={1}
           style={{
-            backgroundColor: colors.danger,
-            opacity: isRemoving ? 0.7 : 1,
+            fontSize: 15,
+            fontFamily: "Poppins_600SemiBold",
           }}
         >
-          {isRemoving ? (
-            <ActivityIndicator
-              size="small"
-              color={colors.dangerForeground}
-            />
-          ) : (
-            <>
-              <Ionicons
-                name="person-remove-outline"
-                size={14}
-                color={colors.dangerForeground}
-              />
+          {member.user.name ?? "Unknown User"}
+        </Text>
 
-              <Text
-                style={{
-                  marginLeft: 5,
-                  color: colors.dangerForeground,
-                  fontSize: 12,
-                  fontFamily: "Poppins_600SemiBold",
-                }}
-              >
-                Remove
-              </Text>
-            </>
-          )}
-        </Pressable>
-      ) : (
-        <Ionicons
-          name="chevron-forward"
-          size={18}
-          color={colors.muted}
-        />
-      )}
-    </View>
+        <Text
+          className="mt-1 text-muted"
+          numberOfLines={1}
+          style={{
+            fontSize: 12,
+            fontFamily: "Poppins_400Regular",
+          }}
+        >
+          {member.role === "ADMIN"
+            ? "Community admin"
+            : member.role === "MODERATOR"
+              ? "Moderator"
+              : "Member"}
+        </Text>
+      </View>
+
+      <View className="ml-3 h-[32px] w-[32px] items-center justify-center rounded-full bg-segment">
+        <Ionicons name="chevron-forward" size={17} color={colors.muted} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -1734,16 +1560,12 @@ function InfoRow({
   colors: ReturnType<typeof useAppTheme>["colors"];
 }) {
   return (
-    <View className="flex-row rounded-[18px] bg-surface px-4 py-3">
-      <View className="mr-3 h-[34px] w-[34px] items-center justify-center rounded-full bg-segment">
-        <Ionicons
-          name={icon}
-          size={18}
-          color={colors.accent}
-        />
+    <View className="flex-row rounded-[20px] border border-border bg-surface px-4 py-3">
+      <View className="mr-3 h-[36px] w-[36px] items-center justify-center rounded-full bg-segment">
+        <Ionicons name={icon} size={18} color={colors.accent} />
       </View>
 
-      <View style={{ width: "84%" }}>
+      <View style={{ flex: 1 }}>
         <Text
           className="text-muted"
           style={{
@@ -1766,6 +1588,80 @@ function InfoRow({
           {value}
         </Text>
       </View>
+    </View>
+  );
+}
+
+function LoadingBlock({
+  colors,
+}: {
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  return (
+    <View className="py-4">
+      <ActivityIndicator size="small" color={colors.accent} />
+    </View>
+  );
+}
+
+function ErrorText({
+  message,
+  colors,
+}: {
+  message: string;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  return (
+    <Text
+      className="mt-2 px-5"
+      style={{
+        color: colors.danger,
+        fontSize: 14,
+        fontFamily: "Poppins_500Medium",
+      }}
+    >
+      {message}
+    </Text>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  colors,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  return (
+    <View className="rounded-[24px] border border-border bg-surface px-4 py-5">
+      <View className="mb-3 h-[42px] w-[42px] items-center justify-center rounded-full bg-segment">
+        <Ionicons name={icon} size={21} color={colors.accent} />
+      </View>
+
+      <Text
+        className="text-foreground"
+        style={{
+          fontSize: 16,
+          fontFamily: "Poppins_700Bold",
+        }}
+      >
+        {title}
+      </Text>
+
+      <Text
+        className="mt-1 text-muted"
+        style={{
+          fontSize: 14,
+          lineHeight: 22,
+          fontFamily: "Poppins_400Regular",
+        }}
+      >
+        {description}
+      </Text>
     </View>
   );
 }

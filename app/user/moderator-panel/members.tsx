@@ -1252,7 +1252,9 @@ const styles = StyleSheet.create({
   },
 
   memberCard: {
-    borderWidth: 1,
+    // height:40,
+    // width:40,
+    borderWidth:1,
     borderRadius: 24,
     padding: 16,
   },
