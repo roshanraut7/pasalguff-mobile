@@ -21,7 +21,7 @@ export type PaginatedResponse<T> = {
 
 export type CommunityRole = "ADMIN" | "MODERATOR" | "MEMBER";
 
-export type CommunityVisibility = "PUBLIC" | "PRIVATE";
+export type CommunityVisibility = "PUBLIC" | "PRIVATE" | "RESTRICTED";
 
 export type CommunityStatus = "ACTIVE" | "INACTIVE";
 

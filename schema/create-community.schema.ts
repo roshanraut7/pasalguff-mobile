@@ -21,7 +21,7 @@ export const createCommunitySchema = z.object({
     ),
     avatarImage: optionalUrlField,
     coverImage: optionalUrlField,
-    visibility: z.enum(["PUBLIC", "PRIVATE"]),
+    visibility: z.enum(["PUBLIC", "PRIVATE","RESTRICTED"]),
 });
 
 export type CreateCommunityFormInput = z.input<typeof createCommunitySchema>;

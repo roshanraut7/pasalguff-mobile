@@ -693,75 +693,90 @@ export default function CreateCommunityForm({
             <View>
               <Label>Visibility</Label>
 
-              <Menu>
-                <Menu.Trigger asChild>
-                  <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
-                    <View className="flex-row items-center gap-2">
-                      <Ionicons
-                        name={
-                          selectedVisibility === "PRIVATE"
-                            ? "lock-closed-outline"
-                            : "globe-outline"
-                        }
-                        size={18}
-                        color={colors.accent}
-                      />
+            <Menu>
+  <Menu.Trigger asChild>
+    <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
+      <View className="flex-row items-center gap-2">
+        <Ionicons
+          name={
+            selectedVisibility === "PRIVATE"
+              ? "lock-closed-outline"
+              : selectedVisibility === "RESTRICTED"
+                ? "eye-outline"
+                : "globe-outline"
+          }
+          size={18}
+          color={colors.accent}
+        />
 
-                      <Text
-                        style={{
-                          color: colors.foreground,
-                          fontSize: 15,
-                          fontFamily: "Poppins_500Medium",
-                        }}
-                      >
-                        {selectedVisibility === "PRIVATE"
-                          ? "Private"
-                          : "Public"}
-                      </Text>
-                    </View>
+        <Text
+          style={{
+            color: colors.foreground,
+            fontSize: 15,
+            fontFamily: "Poppins_500Medium",
+          }}
+        >
+          {selectedVisibility === "PRIVATE"
+            ? "Private"
+            : selectedVisibility === "RESTRICTED"
+              ? "Restricted"
+              : "Public"}
+        </Text>
+      </View>
 
-                    <Ionicons
-                      name="chevron-down-outline"
-                      size={18}
-                      color={colors.muted}
-                    />
-                  </Pressable>
-                </Menu.Trigger>
+      <Ionicons
+        name="chevron-down-outline"
+        size={18}
+        color={colors.muted}
+      />
+    </Pressable>
+  </Menu.Trigger>
 
-                <Menu.Portal>
-                  <Menu.Overlay />
+  <Menu.Portal>
+    <Menu.Overlay />
 
-                  <Menu.Content
-                    presentation="popover"
-                    placement="bottom"
-                    align="start"
-                    width={220}
-                    className="rounded-2xl border border-border bg-surface"
-                  >
-                    <Menu.Item
-                      onPress={() =>
-                        setValue("visibility", "PUBLIC", {
-                          shouldValidate: true,
-                          shouldDirty: true,
-                        })
-                      }
-                    >
-                      <Menu.ItemTitle>Public</Menu.ItemTitle>
-                    </Menu.Item>
+    <Menu.Content
+      presentation="popover"
+      placement="bottom"
+      align="start"
+      width={260}
+      className="rounded-2xl border border-border bg-surface"
+    >
+      <Menu.Item
+        onPress={() =>
+          setValue("visibility", "PUBLIC", {
+            shouldValidate: true,
+            shouldDirty: true,
+          })
+        }
+      >
+        <Menu.ItemTitle>Public</Menu.ItemTitle>
+      </Menu.Item>
 
-                    <Menu.Item
-                      onPress={() =>
-                        setValue("visibility", "PRIVATE", {
-                          shouldValidate: true,
-                          shouldDirty: true,
-                        })
-                      }
-                    >
-                      <Menu.ItemTitle>Private</Menu.ItemTitle>
-                    </Menu.Item>
-                  </Menu.Content>
-                </Menu.Portal>
-              </Menu>
+      <Menu.Item
+        onPress={() =>
+          setValue("visibility", "PRIVATE", {
+            shouldValidate: true,
+            shouldDirty: true,
+          })
+        }
+      >
+        <Menu.ItemTitle>Private</Menu.ItemTitle>
+      </Menu.Item>
+
+      <Menu.Item
+        onPress={() =>
+          setValue("visibility", "RESTRICTED", {
+            shouldValidate: true,
+            shouldDirty: true,
+          })
+        }
+      >
+        <Menu.ItemTitle>Restricted</Menu.ItemTitle>
+      </Menu.Item>
+    </Menu.Content>
+  </Menu.Portal>
+</Menu>
             </View>
           )}
         />
