@@ -20,6 +20,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@nestjs/swagger": "^11.4.2",
     "@notifee/react-native": "^9.1.8",
+    "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-firebase/app": "^24.0.0",
     "@react-native-firebase/messaging": "^24.0.0",
     "@react-native-picker/picker": "2.11.1",

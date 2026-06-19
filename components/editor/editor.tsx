@@ -18,6 +18,7 @@ type AppRichTextEditorProps = {
   placeholder?: string;
   editorHeight?: number;
   showToolbar?: boolean;
+  plain?:boolean
 };
 
 function HtmlWatcher({
@@ -48,6 +49,7 @@ export function AppRichTextEditor({
   helperText,
   editorHeight = 260,
   showToolbar = false,
+  plain= false
 }: AppRichTextEditorProps) {
   const { colors } = useAppTheme();
 
@@ -65,7 +67,9 @@ export function AppRichTextEditor({
         styles.container,
         {
           backgroundColor: palette.card,
-          borderColor: palette.border,
+      borderColor: plain ? "transparent" : palette.border,
+      borderWidth: plain ? 0 : 1,
+      borderRadius: plain ? 0 : 24,
         },
       ]}
     >

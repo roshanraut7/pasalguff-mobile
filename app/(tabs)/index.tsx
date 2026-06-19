@@ -10,19 +10,20 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
-  Pressable,
   RefreshControl,
   Text,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { Tabs } from "heroui-native";
 
 import { useSession } from "@/api/better-auth-client";
 import CommentPostModal from "@/components/post/CommentsModal";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import DislikeReasonModal from "@/components/post/DislikeReasonModal";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
+import CommunityDiscussionHomeCard from "@/components/common/CommunityDiscussionHomeCard";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { usePostInteractions } from "@/hooks/media/usePostInteractions";
@@ -30,9 +31,15 @@ import {
   useGetHomeFeedPostsQuery,
   useVotePostPollMutation,
 } from "@/store/api/postApi";
+import {
+  useGetHomeFeedDiscussionsQuery,
+  type CommunityDiscussion,
+} from "@/store/api/communityDiscussionApi";
 import type { CommunityPost, PostMedia } from "@/types/post";
 
-type HomeFeedTab = "FOR_YOU" | "COMMUNITY";
+type HomeFeedTab = "FOR_YOU" | "COMMUNITY" | "DISCUSSION";
+
+type HomeListItem = CommunityPost | CommunityDiscussion;
 
 type HomePostItemProps = {
   item: CommunityPost;
@@ -49,6 +56,28 @@ type HomePostItemProps = {
 const OPTIONS_HEADER_HEIGHT = 54;
 const OPTIONS_ANIMATION_DURATION = 170;
 const SHOW_OPTIONS_DELAY = 100;
+
+const HOME_TABS: {
+  label: string;
+  value: HomeFeedTab;
+}[] = [
+  {
+    label: "For You",
+    value: "FOR_YOU",
+  },
+  {
+    label: "Community",
+    value: "COMMUNITY",
+  },
+  {
+    label: "Discussions",
+    value: "DISCUSSION",
+  },
+];
+
+function isHomeFeedTab(value: string): value is HomeFeedTab {
+  return value === "FOR_YOU" || value === "COMMUNITY" || value === "DISCUSSION";
+}
 
 const HomePostItem = memo(function HomePostItem({
   item,
@@ -80,7 +109,7 @@ export default function HomeScreen() {
   const { colors } = useAppTheme();
   const { data: session, isPending } = useSession();
 
-  const listRef = useRef<FlatList<CommunityPost>>(null);
+  const listRef = useRef<FlatList<HomeListItem>>(null);
 
   const optionsTranslateY = useRef(new Animated.Value(0)).current;
   const optionsOpacity = useRef(new Animated.Value(1)).current;
@@ -90,15 +119,22 @@ export default function HomeScreen() {
   );
 
   const [activeTab, setActiveTab] = useState<HomeFeedTab>("FOR_YOU");
+
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [posts, setPosts] = useState<CommunityPost[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
 
-  /**
-   * When true, any playing embedded YouTube WebView inside a card is removed.
-   * This stops audio/video while the user scrolls the feed.
-   */
+  const [discussionCursor, setDiscussionCursor] = useState<string | undefined>(
+    undefined,
+  );
+  const [discussions, setDiscussions] = useState<CommunityDiscussion[]>([]);
+
+  const [refreshing, setRefreshing] = useState(false);
   const [isFeedScrolling, setIsFeedScrolling] = useState(false);
+
+  const isDiscussionTab = activeTab === "DISCUSSION";
+
+  const postFeedType: "FOR_YOU" | "COMMUNITY" =
+    activeTab === "COMMUNITY" ? "COMMUNITY" : "FOR_YOU";
 
   const { viewer, openViewer, closeViewer } = usePostMediaViewer();
   const [votePostPoll] = useVotePostPollMutation();
@@ -144,15 +180,34 @@ export default function HomeScreen() {
     refetch,
   } = useGetHomeFeedPostsQuery(
     {
-      feedType: activeTab,
+      feedType: postFeedType,
       limit: 8,
       cursor,
       sortBy: "newest",
     },
     {
-      skip: !session?.user,
+      skip: !session?.user || isDiscussionTab,
       refetchOnMountOrArgChange: true,
     },
+  );
+
+  const {
+    data: discussionResponse,
+    isLoading: isDiscussionLoading,
+    isFetching: isDiscussionFetching,
+    error: discussionError,
+    refetch: refetchDiscussions,
+  } = useGetHomeFeedDiscussionsQuery(
+  {
+    communityId: "YOUR_PUBLIC_JOINED_COMMUNITY_ID",
+    limit: 8,
+    cursor: discussionCursor,
+    sortBy: "newest",
+  },
+  {
+    skip: !session?.user || !isDiscussionTab,
+    refetchOnMountOrArgChange: true,
+  },
   );
 
   useEffect(() => {
@@ -165,9 +220,7 @@ export default function HomeScreen() {
         return incomingPosts;
       }
 
-      const existingIds = new Set(
-        previousPosts.map((post) => post.id),
-      );
+      const existingIds = new Set(previousPosts.map((post) => post.id));
 
       const newPosts = incomingPosts.filter(
         (post) => !existingIds.has(post.id),
@@ -176,6 +229,28 @@ export default function HomeScreen() {
       return [...previousPosts, ...newPosts];
     });
   }, [feedResponse, cursor]);
+
+  useEffect(() => {
+    if (!discussionResponse) return;
+
+    const incomingDiscussions = discussionResponse.data ?? [];
+
+    setDiscussions((previousDiscussions) => {
+      if (!discussionCursor) {
+        return incomingDiscussions;
+      }
+
+      const existingIds = new Set(
+        previousDiscussions.map((discussion) => discussion.id),
+      );
+
+      const newDiscussions = incomingDiscussions.filter(
+        (discussion) => !existingIds.has(discussion.id),
+      );
+
+      return [...previousDiscussions, ...newDiscussions];
+    });
+  }, [discussionResponse, discussionCursor]);
 
   const clearShowOptionsTimer = useCallback(() => {
     if (!showOptionsTimerRef.current) return;
@@ -245,8 +320,13 @@ export default function HomeScreen() {
 
       setIsFeedScrolling(false);
       setActiveTab(tab);
+
       setCursor(undefined);
       setPosts([]);
+
+      setDiscussionCursor(undefined);
+      setDiscussions([]);
+
       setRefreshing(false);
 
       requestAnimationFrame(() => {
@@ -263,6 +343,15 @@ export default function HomeScreen() {
       closeViewer,
       showOptions,
     ],
+  );
+
+  const handleTabValueChange = useCallback(
+    (value: string) => {
+      if (!isHomeFeedTab(value)) return;
+
+      handleChangeTab(value);
+    },
+    [handleChangeTab],
   );
 
   const handleScrollBeginDrag = useCallback(() => {
@@ -316,6 +405,24 @@ export default function HomeScreen() {
     showOptions();
 
     try {
+      if (isDiscussionTab) {
+        if (discussionCursor !== undefined) {
+          setDiscussionCursor(undefined);
+
+          requestAnimationFrame(() => {
+            listRef.current?.scrollToOffset({
+              offset: 0,
+              animated: false,
+            });
+          });
+
+          return;
+        }
+
+        await refetchDiscussions();
+        return;
+      }
+
       if (cursor !== undefined) {
         setCursor(undefined);
 
@@ -331,21 +438,60 @@ export default function HomeScreen() {
 
       await refetch();
     } finally {
-      if (cursor === undefined) {
+      if (
+        (!isDiscussionTab && cursor === undefined) ||
+        (isDiscussionTab && discussionCursor === undefined)
+      ) {
         setRefreshing(false);
       }
     }
-  }, [cursor, refetch, refreshing, showOptions]);
+  }, [
+    refreshing,
+    isDiscussionTab,
+    discussionCursor,
+    cursor,
+    refetchDiscussions,
+    refetch,
+    showOptions,
+  ]);
 
   useEffect(() => {
     if (!refreshing) return;
+
+    if (isDiscussionTab) {
+      if (discussionCursor !== undefined) return;
+      if (isDiscussionLoading || isDiscussionFetching) return;
+
+      setRefreshing(false);
+      return;
+    }
+
     if (cursor !== undefined) return;
     if (isLoading || isFetching) return;
 
     setRefreshing(false);
-  }, [refreshing, cursor, isLoading, isFetching]);
+  }, [
+    refreshing,
+    isDiscussionTab,
+    discussionCursor,
+    isDiscussionLoading,
+    isDiscussionFetching,
+    cursor,
+    isLoading,
+    isFetching,
+  ]);
 
-  const loadMorePosts = useCallback(() => {
+  const loadMoreFeed = useCallback(() => {
+    if (isDiscussionTab) {
+      if (isDiscussionLoading || isDiscussionFetching) return;
+      if (!discussionResponse?.meta?.hasMore) return;
+      if (!discussionResponse.meta.nextCursor) return;
+      if (discussionCursor === discussionResponse.meta.nextCursor) return;
+
+      setDiscussionCursor(discussionResponse.meta.nextCursor);
+      return;
+    }
+
     if (isLoading || isFetching) return;
     if (!feedResponse?.meta?.hasMore) return;
     if (!feedResponse.meta.nextCursor) return;
@@ -353,11 +499,17 @@ export default function HomeScreen() {
 
     setCursor(feedResponse.meta.nextCursor);
   }, [
+    isDiscussionTab,
+    isDiscussionLoading,
+    isDiscussionFetching,
+    discussionResponse?.meta?.hasMore,
+    discussionResponse?.meta?.nextCursor,
+    discussionCursor,
     isLoading,
     isFetching,
-    cursor,
     feedResponse?.meta?.hasMore,
     feedResponse?.meta?.nextCursor,
+    cursor,
   ]);
 
   const handleAuthorPress = useCallback((authorId: string) => {
@@ -366,13 +518,6 @@ export default function HomeScreen() {
     router.push(`/user/profile/${authorId}`);
   }, []);
 
-  /**
-   * Embedded videos should stop when:
-   * - media viewer is open,
-   * - the feed is scrolling,
-   * - comments modal is open,
-   * - dislike reason modal is open.
-   */
   const disableMediaPlayback =
     viewer.visible ||
     isFeedScrolling ||
@@ -405,10 +550,39 @@ export default function HomeScreen() {
     ],
   );
 
-  const keyExtractor = useCallback(
-    (item: CommunityPost) => item.id,
+  const renderDiscussionItem = useCallback(
+    ({ item }: { item: CommunityDiscussion }) => (
+      <CommunityDiscussionHomeCard discussion={item} />
+    ),
     [],
   );
+
+  const listData = useMemo<HomeListItem[]>(
+    () => (isDiscussionTab ? discussions : posts),
+    [isDiscussionTab, discussions, posts],
+  );
+
+  const activeLoading = isDiscussionTab ? isDiscussionLoading : isLoading;
+  const activeFetching = isDiscussionTab ? isDiscussionFetching : isFetching;
+  const activeError = isDiscussionTab ? discussionError : error;
+  const activeResponse = isDiscussionTab ? discussionResponse : feedResponse;
+
+  const renderItem = useCallback(
+    ({ item }: { item: HomeListItem }) => {
+      if (isDiscussionTab) {
+        return renderDiscussionItem({
+          item: item as CommunityDiscussion,
+        });
+      }
+
+      return renderPostItem({
+        item: item as CommunityPost,
+      });
+    },
+    [isDiscussionTab, renderDiscussionItem, renderPostItem],
+  );
+
+  const keyExtractor = useCallback((item: HomeListItem) => item.id, []);
 
   const refreshControl = useMemo(
     () => (
@@ -427,10 +601,8 @@ export default function HomeScreen() {
     () => (
       <Animated.View
         style={{
-          height: OPTIONS_HEADER_HEIGHT,
+          minHeight: OPTIONS_HEADER_HEIGHT,
           backgroundColor: colors.background,
-          flexDirection: "row",
-          alignItems: "center",
           justifyContent: "center",
           opacity: optionsOpacity,
           transform: [
@@ -440,86 +612,44 @@ export default function HomeScreen() {
           ],
         }}
       >
-        <Pressable
-          onPress={() => handleChangeTab("FOR_YOU")}
-          hitSlop={12}
-          style={({ pressed }) => ({
-            height: OPTIONS_HEADER_HEIGHT,
-            alignItems: "center",
-            justifyContent: "center",
-            marginRight: 32,
-            opacity: pressed ? 0.7 : 1,
-          })}
+        <Tabs
+          value={activeTab}
+          onValueChange={handleTabValueChange}
+          variant="secondary"
+          style={{
+            width: "100%",
+          }}
         >
-          <Text
+          <Tabs.List
             style={{
-              color:
-                activeTab === "FOR_YOU"
-                  ? colors.foreground
-                  : colors.muted,
-              fontSize: 15,
-              fontFamily:
-                activeTab === "FOR_YOU"
-                  ? "Poppins_700Bold"
-                  : "Poppins_500Medium",
+              width: "100%",
+              minHeight: OPTIONS_HEADER_HEIGHT,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: colors.background,
             }}
           >
-            For You
-          </Text>
+            <Tabs.Indicator />
 
-          {activeTab === "FOR_YOU" && (
-            <View
-              style={{
-                position: "absolute",
-                bottom: 8,
-                height: 3,
-                width: 26,
-                borderRadius: 999,
-                backgroundColor: colors.accent,
-              }}
-            />
-          )}
-        </Pressable>
-
-        <Pressable
-          onPress={() => handleChangeTab("COMMUNITY")}
-          hitSlop={12}
-          style={({ pressed }) => ({
-            height: OPTIONS_HEADER_HEIGHT,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: pressed ? 0.7 : 1,
-          })}
-        >
-          <Text
-            style={{
-              color:
-                activeTab === "COMMUNITY"
-                  ? colors.foreground
-                  : colors.muted,
-              fontSize: 15,
-              fontFamily:
-                activeTab === "COMMUNITY"
-                  ? "Poppins_700Bold"
-                  : "Poppins_500Medium",
-            }}
-          >
-            Community
-          </Text>
-
-          {activeTab === "COMMUNITY" && (
-            <View
-              style={{
-                position: "absolute",
-                bottom: 8,
-                height: 3,
-                width: 26,
-                borderRadius: 999,
-                backgroundColor: colors.accent,
-              }}
-            />
-          )}
-        </Pressable>
+            {HOME_TABS.map((tab) => (
+              <Tabs.Trigger key={tab.value} value={tab.value}>
+                {({ isSelected }) => (
+                  <Tabs.Label
+                    style={{
+                      color: isSelected ? colors.foreground : colors.muted,
+                      fontSize: 15,
+                      fontFamily: isSelected
+                        ? "Poppins_700Bold"
+                        : "Poppins_500Medium",
+                    }}
+                  >
+                    {tab.label}
+                  </Tabs.Label>
+                )}
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
+        </Tabs>
       </Animated.View>
     ),
     [
@@ -527,15 +657,14 @@ export default function HomeScreen() {
       colors.background,
       colors.foreground,
       colors.muted,
-      colors.accent,
-      handleChangeTab,
+      handleTabValueChange,
       optionsOpacity,
       optionsTranslateY,
     ],
   );
 
   const emptyComponent = useMemo(() => {
-    if (isLoading || (isFetching && posts.length === 0)) {
+    if (activeLoading || (activeFetching && listData.length === 0)) {
       return (
         <View className="py-10">
           <ActivityIndicator size="small" color={colors.accent} />
@@ -543,7 +672,7 @@ export default function HomeScreen() {
       );
     }
 
-    if (error) {
+    if (activeError) {
       return (
         <View className="px-5 py-10">
           <Text
@@ -555,7 +684,9 @@ export default function HomeScreen() {
               fontFamily: "Poppins_500Medium",
             }}
           >
-            Failed to load posts. Pull down to refresh.
+            {isDiscussionTab
+              ? "Failed to load discussions. Pull down to refresh."
+              : "Failed to load posts. Pull down to refresh."}
           </Text>
         </View>
       );
@@ -574,23 +705,26 @@ export default function HomeScreen() {
         >
           {activeTab === "FOR_YOU"
             ? "No public posts to discover yet."
-            : "No posts from your communities yet."}
+            : activeTab === "COMMUNITY"
+              ? "No posts from your communities yet."
+              : "No discussions to show yet."}
         </Text>
       </View>
     );
   }, [
     activeTab,
-    isLoading,
-    isFetching,
-    posts.length,
-    error,
+    activeLoading,
+    activeFetching,
+    activeError,
+    listData.length,
+    isDiscussionTab,
     colors.accent,
     colors.danger,
     colors.muted,
   ]);
 
   const footerComponent = useMemo(() => {
-    if (isFetching && posts.length > 0) {
+    if (activeFetching && listData.length > 0) {
       return (
         <View className="py-5">
           <ActivityIndicator size="small" color={colors.accent} />
@@ -598,7 +732,7 @@ export default function HomeScreen() {
       );
     }
 
-    if (feedResponse && posts.length > 0 && !feedResponse.meta?.hasMore) {
+    if (activeResponse && listData.length > 0 && !activeResponse.meta?.hasMore) {
       return (
         <Text
           className="py-5 text-center"
@@ -608,16 +742,17 @@ export default function HomeScreen() {
             fontFamily: "Poppins_400Regular",
           }}
         >
-          No more posts.
+          {isDiscussionTab ? "No more discussions." : "No more posts."}
         </Text>
       );
     }
 
     return null;
   }, [
-    isFetching,
-    posts.length,
-    feedResponse,
+    activeFetching,
+    listData.length,
+    activeResponse,
+    isDiscussionTab,
     colors.accent,
     colors.muted,
   ]);
@@ -655,14 +790,14 @@ export default function HomeScreen() {
       <SafeAreaView className="flex-1 bg-background" edges={[]}>
         <FlatList
           ref={listRef}
-          data={posts}
+          data={listData}
           keyExtractor={keyExtractor}
-          renderItem={renderPostItem}
+          renderItem={renderItem}
           ListHeaderComponent={optionsHeader}
           stickyHeaderIndices={[0]}
           contentContainerStyle={{
             paddingBottom: 120,
-            flexGrow: posts.length === 0 ? 1 : undefined,
+            flexGrow: listData.length === 0 ? 1 : undefined,
           }}
           showsVerticalScrollIndicator={false}
           refreshControl={refreshControl}
@@ -670,7 +805,7 @@ export default function HomeScreen() {
           onScrollEndDrag={handleScrollEndDrag}
           onMomentumScrollBegin={handleMomentumScrollBegin}
           onMomentumScrollEnd={handleMomentumScrollEnd}
-          onEndReached={loadMorePosts}
+          onEndReached={loadMoreFeed}
           onEndReachedThreshold={0.7}
           ListEmptyComponent={emptyComponent}
           ListFooterComponent={footerComponent}
@@ -685,10 +820,6 @@ export default function HomeScreen() {
         />
       </SafeAreaView>
 
-      {/*
-       * Keep comment modal unchanged for now.
-       * Do not pass onPressPostDislike here.
-       */}
       <CommentPostModal
         visible={!!commentPost}
         post={activeCommentPost}
@@ -718,10 +849,6 @@ export default function HomeScreen() {
         onClose={closeViewer}
       />
 
-      {/*
-       * Separate feed-only Dislike reason modal.
-       * No fixed reason options and no comment-section integration.
-       */}
       <DislikeReasonModal
         visible={!!dislikePostTarget}
         reason={dislikeReason}

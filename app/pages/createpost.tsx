@@ -237,6 +237,91 @@ function StatusModal({
   );
 }
 
+function StartDiscussionButton({
+  disabled,
+  communityName,
+  onPress,
+  isDark,
+  textColor,
+  mutedColor,
+  accentColor,
+}: {
+  disabled?: boolean;
+  communityName?: string;
+  onPress: () => void;
+  isDark: boolean;
+  textColor: string;
+  mutedColor: string;
+  accentColor: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={{
+        marginHorizontal: 16,
+        marginTop: 12,
+        marginBottom: 4,
+        borderRadius: 22,
+        padding: 16,
+        opacity: disabled ? 0.55 : 1,
+        backgroundColor: isDark ? "#0F172A" : "#FFFFFF",
+        borderWidth: 1,
+        borderColor: isDark ? "#1E293B" : "#E2E8F0",
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: isDark
+              ? "rgba(37, 99, 235, 0.18)"
+              : "#DBEAFE",
+          }}
+        >
+          <Ionicons
+            name="chatbubbles-outline"
+            size={22}
+            color={accentColor}
+          />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              color: textColor,
+              fontSize: 15,
+              fontWeight: "900",
+            }}
+          >
+            Start Discussion
+          </Text>
+
+          <Text
+            style={{
+              marginTop: 3,
+              color: mutedColor,
+              fontSize: 12,
+              lineHeight: 17,
+              fontWeight: "500",
+            }}
+          >
+            Ask a question, get answers, mark solution, and let members join the
+            discussion
+            {communityName ? ` in ${communityName}.` : "."}
+          </Text>
+        </View>
+
+        <Ionicons name="arrow-forward-circle" size={26} color={accentColor} />
+      </View>
+    </Pressable>
+  );
+}
+
 /* ──────────────────────────────────────────────────────────────
    Screen
 ────────────────────────────────────────────────────────────── */
@@ -331,6 +416,7 @@ export default function CreatePostScreen() {
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // const canCreatePost = Boolean(targetCommunityId);
 
   /* ──────────────────────────────────────────────────────────────
      Poll state
@@ -586,13 +672,28 @@ export default function CreatePostScreen() {
     setPlainText(stripHtml(value ?? ""));
   }, []);
 
-  const showNoCommunityModal = useCallback(() => {
-    showStatusModal(
-      "danger",
-      "Community not found",
-      "You are not connected to any community where a post can be created.",
-    );
-  }, [showStatusModal]);
+ const showNoCommunityModal = useCallback(() => {
+  showStatusModal(
+    "danger",
+    "Community not found",
+    "You are not connected to any community where a post can be created.",
+  );
+}, [showStatusModal]);
+
+const handleStartDiscussion = useCallback(() => {
+  if (!targetCommunityId) {
+    showNoCommunityModal();
+    return;
+  }
+
+  router.push({
+    pathname: "/discussions/create",
+    params: {
+      communityId: targetCommunityId,
+      communityName: targetCommunityName,
+    },
+  });
+}, [targetCommunityId, targetCommunityName, showNoCommunityModal]);
 
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
@@ -1283,6 +1384,15 @@ export default function CreatePostScreen() {
                   You need to join a community before creating a post.
                 </Text>
               )}
+              <StartDiscussionButton
+  disabled={busy || isLoadingCommunities || !canCreatePost}
+  communityName={targetCommunityName}
+  onPress={handleStartDiscussion}
+  isDark={isDark}
+  textColor={p.text}
+  mutedColor={p.muted}
+  accentColor={colors.accent}
+/>
 
               {/* Post type tabs */}
               <View style={styles.postTypeTabsWrap}>

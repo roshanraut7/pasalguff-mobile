@@ -91,6 +91,7 @@ tagTypes: [
   "CommunityMembers",
   "CommunityAccess",
   "CommunityJoinRequests",
+  "CommunityDiscussion",
 
   "Profile",
   "AdminCommunities",
@@ -119,6 +120,9 @@ tagTypes: [
   "Follower",
   "Following",
   "PostAnalytics",
+    "CommunityDiscussionAnswer",
+    "CommunityDiscussionLive",
+"CommunityDiscussionLiveMessage",
 ],
   refetchOnFocus: true,
   refetchOnReconnect: true,

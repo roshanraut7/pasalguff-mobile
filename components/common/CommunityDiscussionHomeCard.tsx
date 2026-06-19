@@ -1,0 +1,401 @@
+import React, { useMemo } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { Avatar, Surface } from "heroui-native";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+
+import { useAppTheme } from "@/hooks/useAppTheme";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
+import type { CommunityDiscussion } from "@/store/api/communityDiscussionApi";
+
+dayjs.extend(relativeTime);
+
+type AppColors = ReturnType<typeof useAppTheme>["colors"];
+
+type CommunityDiscussionHomeCardProps = {
+  discussion: CommunityDiscussion;
+};
+
+function getAuthorName(author: CommunityDiscussion["author"]) {
+  const fullName = [author.firstName, author.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return author.name || fullName || author.businessName || "Unknown user";
+}
+
+function getInitials(name: string) {
+  const parts = name.split(" ").filter(Boolean);
+
+  if (!parts.length) return "U";
+
+  if (parts.length === 1) {
+    return parts[0]?.charAt(0)?.toUpperCase() || "U";
+  }
+
+  return `${parts[0]?.charAt(0) ?? ""}${parts[1]?.charAt(0) ?? ""}`.toUpperCase();
+}
+
+function formatCount(value?: number | null) {
+  const count = value ?? 0;
+
+  if (count <= 0) return "0";
+  if (count < 1000) return `${count}`;
+  if (count < 1_000_000) return `${(count / 1000).toFixed(1)}K`;
+
+  return `${(count / 1_000_000).toFixed(1)}M`;
+}
+
+function getStatusTone(
+  status: CommunityDiscussion["status"],
+  colors: AppColors,
+) {
+  if (status === "SOLVED") return colors.success;
+  if (status === "LOCKED") return colors.danger;
+  if (status === "CLOSED") return colors.warning;
+
+  return colors.accent;
+}
+
+export default function CommunityDiscussionHomeCard({
+  discussion,
+}: CommunityDiscussionHomeCardProps) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const authorName = getAuthorName(discussion.author);
+  const authorImage = toAbsoluteFileUrl(discussion.author.image) ?? undefined;
+  const statusColor = getStatusTone(discussion.status, colors);
+
+  const openDiscussion = () => {
+    router.push({
+      pathname: "/discussions/[discussionId]",
+      params: {
+        discussionId: discussion.id,
+        communityId: discussion.communityId,
+        communityName: discussion.community.name,
+      },
+    });
+  };
+
+  return (
+    <Pressable onPress={openDiscussion}>
+      <Surface variant="default" style={styles.card}>
+        <View style={styles.topRow}>
+          <View style={styles.authorRow}>
+            <Avatar alt="" size="md" variant="soft" color="accent">
+              {authorImage ? (
+                <Avatar.Image source={{ uri: authorImage }} />
+              ) : null}
+
+              <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
+            </Avatar>
+
+            <View style={styles.authorMeta}>
+              <Text numberOfLines={1} style={styles.authorName}>
+                {authorName}
+              </Text>
+
+              <Text numberOfLines={1} style={styles.subMeta}>
+                {discussion.community.name} · {dayjs(discussion.createdAt).fromNow()}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.discussionBadge}>
+            <Ionicons
+              name="chatbubbles-outline"
+              size={13}
+              color={colors.accent}
+            />
+
+            <Text style={styles.discussionBadgeText}>Discussion</Text>
+          </View>
+        </View>
+
+        <View style={styles.statusRow}>
+          <View
+            style={[
+              styles.statusPill,
+              {
+                borderColor: statusColor,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.statusDot,
+                {
+                  backgroundColor: statusColor,
+                },
+              ]}
+            />
+
+            <Text
+              style={[
+                styles.statusText,
+                {
+                  color: statusColor,
+                },
+              ]}
+            >
+              {discussion.status}
+            </Text>
+          </View>
+
+          <View style={styles.visibilityPill}>
+            <Ionicons
+              name={
+                discussion.visibility === "COMMUNITY"
+                  ? "people-outline"
+                  : "earth-outline"
+              }
+              size={12}
+              color={colors.muted}
+            />
+
+            <Text style={styles.visibilityText}>{discussion.visibility}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.title}>{discussion.title}</Text>
+
+        <Text numberOfLines={3} style={styles.body}>
+          {discussion.body}
+        </Text>
+
+        <View style={styles.metricsRow}>
+          <View style={styles.metricItem}>
+            <Ionicons
+              name="chatbubble-ellipses-outline"
+              size={15}
+              color={colors.muted}
+            />
+            <Text style={styles.metricText}>
+              {formatCount(discussion.answerCount)} answers
+            </Text>
+          </View>
+
+          <View style={styles.metricItem}>
+            <Ionicons name="eye-outline" size={15} color={colors.muted} />
+            <Text style={styles.metricText}>
+              {formatCount(discussion.viewCount)} views
+            </Text>
+          </View>
+
+          <View style={styles.metricItem}>
+            <Ionicons
+              name="notifications-outline"
+              size={15}
+              color={colors.muted}
+            />
+            <Text style={styles.metricText}>
+              {formatCount(discussion.followerCount)} followers
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.footerRow}>
+          <Text style={styles.footerHint}>
+            Tap to join the discussion
+          </Text>
+
+          <View style={styles.openButton}>
+            <Text style={styles.openButtonText}>Open</Text>
+            <Ionicons
+              name="arrow-forward"
+              size={15}
+              color={colors.accentForeground}
+            />
+          </View>
+        </View>
+      </Surface>
+    </Pressable>
+  );
+}
+
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    card: {
+      marginTop: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      borderRadius: 0,
+      borderWidth: 0,
+      backgroundColor: colors.surface,
+      gap: 10,
+    },
+
+    topRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+
+    authorRow: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    authorMeta: {
+      flex: 1,
+      marginLeft: 9,
+    },
+
+    authorName: {
+      color: colors.foreground,
+      fontSize: 14,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    subMeta: {
+      marginTop: 1,
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    discussionBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    discussionBadgeText: {
+      color: colors.accent,
+      fontSize: 11,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    statusRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+
+    statusPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    statusDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 999,
+    },
+
+    statusText: {
+      fontSize: 11,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    visibilityPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    visibilityText: {
+      color: colors.muted,
+      fontSize: 11,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    title: {
+      color: colors.foreground,
+      fontSize: 18,
+      lineHeight: 25,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    body: {
+      color: colors.foreground,
+      fontSize: 14,
+      lineHeight: 22,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    metricsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 14,
+      paddingTop: 2,
+    },
+
+    metricItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+
+    metricText: {
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_500Medium",
+    },
+
+    footerRow: {
+      marginTop: 2,
+      paddingTop: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+
+    footerHint: {
+      flex: 1,
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    openButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: colors.accent,
+    },
+
+    openButtonText: {
+      color: colors.accentForeground,
+      fontSize: 12,
+      fontFamily: "Poppins_700Bold",
+    },
+  });
+}
