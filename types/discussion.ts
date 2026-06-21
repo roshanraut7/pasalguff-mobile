@@ -1,6 +1,19 @@
-export type ViewerRole = "AUTHOR" | "MEMBER" | "MODERATOR" | "OWNER" | "ADMIN";
+export type ViewerRole =
+  | "VIEWER"
+  | "AUTHOR"
+  | "MEMBER"
+  | "CONTRIBUTOR"
+  | "MODERATOR"
+  | "OWNER"
+  | "ADMIN"
+  | "MANAGER";
 
-export type DiscussionStatus = "OPEN" | "SOLVED" | "CLOSED" | "LOCKED";
+export type DiscussionStatus =
+  | "OPEN"
+  | "SOLVED"
+  | "CLOSED"
+  | "LOCKED"
+  | "DELETED";
 
 export type VoteValue = "UP" | "DOWN" | null;
 
@@ -40,7 +53,7 @@ export type Discussion = {
   id: string;
   communityId: string;
   communityName: string;
-  communityVisibility: "PUBLIC" | "PRIVATE";
+  communityVisibility: "PUBLIC" | "PRIVATE" | "RESTRICTED";
   title: string;
   body: string;
   author: UserLite;
@@ -58,14 +71,30 @@ export type Discussion = {
 export type DiscussionPermissions = {
   isAuthor: boolean;
   isCommunityModerator: boolean;
+
   canAnswer: boolean;
   canReport: boolean;
   canShare: boolean;
+
   canMarkAcceptedAnswer: boolean;
   canHighlightAsAuthor: boolean;
   canCloseAsSolved: boolean;
   canPinModeratorNote: boolean;
   canDeleteAnyComment: boolean;
+
+  canEditDiscussion: boolean;
+  canDeleteDiscussion: boolean;
   canLockDiscussion: boolean;
+  canCloseDiscussion: boolean;
+
   canMarkSpam: boolean;
+
+  /**
+   * Used for discussion-only user control:
+   * - Limit user
+   * - Remove user from discussion
+   * - Restore user
+   */
+  canManageParticipants: boolean;
 };
+

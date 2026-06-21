@@ -27,6 +27,7 @@ import { discussionDetailStyles as styles } from "@/constants/styles/disscusion-
 import { DiscussionAnswerRow } from "@/components/DiscussionRow";
 import {
   useAcceptDiscussionAnswerMutation,
+  useCreateContributorRequestMutation,
   useCreateDiscussionAnswerMutation,
   useCreateDiscussionAnswerReplyMutation,
   useDeleteDiscussionAnswerMutation,
@@ -35,10 +36,12 @@ import {
   useGetDiscussionAnswersQuery,
   useToggleDiscussionAnswerHighlightMutation,
   useToggleDiscussionAnswerPinMutation,
+  useUpdateDiscussionParticipantModeMutation,
   useVoteDiscussionAnswerMutation,
   useVoteDiscussionAnswerReplyMutation,
   type CommunityDiscussionAnswer,
   type CommunityDiscussionAnswerReply,
+  type DiscussionParticipantMode,
 } from "@/store/api/communityDiscussionApi";
 import type {
   DiscussionComment,
@@ -317,7 +320,7 @@ function mapAnswerToUi(answer: CommunityDiscussionAnswer): DiscussionComment {
     body: answer.body,
     createdAt: formatDate(answer.createdAt),
     voteScore: answer.voteScore,
-    viewerVote: null,
+    viewerVote: answer.viewerVote?? null,
     replies: (answer.replies ?? []).map(mapReplyToUi),
     isAcceptedAnswer: answer.isAcceptedAnswer,
     isAuthorHighlighted: answer.isAuthorHighlighted,
@@ -406,6 +409,13 @@ const [deleteAnswer, { isLoading: isDeletingAnswer }] =
 
 const [deleteReply, { isLoading: isDeletingReply }] =
   useDeleteDiscussionAnswerReplyMutation();
+  const [createContributorRequest, { isLoading: isRequestingContributor }] =
+  useCreateContributorRequestMutation();
+
+const [updateParticipantMode, { isLoading: isUpdatingParticipantMode }] =
+  useUpdateDiscussionParticipantModeMutation();
+
+const [showContributorRequest, setShowContributorRequest] = useState(false);
 
   const discussion = data?.data;
 
@@ -429,9 +439,12 @@ const [deleteReply, { isLoading: isDeletingReply }] =
           ? "warning"
           : "default";
 
- const permissions = useMemo<DiscussionPermissions>(() => {
+
+const permissions = useMemo<DiscussionPermissions>(() => {
   const isAuthor = Boolean(viewerId) && discussion?.authorId === viewerId;
 
+  // For now this is false because backend is not sending viewer role yet.
+  // So only discussion author can manage participants for now.
   const isCommunityModerator = false;
 
   return {
@@ -447,6 +460,9 @@ const [deleteReply, { isLoading: isDeletingReply }] =
     canPinModeratorNote: isAuthor || isCommunityModerator,
     canDeleteAnyComment: isAuthor || isCommunityModerator,
 
+    // Add this line
+    canManageParticipants: isAuthor || isCommunityModerator,
+
     canEditDiscussion: isAuthor,
     canDeleteDiscussion: isAuthor || isCommunityModerator,
     canLockDiscussion: isCommunityModerator,
@@ -456,6 +472,7 @@ const [deleteReply, { isLoading: isDeletingReply }] =
     canMarkSpam: isCommunityModerator,
   };
 }, [discussion?.authorId, viewerId]);
+
 
   const refreshDiscussionAndAnswers = useCallback(async () => {
     await Promise.all([
@@ -510,8 +527,18 @@ const [deleteReply, { isLoading: isDeletingReply }] =
       setAnswerDraft("");
       await refreshDiscussionAndAnswers();
     } catch (createError) {
-      Alert.alert("Could not post answer", getErrorMessage(createError));
-    }
+  const message = getErrorMessage(createError);
+
+  if (
+    message.toLowerCase().includes("viewer") ||
+    message.toLowerCase().includes("request contributor") ||
+    message.toLowerCase().includes("join this community")
+  ) {
+    setShowContributorRequest(true);
+  }
+
+  Alert.alert("Could not post answer", message);
+}
   }, [
     answerDraft,
     communityId,
@@ -572,8 +599,18 @@ const [deleteReply, { isLoading: isDeletingReply }] =
 
         await refetchAnswers();
       } catch (replyError) {
-        Alert.alert("Could not post reply", getErrorMessage(replyError));
-      }
+  const message = getErrorMessage(replyError);
+
+  if (
+    message.toLowerCase().includes("limit") ||
+    message.toLowerCase().includes("request contributor") ||
+    message.toLowerCase().includes("join this community")
+  ) {
+    setShowContributorRequest(true);
+  }
+
+  Alert.alert("Could not post reply", message);
+}
     },
     [
       communityId,
@@ -786,6 +823,71 @@ const handleDeleteReply = useCallback(
   },
   [communityId, discussionId, deleteReply, refetchAnswers],
 );
+const handleRequestContributor = useCallback(async () => {
+  if (!communityId || !discussionId) return;
+
+  try {
+    await createContributorRequest({
+      communityId,
+      requestedFromDiscussionId: discussionId,
+      message: "I want to contribute to this discussion.",
+    }).unwrap();
+
+    setShowContributorRequest(false);
+
+    Alert.alert(
+      "Request sent",
+      "Your contributor request has been sent to the community team.",
+    );
+  } catch (requestError) {
+    Alert.alert(
+      "Could not request contributor access",
+      getErrorMessage(requestError),
+    );
+  }
+}, [
+  communityId,
+  discussionId,
+  createContributorRequest,
+]);
+const handleUpdateParticipantMode = useCallback(
+  async (
+    targetUserId: string,
+    mode: DiscussionParticipantMode,
+    reason?: string,
+  ) => {
+    if (!communityId || !discussionId) return;
+
+    try {
+      await updateParticipantMode({
+        communityId,
+        discussionId,
+        targetUserId,
+        mode,
+        reason,
+      }).unwrap();
+
+      await refreshDiscussionAndAnswers();
+
+      Alert.alert(
+        "Updated",
+        mode === "NORMAL"
+          ? "User restored in this discussion."
+          : mode === "VIEWER_LIMITED"
+            ? "User limited in this discussion."
+            : "User removed from this discussion.",
+      );
+    } catch (modeError) {
+      Alert.alert("Could not update user", getErrorMessage(modeError));
+    }
+  },
+  [
+    communityId,
+    discussionId,
+    updateParticipantMode,
+    refreshDiscussionAndAnswers,
+  ],
+);
 
   const handleReportAnswer = useCallback(() => {
     Alert.alert(
@@ -793,6 +895,71 @@ const handleDeleteReply = useCallback(
       "Report answer API is not created yet.",
     );
   }, []);
+  const handleLimitUser = useCallback(
+  (targetUserId: string) => {
+    Alert.alert(
+      "Limit user",
+      "This will make the user viewer-limited in this discussion only.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Limit",
+          onPress: () => {
+            void handleUpdateParticipantMode(
+              targetUserId,
+              "VIEWER_LIMITED",
+              "Limited by discussion manager",
+            );
+          },
+        },
+      ],
+    );
+  },
+  [handleUpdateParticipantMode],
+);
+
+const handleRemoveUserFromDiscussion = useCallback(
+  (targetUserId: string) => {
+    Alert.alert(
+      "Remove from discussion",
+      "This will block the user from this discussion only.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            void handleUpdateParticipantMode(
+              targetUserId,
+              "BLOCKED",
+              "Removed by discussion manager",
+            );
+          },
+        },
+      ],
+    );
+  },
+  [handleUpdateParticipantMode],
+);
+
+const handleRestoreUserInDiscussion = useCallback(
+  (targetUserId: string) => {
+    Alert.alert(
+      "Restore user",
+      "This will restore the user in this discussion.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          onPress: () => {
+            void handleUpdateParticipantMode(targetUserId, "NORMAL");
+          },
+        },
+      ],
+    );
+  },
+  [handleUpdateParticipantMode],
+);
 
   if (shouldSkipQuery) {
     return (
@@ -1023,7 +1190,9 @@ const handleDeleteReply = useCallback(
   isVotingAnswer ||
   isVotingReply ||
   isDeletingAnswer ||
-  isDeletingReply;
+  isDeletingReply ||
+  isRequestingContributor ||
+  isUpdatingParticipantMode;
 
   return (
     <SafeAreaView
@@ -1245,7 +1414,58 @@ const handleDeleteReply = useCallback(
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
             Write an answer
           </Text>
+{showContributorRequest ? (
+  <View
+    style={{
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+    }}
+  >
+    <Text
+      style={{
+        color: colors.foreground,
+        fontSize: 13,
+        lineHeight: 20,
+        fontFamily: "Poppins_400Regular",
+      }}
+    >
+      You may need contributor access to continue participating in this
+      discussion.
+    </Text>
 
+    <Pressable
+      disabled={isRequestingContributor}
+      onPress={handleRequestContributor}
+      style={{
+        marginTop: 10,
+        paddingVertical: 10,
+        borderRadius: 999,
+        alignItems: "center",
+        backgroundColor: isRequestingContributor
+          ? colors.surfaceTertiary
+          : colors.accent,
+      }}
+    >
+      {isRequestingContributor ? (
+        <ActivityIndicator size="small" color={colors.muted} />
+      ) : (
+        <Text
+          style={{
+            color: colors.accentForeground,
+            fontSize: 13,
+            fontFamily: "Poppins_600SemiBold",
+          }}
+        >
+          Request contributor access
+        </Text>
+      )}
+    </Pressable>
+  </View>
+) : null}
           <TextInput
             value={answerDraft}
             onChangeText={setAnswerDraft}
@@ -1367,37 +1587,40 @@ const handleDeleteReply = useCallback(
             }}
           >
            {answers.map((answer) => (
-  <DiscussionAnswerRow
-    key={answer.id}
-    comment={answer}
-    colors={colors}
-    viewerId={viewerId}
-    permissions={permissions}
-    isRepliesOpen={Boolean(openReplyIds[answer.id])}
-    replyDraft={replyDrafts[answer.id] ?? ""}
-    onToggleReplies={() => handleToggleReplies(answer.id)}
-    onOpenReplyBox={() => handleOpenReplyBox(answer.id)}
-    onChangeReply={(value) => handleChangeReply(answer.id, value)}
-    onSubmitReply={() => {
-      void handleSubmitReply(answer.id);
-    }}
-    onVoteAnswer={(vote) => handleVoteAnswer(answer.id, vote)}
-    onVoteReply={(replyId, vote) =>
-      handleVoteReply(answer.id, replyId, vote)
-    }
-    onAccept={() => {
-      void handleAcceptAnswer(answer.id);
-    }}
-    onHighlight={() => {
-      void handleHighlightAnswer(answer.id);
-    }}
-    onPin={() => {
-      void handlePinAnswer(answer.id);
-    }}
-    onDelete={() => handleDeleteAnswer(answer.id)}
-    onDeleteReply={(replyId) => handleDeleteReply(answer.id, replyId)}
-    onReport={handleReportAnswer}
-  />
+ <DiscussionAnswerRow
+  key={answer.id}
+  comment={answer}
+  colors={colors}
+  viewerId={viewerId}
+  permissions={permissions}
+  isRepliesOpen={Boolean(openReplyIds[answer.id])}
+  replyDraft={replyDrafts[answer.id] ?? ""}
+  onToggleReplies={() => handleToggleReplies(answer.id)}
+  onOpenReplyBox={() => handleOpenReplyBox(answer.id)}
+  onChangeReply={(value) => handleChangeReply(answer.id, value)}
+  onSubmitReply={() => {
+    void handleSubmitReply(answer.id);
+  }}
+  onVoteAnswer={(vote) => handleVoteAnswer(answer.id, vote)}
+  onVoteReply={(replyId, vote) =>
+    handleVoteReply(answer.id, replyId, vote)
+  }
+  onAccept={() => {
+    void handleAcceptAnswer(answer.id);
+  }}
+  onHighlight={() => {
+    void handleHighlightAnswer(answer.id);
+  }}
+  onPin={() => {
+    void handlePinAnswer(answer.id);
+  }}
+  onDelete={() => handleDeleteAnswer(answer.id)}
+  onDeleteReply={(replyId) => handleDeleteReply(answer.id, replyId)}
+  onReport={handleReportAnswer}
+  onLimitUser={handleLimitUser}
+  onRemoveUserFromDiscussion={handleRemoveUserFromDiscussion}
+  onRestoreUserInDiscussion={handleRestoreUserInDiscussion}
+/>
 ))}
           </View>
         )}

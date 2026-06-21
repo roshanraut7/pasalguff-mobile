@@ -11,31 +11,41 @@ import type { AppColors } from "@/constants/theme";
 import type {
   DiscussionComment,
   DiscussionPermissions,
-  VoteValue,
+  
 } from "@/types/discussion";
 
-type ActiveVote = Exclude<VoteValue, null>;
 
 type DiscussionAnswerRowProps = {
   comment: DiscussionComment;
   colors: AppColors;
   viewerId: string;
   permissions: DiscussionPermissions;
+
   isRepliesOpen: boolean;
   replyDraft: string;
+
   onToggleReplies: () => void;
   onOpenReplyBox: () => void;
   onChangeReply: (value: string) => void;
   onSubmitReply: () => void;
-  onVoteAnswer: (vote: ActiveVote) => void;
-  onVoteReply: (replyId: string, vote: ActiveVote) => void;
+
+  onVoteAnswer: (vote: "UP" | "DOWN") => void;
+  onVoteReply: (replyId: string, vote: "UP" | "DOWN") => void;
+
   onAccept: () => void;
   onHighlight: () => void;
   onPin: () => void;
   onDelete: () => void;
   onDeleteReply: (replyId: string) => void;
   onReport: () => void;
+
+  // Add these
+  onLimitUser?: (targetUserId: string) => void;
+  onRemoveUserFromDiscussion?: (targetUserId: string) => void;
+  onRestoreUserInDiscussion?: (targetUserId: string) => void;
 };
+
+
 
 function VoteButton({
   type,
@@ -138,26 +148,36 @@ function SmallAction({
   );
 }
 
+
 export function DiscussionAnswerRow({
   comment,
   colors,
   viewerId,
   permissions,
+
   isRepliesOpen,
   replyDraft,
+
   onToggleReplies,
   onOpenReplyBox,
   onChangeReply,
   onSubmitReply,
+
   onVoteAnswer,
   onVoteReply,
+
   onAccept,
   onHighlight,
   onPin,
   onDelete,
   onDeleteReply,
   onReport,
+
+  onLimitUser,
+  onRemoveUserFromDiscussion,
+  onRestoreUserInDiscussion,
 }: DiscussionAnswerRowProps) {
+
   const isOwnAnswer = comment.author.id === viewerId;
   const replyCount = comment.replies.length;
 
@@ -166,6 +186,13 @@ export function DiscussionAnswerRow({
     permissions.canDeleteAnyComment ||
     permissions.isAuthor ||
     permissions.isCommunityModerator;
+
+    const canManageAnswerAuthor =
+  !isOwnAnswer &&
+  (permissions.canManageParticipants ??
+    (permissions.canDeleteAnyComment ||
+      permissions.isAuthor ||
+      permissions.isCommunityModerator));
 
   return (
     <View

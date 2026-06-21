@@ -1,3 +1,4 @@
+
 import { baseApi } from "./baseApi";
 
 export type DiscussionVisibility = "PUBLIC" | "COMMUNITY";
@@ -17,9 +18,18 @@ export type DiscussionSource =
 
 export type DiscussionAnswerStatus = "ACTIVE" | "DELETED";
 export type DiscussionAnswerVoteValue = "UP" | "DOWN" | "REMOVE";
-
 export type ViewerVoteValue = "UP" | "DOWN" | null;
 
+export type DiscussionParticipantMode =
+  | "NORMAL"
+  | "VIEWER_LIMITED"
+  | "BLOCKED";
+
+export type CommunityContributorRequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED";
 
 export type DiscussionAuthor = {
   id: string;
@@ -112,6 +122,46 @@ export type CommunityDiscussionAnswer = {
 
   author: DiscussionAuthor;
   replies: CommunityDiscussionAnswerReply[];
+};
+
+export type ViewerLimitInfo = {
+  usedCount: number;
+  remaining: number;
+};
+
+export type DiscussionParticipantOverride = {
+  id?: string;
+  discussionId: string;
+  userId: string;
+  mode: DiscussionParticipantMode;
+  reason?: string | null;
+  changedById?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  user?: DiscussionAuthor;
+  changedBy?: DiscussionAuthor;
+};
+
+export type CommunityContributorRequest = {
+  id: string;
+  communityId: string;
+  userId: string;
+
+  message?: string | null;
+  status: CommunityContributorRequestStatus;
+
+  requestedFromDiscussionId?: string | null;
+
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
+  reviewNote?: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+
+  user?: DiscussionAuthor;
+  reviewedBy?: DiscussionAuthor | null;
+  requestedFromDiscussion?: CommunityDiscussion | null;
 };
 
 export type CreateCommunityDiscussionPayload = {
@@ -214,6 +264,7 @@ export type CreateDiscussionAnswerReplyPayload = {
 export type CreateDiscussionAnswerReplyResponse = {
   message: string;
   data: CommunityDiscussionAnswerReply;
+  viewerLimit?: ViewerLimitInfo | null;
 };
 
 export type ManageDiscussionAnswerPayload = {
@@ -226,6 +277,7 @@ export type ManageDiscussionAnswerResponse = {
   message: string;
   data: CommunityDiscussionAnswer;
 };
+
 export type VoteDiscussionAnswerPayload = {
   communityId: string;
   discussionId: string;
@@ -272,6 +324,50 @@ export type DeleteDiscussionAnswerReplyPayload = {
 export type DeleteDiscussionAnswerReplyResponse = {
   message: string;
   data: CommunityDiscussionAnswerReply;
+};
+
+export type UpdateDiscussionParticipantModePayload = {
+  communityId: string;
+  discussionId: string;
+  targetUserId: string;
+  mode: DiscussionParticipantMode;
+  reason?: string;
+};
+
+export type UpdateDiscussionParticipantModeResponse = {
+  message: string;
+  data: DiscussionParticipantOverride;
+};
+
+export type CreateContributorRequestPayload = {
+  communityId: string;
+  message?: string;
+  requestedFromDiscussionId?: string;
+};
+
+export type CreateContributorRequestResponse = {
+  message: string;
+  data: CommunityContributorRequest;
+};
+
+export type GetContributorRequestsPayload = {
+  communityId: string;
+  status?: CommunityContributorRequestStatus;
+};
+
+export type GetContributorRequestsResponse = {
+  data: CommunityContributorRequest[];
+};
+
+export type ReviewContributorRequestPayload = {
+  communityId: string;
+  requestId: string;
+  reviewNote?: string;
+};
+
+export type ReviewContributorRequestResponse = {
+  message: string;
+  data: CommunityContributorRequest;
 };
 
 export const communityDiscussionApi = baseApi.injectEndpoints({
@@ -338,6 +434,33 @@ export const communityDiscussionApi = baseApi.injectEndpoints({
       }),
       providesTags: (_result, _error, arg) => [
         { type: "CommunityDiscussion", id: arg.discussionId },
+      ],
+    }),
+
+    updateDiscussionParticipantMode: builder.mutation<
+      UpdateDiscussionParticipantModeResponse,
+      UpdateDiscussionParticipantModePayload
+    >({
+      query: ({
+        communityId,
+        discussionId,
+        targetUserId,
+        mode,
+        reason,
+      }) => ({
+        url: `/communities/${communityId}/discussions/${discussionId}/participants/${targetUserId}/mode`,
+        method: "PATCH",
+        body: {
+          mode,
+          ...(reason ? { reason } : {}),
+        },
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussion", id: arg.discussionId },
+        { type: "CommunityDiscussion", id: arg.communityId },
+        { type: "CommunityDiscussionAnswer", id: arg.discussionId },
+        "CommunityDiscussion",
+        "CommunityDiscussionAnswer",
       ],
     }),
 
@@ -426,7 +549,8 @@ export const communityDiscussionApi = baseApi.injectEndpoints({
         "CommunityDiscussionAnswer",
       ],
     }),
-        voteDiscussionAnswer: builder.mutation<
+
+    voteDiscussionAnswer: builder.mutation<
       VoteDiscussionAnswerResponse,
       VoteDiscussionAnswerPayload
     >({
@@ -514,6 +638,72 @@ export const communityDiscussionApi = baseApi.injectEndpoints({
         "CommunityDiscussionAnswer",
       ],
     }),
+
+    createContributorRequest: builder.mutation<
+      CreateContributorRequestResponse,
+      CreateContributorRequestPayload
+    >({
+      query: ({ communityId, message, requestedFromDiscussionId }) => ({
+        url: `/communities/${communityId}/contributor-requests`,
+        method: "POST",
+        body: {
+          ...(message ? { message } : {}),
+          ...(requestedFromDiscussionId ? { requestedFromDiscussionId } : {}),
+        },
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussion", id: arg.communityId },
+        "CommunityDiscussion",
+      ],
+    }),
+
+    getContributorRequests: builder.query<
+      GetContributorRequestsResponse,
+      GetContributorRequestsPayload
+    >({
+      query: ({ communityId, status }) => ({
+        url: `/communities/${communityId}/contributor-requests`,
+        method: "GET",
+        params: {
+          ...(status ? { status } : {}),
+        },
+      }),
+      providesTags: ["CommunityDiscussion"],
+    }),
+
+    approveContributorRequest: builder.mutation<
+      ReviewContributorRequestResponse,
+      ReviewContributorRequestPayload
+    >({
+      query: ({ communityId, requestId, reviewNote }) => ({
+        url: `/communities/${communityId}/contributor-requests/${requestId}/approve`,
+        method: "PATCH",
+        body: {
+          ...(reviewNote ? { reviewNote } : {}),
+        },
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussion", id: arg.communityId },
+        "CommunityDiscussion",
+      ],
+    }),
+
+    rejectContributorRequest: builder.mutation<
+      ReviewContributorRequestResponse,
+      ReviewContributorRequestPayload
+    >({
+      query: ({ communityId, requestId, reviewNote }) => ({
+        url: `/communities/${communityId}/contributor-requests/${requestId}/reject`,
+        method: "PATCH",
+        body: {
+          ...(reviewNote ? { reviewNote } : {}),
+        },
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussion", id: arg.communityId },
+        "CommunityDiscussion",
+      ],
+    }),
   }),
 
   overrideExisting: false,
@@ -524,6 +714,8 @@ export const {
   useGetCommunityDiscussionsQuery,
   useGetCommunityDiscussionQuery,
   useGetHomeFeedDiscussionsQuery,
+
+  useUpdateDiscussionParticipantModeMutation,
 
   useCreateDiscussionAnswerMutation,
   useGetDiscussionAnswersQuery,
@@ -536,4 +728,10 @@ export const {
   useVoteDiscussionAnswerReplyMutation,
   useDeleteDiscussionAnswerMutation,
   useDeleteDiscussionAnswerReplyMutation,
+
+  useCreateContributorRequestMutation,
+  useGetContributorRequestsQuery,
+  useApproveContributorRequestMutation,
+  useRejectContributorRequestMutation,
 } = communityDiscussionApi;
+
