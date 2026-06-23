@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { signOut } from "@/api/better-auth-client";
 import {
   ActivityIndicator,
   Image,
+  ImageSourcePropType,
   Pressable,
   ScrollView,
   StatusBar,
@@ -24,10 +24,12 @@ import {
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
+  useGetMyOnboardingQuery,
   useGetOnboardingCategoriesQuery,
   useGetSuggestedCommunitiesQuery,
   useUpdateMyOnboardingMutation,
 } from "@/store/api/onboardingApi";
+import type { SuggestedCommunity } from "@/store/api/onboardingApi";
 import { useUploadProfileAvatarMutation } from "@/store/api/uploadApi";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 
@@ -43,6 +45,13 @@ type PickedProfileImage = {
   uri: string;
   fileName?: string | null;
   mimeType?: string | null;
+};
+
+type PresetAvatar = {
+  id: string;
+  label: string;
+  image: ImageSourcePropType;
+  value: string;
 };
 
 const STEPS: StepKey[] = [
@@ -69,6 +78,51 @@ const BUSINESS_TYPES = [
   "Other",
 ];
 
+const PRESET_AVATARS: PresetAvatar[] = [
+  {
+    id: "madheshi",
+    label: "Madheshi",
+    image: require("@/assets/onboarding-avatars/madeshi.png"),
+    value: "/public/default-avatars/madeshi.png",
+  },
+  {
+    id: "muslim",
+    label: "Muslim",
+    image: require("@/assets/onboarding-avatars/muslim.png"),
+    value: "/public/default-avatars/muslim.png",
+  },
+  {
+    id: "chhetri",
+    label: "Chhetri",
+    image: require("@/assets/onboarding-avatars/chetteri.png"),
+    value: "/public/default-avatars/chetteri.png",
+  },
+  {
+    id: "tharu",
+    label: "Tharu",
+    image: require("@/assets/onboarding-avatars/tharu.png"),
+    value: "/public/default-avatars/tharu.png",
+  },
+  {
+    id: "sherpa",
+    label: "Sherpa",
+    image: require("@/assets/onboarding-avatars/sherpa.png"),
+    value: "/public/default-avatars/sherpa.png",
+  },
+  {
+    id: "limbu",
+    label: "Limbu",
+    image: require("@/assets/onboarding-avatars/limbu.png"),
+    value: "/public/default-avatars/limbu.png",
+  },
+  {
+    id: "newar",
+    label: "Newar",
+    image: require("@/assets/onboarding-avatars/newar.png"),
+    value: "/public/default-avatars/newar.png",
+  },
+];
+
 export default function OnboardingScreen() {
   const { colors, isDark } = useAppTheme();
 
@@ -76,6 +130,10 @@ export default function OnboardingScreen() {
   const [profileImage, setProfileImage] = useState<PickedProfileImage | null>(
     null,
   );
+  const [selectedPresetAvatarUrl, setSelectedPresetAvatarUrl] = useState<
+    string | null
+  >(null);
+
   const [selectedBusinessType, setSelectedBusinessType] = useState("");
   const [customBusinessType, setCustomBusinessType] = useState("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -86,15 +144,17 @@ export default function OnboardingScreen() {
   const [address, setAddress] = useState("");
   const [serverError, setServerError] = useState("");
 
+  const { refetch: refetchMyOnboarding } = useGetMyOnboardingQuery();
+
   const { data: categories, isLoading: isCategoriesLoading } =
     useGetOnboardingCategoriesQuery();
 
   const {
-    data: suggestedCommunities,
+    data: suggestedCommunities = [],
     isLoading: isSuggestedCommunitiesLoading,
-    refetch: refetchSuggestedCommunities,
+    isFetching: isSuggestedCommunitiesFetching,
   } = useGetSuggestedCommunitiesQuery(undefined, {
-    skip: stepIndex < STEPS.indexOf("suggestedCommunities"),
+    skip: stepIndex !== STEPS.indexOf("suggestedCommunities"),
   });
 
   const [updateMyOnboarding, { isLoading: isSaving }] =
@@ -137,15 +197,12 @@ export default function OnboardingScreen() {
     });
   };
 
- const goBack = () => {
-  if (isProcessing) return;
+  const goBack = () => {
+    if (isProcessing) return;
+    if (stepIndex === 0) return;
 
-  if (stepIndex === 0) {
-    return;
-  }
-
-  setStepIndex((prev) => prev - 1);
-};
+    setStepIndex((prev) => prev - 1);
+  };
 
   const savePartialOnboarding = async () => {
     await updateMyOnboarding({
@@ -161,7 +218,6 @@ export default function OnboardingScreen() {
 
       if (currentStep === "interests") {
         await savePartialOnboarding();
-        await refetchSuggestedCommunities();
       }
 
       if (!isLastStep) {
@@ -200,7 +256,7 @@ export default function OnboardingScreen() {
 
   const completeOnboarding = async () => {
     try {
-      let uploadedProfileImageUrl: string | undefined;
+      let finalProfileImageUrl: string | undefined;
 
       if (profileImage?.uri) {
         const uploaded = await uploadProfileAvatar({
@@ -209,17 +265,24 @@ export default function OnboardingScreen() {
           mimeType: profileImage.mimeType,
         }).unwrap();
 
-        uploadedProfileImageUrl = uploaded.url;
+        finalProfileImageUrl = uploaded.url;
+      } else if (selectedPresetAvatarUrl) {
+        finalProfileImageUrl = selectedPresetAvatarUrl;
       }
 
+      console.log("FINAL PROFILE IMAGE URL:", finalProfileImageUrl);
+
       await updateMyOnboarding({
-        ...(uploadedProfileImageUrl ? { image: uploadedProfileImageUrl } : {}),
+        ...(finalProfileImageUrl ? { image: finalProfileImageUrl } : {}),
         businessType: finalBusinessType || null,
         businessName: businessName.trim() || null,
         address: address.trim() || null,
         categoryIds: selectedCategoryIds,
+        communityIds: selectedCommunityIds,
         onboardingCompleted: true,
       }).unwrap();
+
+      await refetchMyOnboarding();
 
       router.replace("/(tabs)");
     } catch (error) {
@@ -255,26 +318,26 @@ export default function OnboardingScreen() {
           }}
         >
           <Pressable
-  onPress={goBack}
-  disabled={stepIndex === 0 || isProcessing}
-  style={{
-    width: 42,
-    height: 42,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    opacity: stepIndex === 0 ? 0 : isProcessing ? 0.5 : 1,
-  }}
->
-  <Ionicons
-    name="chevron-back"
-    size={20}
-    color={colors.foreground}
-  />
-</Pressable>
+            onPress={goBack}
+            disabled={stepIndex === 0 || isProcessing}
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 999,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+              opacity: stepIndex === 0 ? 0 : isProcessing ? 0.5 : 1,
+            }}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={20}
+              color={colors.foreground}
+            />
+          </Pressable>
 
           <Text
             style={{
@@ -320,6 +383,8 @@ export default function OnboardingScreen() {
               colors={colors}
               profileImage={profileImage}
               setProfileImage={setProfileImage}
+              selectedPresetAvatarUrl={selectedPresetAvatarUrl}
+              setSelectedPresetAvatarUrl={setSelectedPresetAvatarUrl}
             />
           ) : null}
 
@@ -346,8 +411,10 @@ export default function OnboardingScreen() {
           {currentStep === "suggestedCommunities" ? (
             <SuggestedCommunitiesStep
               colors={colors}
-              communities={suggestedCommunities ?? []}
-              isLoading={isSuggestedCommunitiesLoading}
+              communities={suggestedCommunities}
+              isLoading={
+                isSuggestedCommunitiesLoading || isSuggestedCommunitiesFetching
+              }
               selectedCommunityIds={selectedCommunityIds}
               toggleCommunity={toggleCommunity}
             />
@@ -484,11 +551,19 @@ function ProfilePhotoStep({
   colors,
   profileImage,
   setProfileImage,
+  selectedPresetAvatarUrl,
+  setSelectedPresetAvatarUrl,
 }: {
   colors: any;
   profileImage: PickedProfileImage | null;
   setProfileImage: (value: PickedProfileImage | null) => void;
+  selectedPresetAvatarUrl: string | null;
+  setSelectedPresetAvatarUrl: (value: string | null) => void;
 }) {
+  const selectedPresetAvatar = PRESET_AVATARS.find(
+    (avatar) => avatar.value === selectedPresetAvatarUrl,
+  );
+
   const pickFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
@@ -509,6 +584,8 @@ function ProfilePhotoStep({
         fileName: asset.fileName ?? `profile-avatar-${Date.now()}.jpg`,
         mimeType: asset.mimeType ?? "image/jpeg",
       });
+
+      setSelectedPresetAvatarUrl(null);
     }
   };
 
@@ -533,6 +610,8 @@ function ProfilePhotoStep({
         fileName: asset.fileName ?? `profile-avatar-${Date.now()}.jpg`,
         mimeType: asset.mimeType ?? "image/jpeg",
       });
+
+      setSelectedPresetAvatarUrl(null);
     }
   };
 
@@ -553,6 +632,11 @@ function ProfilePhotoStep({
     }
   };
 
+  const removeCurrentImage = () => {
+    setProfileImage(null);
+    setSelectedPresetAvatarUrl(null);
+  };
+
   return (
     <View style={{ paddingVertical: 10 }}>
       <Text
@@ -563,7 +647,7 @@ function ProfilePhotoStep({
           fontFamily: "Poppins_700Bold",
         }}
       >
-        Add your profile photo
+        Choose your profile avatar
       </Text>
 
       <Text
@@ -576,8 +660,8 @@ function ProfilePhotoStep({
           marginBottom: 28,
         }}
       >
-        Add your photo or shop logo so other vendors can recognise you in
-        communities and chat.
+        Select one avatar or upload your own photo so other vendors can
+        recognise you in communities and chat.
       </Text>
 
       <View style={{ alignItems: "center" }}>
@@ -606,6 +690,12 @@ function ProfilePhotoStep({
             {profileImage?.uri ? (
               <Image
                 source={{ uri: profileImage.uri }}
+                style={{ width: "100%", height: "100%" }}
+                resizeMode="cover"
+              />
+            ) : selectedPresetAvatar ? (
+              <Image
+                source={selectedPresetAvatar.image}
                 style={{ width: "100%", height: "100%" }}
                 resizeMode="cover"
               />
@@ -696,11 +786,8 @@ function ProfilePhotoStep({
           Tap the plus icon to choose from gallery or take a picture.
         </Text>
 
-        {profileImage ? (
-          <Pressable
-            onPress={() => setProfileImage(null)}
-            style={{ marginTop: 14 }}
-          >
+        {profileImage || selectedPresetAvatarUrl ? (
+          <Pressable onPress={removeCurrentImage} style={{ marginTop: 14 }}>
             <Text
               style={{
                 color: colors.danger,
@@ -708,10 +795,81 @@ function ProfilePhotoStep({
                 fontFamily: "Poppins_500Medium",
               }}
             >
-              Remove photo
+              Remove selected image
             </Text>
           </Pressable>
         ) : null}
+
+        <View style={{ marginTop: 28, width: "100%" }}>
+          <Text
+            style={{
+              color: colors.foreground,
+              fontSize: 16,
+              fontFamily: "Poppins_600SemiBold",
+              marginBottom: 12,
+            }}
+          >
+            Choose an avatar
+          </Text>
+
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: 12,
+              justifyContent: "center",
+            }}
+          >
+            {PRESET_AVATARS.map((avatar) => {
+              const selected = selectedPresetAvatarUrl === avatar.value;
+
+              return (
+                <Pressable
+                  key={avatar.id}
+                  onPress={() => {
+                    setSelectedPresetAvatarUrl(avatar.value);
+                    setProfileImage(null);
+                  }}
+                  style={{
+                    width: 92,
+                    alignItems: "center",
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 78,
+                      height: 78,
+                      borderRadius: 39,
+                      overflow: "hidden",
+                      borderWidth: selected ? 3 : 1,
+                      borderColor: selected ? colors.accent : colors.border,
+                      backgroundColor: colors.surface,
+                    }}
+                  >
+                    <Image
+                      source={avatar.image}
+                      style={{ width: "100%", height: "100%" }}
+                      resizeMode="cover"
+                    />
+                  </View>
+
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: selected ? colors.accent : colors.muted,
+                      fontSize: 11,
+                      fontFamily: "Poppins_500Medium",
+                      marginTop: 6,
+                      textAlign: "center",
+                    }}
+                  >
+                    {avatar.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -946,24 +1104,7 @@ function SuggestedCommunitiesStep({
   toggleCommunity,
 }: {
   colors: any;
-  communities: Array<{
-    id: string;
-    name: string;
-    slug: string;
-    description?: string | null;
-    avatarImage?: string | null;
-    coverImage?: string | null;
-    visibility: "PUBLIC" | "PRIVATE";
-    category?: {
-      id: string;
-      name: string;
-      slug: string;
-    };
-    _count?: {
-      members: number;
-      posts: number;
-    };
-  }>;
+  communities: SuggestedCommunity[];
   isLoading: boolean;
   selectedCommunityIds: string[];
   toggleCommunity: (communityId: string) => void;
@@ -997,6 +1138,7 @@ function SuggestedCommunitiesStep({
       {isLoading ? (
         <View style={{ paddingVertical: 28, alignItems: "center" }}>
           <ActivityIndicator size="small" color={colors.accent} />
+
           <Text
             style={{
               color: colors.muted,
@@ -1116,8 +1258,8 @@ function SuggestedCommunitiesStep({
                       marginTop: 2,
                     }}
                   >
-                    {community.description ||
-                      community.category?.name ||
+                    {community.description ??
+                      community.category?.name ??
                       "Vendor community"}
                   </Text>
 

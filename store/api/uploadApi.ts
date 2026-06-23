@@ -102,6 +102,7 @@ export const uploadApi = baseApi.injectEndpoints({
         method: "POST",
         body: buildFormData(payload, "community-avatar"),
       }),
+      invalidatesTags: ["Community", "AdminCommunities"],
     }),
 
     uploadCommunityCover: builder.mutation<UploadResponse, UploadFilePayload>({
@@ -110,12 +111,9 @@ export const uploadApi = baseApi.injectEndpoints({
         method: "POST",
         body: buildFormData(payload, "community-cover"),
       }),
+      invalidatesTags: ["Community", "AdminCommunities"],
     }),
 
-    /**
-     * Uploads post images only.
-     * External videos are shared through linkUrl in the post create/update API.
-     */
     uploadPostMedia: builder.mutation<
       UploadPostMediaResponse,
       UploadPostMediaPayload
@@ -125,6 +123,7 @@ export const uploadApi = baseApi.injectEndpoints({
         method: "POST",
         body: buildPostImageFormData(payload),
       }),
+      invalidatesTags: ["Post", "DraftPost"],
     }),
   }),
 });

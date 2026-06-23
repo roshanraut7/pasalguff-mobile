@@ -1,8 +1,9 @@
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { Ionicons } from "@expo/vector-icons";
-import { Avatar, SearchField } from "heroui-native";
-import React, { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { SearchField } from "heroui-native";
+import React, { useMemo, useState } from "react";
+import { Image, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -53,11 +54,21 @@ export default function AppHeader({
   const { colors } = useAppTheme();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
 
   const searchFlex = useSharedValue(0);
   const searchOpacity = useSharedValue(0);
 
   const safeNotificationCount = Math.max(0, notificationCount);
+
+  const displayAvatarUrl = useMemo(() => {
+    setAvatarLoadFailed(false);
+
+    return toAbsoluteFileUrl(avatarUrl);
+  }, [avatarUrl]);
+
+  console.log("APP HEADER RAW AVATAR:", avatarUrl);
+  console.log("APP HEADER DISPLAY AVATAR:", displayAvatarUrl);
 
   const toggleSearch = () => {
     const opening = !isSearchOpen;
@@ -93,20 +104,34 @@ export default function AppHeader({
         }}
       >
         <Pressable onPress={onAvatarPress}>
-          <Avatar
-            alt={userName ?? "User"}
-            size="sm"
+          <View
             style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
               backgroundColor: colors.surface,
               borderWidth: 1,
               borderColor: colors.border,
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
             }}
           >
-            {avatarUrl ? (
-              <Avatar.Image key={avatarUrl} source={{ uri: avatarUrl }} />
-            ) : null}
-
-            <Avatar.Fallback>
+            {displayAvatarUrl && !avatarLoadFailed ? (
+              <Image
+                key={displayAvatarUrl}
+                source={{ uri: displayAvatarUrl }}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                }}
+                resizeMode="cover"
+                onError={(error) => {
+                  console.log("APP HEADER AVATAR LOAD ERROR:", error.nativeEvent);
+                  setAvatarLoadFailed(true);
+                }}
+              />
+            ) : (
               <Text
                 style={{
                   color: colors.accent,
@@ -116,8 +141,8 @@ export default function AppHeader({
               >
                 {getInitials(userName)}
               </Text>
-            </Avatar.Fallback>
-          </Avatar>
+            )}
+          </View>
         </Pressable>
 
         <Animated.View style={[{ minWidth: 0 }, animatedSearchStyle]}>

@@ -15,6 +15,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
+  Modal,
   Platform,
   Pressable,
   Text,
@@ -46,6 +47,7 @@ import {
   useDeleteLiveDiscussionMessageMutation,
   useEndLiveDiscussionMutation,
   useGetLiveDiscussionMessagesQuery,
+  useGetLiveDiscussionParticipantsQuery,
   useGetLiveDiscussionQuery,
   useRequestLiveContributorMutation,
   useSendLiveDiscussionMessageMutation,
@@ -69,6 +71,45 @@ type BasicAuthor = {
   lastName?: string | null;
   image?: string | null;
   businessName?: string | null;
+};
+
+type LiveTab = "chat" | "members";
+
+type LiveMember = {
+  id: string;
+  name: string;
+  image?: string | null;
+  subtitle?: string;
+};
+
+type JoinLeaveNotice = {
+  id: string;
+  type: "joined" | "left";
+  text: string;
+  createdAt: string;
+  member: LiveMember;
+};
+
+type ChatListItem =
+  | {
+      type: "message";
+      id: string;
+      createdAt: string;
+      message: CommunityDiscussionLiveMessage;
+    }
+  | {
+      type: "notice";
+      id: string;
+      createdAt: string;
+      notice: JoinLeaveNotice;
+    };
+
+type ActionTarget = {
+  userId: string;
+  name: string;
+  image?: string | null;
+  messageId?: string;
+  isOwnMessage?: boolean;
 };
 
 function getParamValue(value?: string | string[]) {
@@ -203,192 +244,494 @@ function getToneColor(
 }
 
 function getRequestDiscussionId(request: CommunityContributorRequest) {
+  const safeRequest = request as CommunityContributorRequest & {
+    discussionId?: string | null;
+    requestedFromDiscussion?: { id?: string | null } | null;
+  };
+
   return (
-    request.requestedFromDiscussionId ??
-    request.requestedFromDiscussion?.id ??
+    safeRequest.requestedFromDiscussionId ??
+    safeRequest.requestedFromDiscussion?.id ??
+    safeRequest.discussionId ??
     null
   );
 }
 
-function RequestUserLine({
+function Avatar({
+  name,
+  image,
+  colors,
+  size = 36,
+}: {
+  name: string;
+  image?: string | null;
+  colors: AppColors;
+  size?: number;
+}) {
+  const uri = image ? toAbsoluteFileUrl(image) ?? undefined : undefined;
+
+  return (
+    <View
+      style={[
+        styles.avatar,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: colors.surfaceTertiary,
+        },
+      ]}
+    >
+      {uri ? (
+        <Image source={{ uri }} style={styles.avatarImage} />
+      ) : (
+        <Text
+          style={[
+            styles.avatarText,
+            {
+              color: colors.segmentForeground,
+              fontSize: Math.max(10, size * 0.32),
+            },
+          ]}
+        >
+          {getInitials(name)}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function RequestCard({
   request,
   colors,
+  disabled,
+  onAccept,
+  onReject,
 }: {
   request: CommunityContributorRequest;
   colors: AppColors;
+  disabled: boolean;
+  onAccept: (requestId: string) => void;
+  onReject: (requestId: string) => void;
 }) {
   const userName = getAuthorName(request.user);
-  const userImage = request.user?.image
-    ? toAbsoluteFileUrl(request.user.image) ?? undefined
-    : undefined;
+  const userImage = request.user?.image ?? null;
 
   return (
-    <View style={styles.requestUserLine}>
-      <View
-        style={[
-          styles.requestAvatar,
-          {
-            backgroundColor: colors.surfaceTertiary,
-            overflow: "hidden",
-          },
-        ]}
-      >
-        {userImage ? (
-          <Image source={{ uri: userImage }} style={styles.messageAvatarImage} />
-        ) : (
+    <View
+      style={[
+        styles.requestCard,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <View style={styles.requestUserRow}>
+        <Avatar name={userName} image={userImage} colors={colors} size={34} />
+
+        <View style={styles.requestTextWrap}>
           <Text
-            style={[
-              styles.messageAvatarText,
-              {
-                color: colors.segmentForeground,
-              },
-            ]}
+            numberOfLines={1}
+            style={[styles.requestName, { color: colors.foreground }]}
           >
-            {getInitials(userName)}
+            {userName}
           </Text>
-        )}
+
+          <Text
+            numberOfLines={2}
+            style={[styles.requestMessage, { color: colors.muted }]}
+          >
+            {request.message || "Wants contributor access."}
+          </Text>
+        </View>
       </View>
 
-      <View style={styles.requestInfo}>
-        <Text
-          numberOfLines={1}
-          style={[styles.requestUserName, { color: colors.foreground }]}
+      <View style={styles.requestActions}>
+        <Pressable
+          disabled={disabled}
+          onPress={() => onAccept(request.id)}
+          style={[
+            styles.acceptButton,
+            {
+              backgroundColor: colors.success,
+              opacity: disabled ? 0.65 : 1,
+            },
+          ]}
         >
-          {userName}
-        </Text>
+          <Text style={styles.acceptButtonText}>Accept</Text>
+        </Pressable>
 
-        <Text
-          numberOfLines={2}
-          style={[styles.requestMessage, { color: colors.muted }]}
+        <Pressable
+          disabled={disabled}
+          onPress={() => onReject(request.id)}
+          style={[
+            styles.rejectButton,
+            {
+              borderColor: colors.danger,
+              opacity: disabled ? 0.65 : 1,
+            },
+          ]}
         >
-          {request.message || "Wants contributor access."}
-        </Text>
+          <Text style={[styles.rejectButtonText, { color: colors.danger }]}>
+            Reject
+          </Text>
+        </Pressable>
       </View>
     </View>
   );
 }
 
-function MessageBubble({
-  message,
-  isMine,
-  canManageLive,
-  canDelete,
+function JoinLeaveCard({
+  notice,
   colors,
-  onLongPressMessage,
+}: {
+  notice: JoinLeaveNotice;
+  colors: AppColors;
+}) {
+  const isJoined = notice.type === "joined";
+
+  return (
+    <View
+      style={[
+        styles.messageCard,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <View style={styles.messageTopRow}>
+        <View
+          style={[
+            styles.avatar,
+            {
+              width: 34,
+              height: 34,
+              borderRadius: 17,
+              backgroundColor: colors.surfaceSecondary,
+            },
+          ]}
+        >
+          <Ionicons
+            name={isJoined ? "person-add-outline" : "person-remove-outline"}
+            size={17}
+            color={isJoined ? colors.success : colors.warning}
+          />
+        </View>
+
+        <View style={styles.messageMain}>
+          <View style={styles.messageHeaderRow}>
+            <Text
+              numberOfLines={1}
+              style={[styles.messageAuthorName, { color: colors.foreground }]}
+            >
+              {notice.text}
+            </Text>
+
+            <Text style={[styles.messageTime, { color: colors.muted }]}>
+              {formatMessageTime(notice.createdAt)}
+            </Text>
+          </View>
+
+          <Text style={[styles.messageBody, { color: colors.muted }]}>
+            {isJoined
+              ? "This member joined the live discussion."
+              : "This member left the live discussion."}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function MessageCard({
+  message,
+  colors,
+  canOpenActions,
+  onOpenActions,
 }: {
   message: CommunityDiscussionLiveMessage;
-  isMine: boolean;
-  canManageLive: boolean;
-  canDelete: boolean;
   colors: AppColors;
-  onLongPressMessage: (message: CommunityDiscussionLiveMessage) => void;
+  canOpenActions: boolean;
+  onOpenActions: (message: CommunityDiscussionLiveMessage) => void;
 }) {
   const author = message.author as BasicAuthor | undefined;
   const authorName = getAuthorName(author);
-  const initials = getInitials(authorName);
-
-  const authorImage = author?.image
-    ? toAbsoluteFileUrl(author.image) ?? undefined
-    : undefined;
+  const authorImage = author?.image ?? null;
 
   return (
     <Pressable
       onLongPress={() => {
-        if (canDelete || canManageLive) {
-          onLongPressMessage(message);
+        if (canOpenActions) {
+          onOpenActions(message);
         }
       }}
       style={[
-        styles.messageRow,
+        styles.messageCard,
         {
-          justifyContent: isMine ? "flex-end" : "flex-start",
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
         },
       ]}
     >
-      {!isMine ? (
-        <View
-          style={[
-            styles.messageAvatar,
-            {
-              backgroundColor: colors.surfaceTertiary,
-              overflow: "hidden",
-            },
-          ]}
-        >
-          {authorImage ? (
-            <Image
-              source={{ uri: authorImage }}
-              style={styles.messageAvatarImage}
-            />
-          ) : (
+      <View style={styles.messageTopRow}>
+        <Avatar name={authorName} image={authorImage} colors={colors} size={36} />
+
+        <View style={styles.messageMain}>
+          <View style={styles.messageHeaderRow}>
             <Text
-              style={[
-                styles.messageAvatarText,
-                {
-                  color: colors.segmentForeground,
-                },
-              ]}
+              numberOfLines={1}
+              style={[styles.messageAuthorName, { color: colors.foreground }]}
             >
-              {initials}
+              {authorName}
             </Text>
-          )}
-        </View>
-      ) : null}
 
-      <View
-        style={[
-          styles.messageBubble,
-          {
-            backgroundColor: isMine ? colors.accent : colors.surface,
-            borderColor: isMine ? colors.accent : colors.border,
-            borderBottomLeftRadius: isMine ? 18 : 6,
-            borderBottomRightRadius: isMine ? 6 : 18,
-          },
-        ]}
-      >
-        {!isMine ? (
-          <Text
-            numberOfLines={1}
-            style={[styles.messageAuthor, { color: colors.foreground }]}
-          >
-            {authorName}
+            <Text style={[styles.messageTime, { color: colors.muted }]}>
+              {formatMessageTime(message.createdAt)}
+            </Text>
+
+            {canOpenActions ? (
+              <Pressable
+                onPress={() => onOpenActions(message)}
+                hitSlop={10}
+                style={styles.messageMenuButton}
+              >
+                <Ionicons
+                  name="ellipsis-horizontal"
+                  size={18}
+                  color={colors.muted}
+                />
+              </Pressable>
+            ) : null}
+          </View>
+
+          <Text style={[styles.messageBody, { color: colors.foreground }]}>
+            {message.body}
           </Text>
-        ) : null}
-
-        <Text
-          style={[
-            styles.messageText,
-            {
-              color: isMine ? colors.accentForeground : colors.foreground,
-            },
-          ]}
-        >
-          {message.body}
-        </Text>
-
-        <View style={styles.messageFooter}>
-          <Text
-            style={[
-              styles.messageTime,
-              {
-                color: isMine ? colors.accentForeground : colors.muted,
-                opacity: isMine ? 0.85 : 1,
-              },
-            ]}
-          >
-            {formatMessageTime(message.createdAt)}
-          </Text>
-
-          {canDelete || canManageLive ? (
-            <Ionicons
-              name="ellipsis-horizontal"
-              size={13}
-              color={isMine ? colors.accentForeground : colors.muted}
-            />
-          ) : null}
         </View>
       </View>
     </Pressable>
+  );
+}
+
+function MemberRow({
+  member,
+  colors,
+  isSelf,
+  canManage,
+  onOpenActions,
+}: {
+  member: LiveMember;
+  colors: AppColors;
+  isSelf: boolean;
+  canManage: boolean;
+  onOpenActions: (member: LiveMember) => void;
+}) {
+  return (
+    <View
+      style={[
+        styles.memberRow,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <Avatar name={member.name} image={member.image} colors={colors} size={38} />
+
+      <View style={styles.memberInfo}>
+        <Text
+          numberOfLines={1}
+          style={[styles.memberName, { color: colors.foreground }]}
+        >
+          {member.name}
+        </Text>
+
+        <Text
+          numberOfLines={1}
+          style={[styles.memberSubtitle, { color: colors.muted }]}
+        >
+          {isSelf ? "You" : member.subtitle || "Watching live"}
+        </Text>
+      </View>
+
+      {canManage && !isSelf ? (
+        <Pressable
+          onPress={() => onOpenActions(member)}
+          hitSlop={10}
+          style={styles.memberMenuButton}
+        >
+          <Ionicons
+            name="ellipsis-horizontal-circle-outline"
+            size={25}
+            color={colors.muted}
+          />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function ActionModal({
+  visible,
+  target,
+  colors,
+  canDeleteMessage,
+  canManageUser,
+  isWorking,
+  onClose,
+  onDeleteMessage,
+  onLimitMessages,
+  onAllowAgain,
+  onRemoveFromLive,
+}: {
+  visible: boolean;
+  target: ActionTarget | null;
+  colors: AppColors;
+  canDeleteMessage: boolean;
+  canManageUser: boolean;
+  isWorking: boolean;
+  onClose: () => void;
+  onDeleteMessage: () => void;
+  onLimitMessages: () => void;
+  onAllowAgain: () => void;
+  onRemoveFromLive: () => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
+          style={[
+            styles.actionModal,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleWrap}>
+              <Text
+                numberOfLines={1}
+                style={[styles.modalTitle, { color: colors.foreground }]}
+              >
+                {target?.name || "Member actions"}
+              </Text>
+
+              <Text style={[styles.modalSubtitle, { color: colors.muted }]}>
+                Choose what you want to do with this member.
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={[
+                styles.modalCloseButton,
+                {
+                  backgroundColor: colors.surfaceSecondary,
+                },
+              ]}
+            >
+              <Ionicons name="close" size={20} color={colors.foreground} />
+            </Pressable>
+          </View>
+
+          {canDeleteMessage ? (
+            <Pressable
+              disabled={isWorking}
+              onPress={onDeleteMessage}
+              style={[
+                styles.modalActionButton,
+                {
+                  borderColor: colors.border,
+                  opacity: isWorking ? 0.6 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="trash-outline" size={19} color={colors.danger} />
+              <Text style={[styles.modalActionText, { color: colors.danger }]}>
+                Delete this message
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {canManageUser ? (
+            <>
+              <Pressable
+                disabled={isWorking}
+                onPress={onLimitMessages}
+                style={[
+                  styles.modalActionButton,
+                  {
+                    borderColor: colors.border,
+                    opacity: isWorking ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="chatbox-ellipses-outline"
+                  size={19}
+                  color={colors.warning}
+                />
+                <Text
+                  style={[styles.modalActionText, { color: colors.foreground }]}
+                >
+                  Limit messages
+                </Text>
+              </Pressable>
+
+              <Pressable
+                disabled={isWorking}
+                onPress={onAllowAgain}
+                style={[
+                  styles.modalActionButton,
+                  {
+                    borderColor: colors.border,
+                    opacity: isWorking ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={19}
+                  color={colors.success}
+                />
+                <Text
+                  style={[styles.modalActionText, { color: colors.foreground }]}
+                >
+                  Allow again
+                </Text>
+              </Pressable>
+
+              <Pressable
+                disabled={isWorking}
+                onPress={onRemoveFromLive}
+                style={[
+                  styles.modalActionButton,
+                  {
+                    borderColor: colors.border,
+                    opacity: isWorking ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="ban-outline" size={19} color={colors.danger} />
+                <Text style={[styles.modalActionText, { color: colors.danger }]}>
+                  Remove from live discussion
+                </Text>
+              </Pressable>
+            </>
+          ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -397,8 +740,13 @@ export default function LiveDiscussionPage() {
   const insets = useSafeAreaInsets();
   const { data: session } = useSession();
 
-  const listRef = useRef<FlatList<CommunityDiscussionLiveMessage> | null>(null);
+  const listRef = useRef<FlatList<ChatListItem> | null>(null);
   const liveBlinkOpacity = useRef(new Animated.Value(1)).current;
+  const joinToastOpacity = useRef(new Animated.Value(0)).current;
+  const previousMemberIdsRef = useRef<Set<string>>(new Set());
+  const previousMembersRef = useRef<Map<string, LiveMember>>(new Map());
+  const hasLoadedInitialMembersRef = useRef(false);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const params = useLocalSearchParams<{
     discussionId?: string | string[];
@@ -413,9 +761,15 @@ export default function LiveDiscussionPage() {
   const shouldSkipQuery = !communityId || !discussionId;
   const viewerId = session?.user?.id ?? "";
 
+  const [activeTab, setActiveTab] = useState<LiveTab>("chat");
   const [messageDraft, setMessageDraft] = useState("");
   const [composerHeight, setComposerHeight] = useState(86);
   const [showTopicDetails, setShowTopicDetails] = useState(true);
+  const [joinToastText, setJoinToastText] = useState<string | null>(null);
+  const [joinLeaveNotices, setJoinLeaveNotices] = useState<JoinLeaveNotice[]>(
+    [],
+  );
+  const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
 
   const scrollToBottom = useCallback((animated = true) => {
     requestAnimationFrame(() => {
@@ -455,6 +809,7 @@ export default function LiveDiscussionPage() {
     {
       skip: shouldSkipQuery,
       pollingInterval: 8000,
+      refetchOnMountOrArgChange: true,
     },
   );
 
@@ -482,6 +837,23 @@ export default function LiveDiscussionPage() {
     {
       skip: shouldSkipQuery || !liveChat,
       pollingInterval: isLive ? 15000 : 0,
+      refetchOnMountOrArgChange: true,
+    },
+  );
+
+  const {
+    data: participantsResponse,
+    isFetching: isFetchingParticipants,
+    refetch: refetchParticipants,
+  } = useGetLiveDiscussionParticipantsQuery(
+    {
+      communityId: communityId ?? "",
+      discussionId: discussionId ?? "",
+    },
+    {
+      skip: shouldSkipQuery || !liveChat,
+      pollingInterval: isLive ? 4000 : 0,
+      refetchOnMountOrArgChange: true,
     },
   );
 
@@ -556,21 +928,56 @@ export default function LiveDiscussionPage() {
     canManageLive && communityId && discussionId,
   );
 
- const {
-  data: contributorRequestsResponse,
-  isFetching: isFetchingContributorRequests,
-  error: contributorRequestsError,
-  refetch: refetchContributorRequests,
-} = useGetContributorRequestsQuery(
+  const {
+    data: contributorRequestsResponse,
+    isFetching: isFetchingContributorRequests,
+    error: contributorRequestsError,
+    refetch: refetchContributorRequests,
+  } = useGetContributorRequestsQuery(
     {
       communityId: communityId ?? "",
       status: "PENDING",
     },
     {
-  skip: !communityId || !discussionId || !viewerId,
-  pollingInterval: 4000,
-},
+      skip: !communityId || !discussionId || !viewerId || !canReviewContributorRequests,
+      pollingInterval: canReviewContributorRequests ? 4000 : 0,
+      refetchOnMountOrArgChange: true,
+    },
   );
+
+  const handleContributorRequestSentFromSocket = useCallback(() => {
+    if (canReviewContributorRequests) {
+      void refetchContributorRequests();
+    }
+  }, [canReviewContributorRequests, refetchContributorRequests]);
+
+  const handleContributorRequestReviewedFromSocket = useCallback(() => {
+    void refetchLive();
+
+    if (canReviewContributorRequests) {
+      void refetchContributorRequests();
+    }
+  }, [canReviewContributorRequests, refetchContributorRequests, refetchLive]);
+
+  const handleUserBlockedFromSocket = useCallback(() => {
+    void refetchLive();
+    void refetchMessages();
+    void refetchParticipants();
+  }, [refetchLive, refetchMessages, refetchParticipants]);
+
+  const handleNeedRefreshFromSocket = useCallback(() => {
+    void refetchLive();
+    void refetchParticipants();
+
+    if (canReviewContributorRequests) {
+      void refetchContributorRequests();
+    }
+  }, [
+    canReviewContributorRequests,
+    refetchContributorRequests,
+    refetchLive,
+    refetchParticipants,
+  ]);
 
   const {
     connected: socketConnected,
@@ -586,36 +993,72 @@ export default function LiveDiscussionPage() {
     communityId: communityId ?? "",
     discussionId: discussionId ?? "",
     initialMessages: messages,
-    onContributorRequestSent: () => {
-      if (canReviewContributorRequests) {
-        void refetchContributorRequests();
-      }
-    },
-    onContributorRequestReviewed: () => {
-      void refetchLive();
-
-      if (canReviewContributorRequests) {
-        void refetchContributorRequests();
-      }
-    },
-    onUserBlocked: () => {
-      void refetchLive();
-      void refetchMessages();
-    },
-    onNeedRefresh: () => {
-      void refetchLive();
-
-      if (canReviewContributorRequests) {
-        void refetchContributorRequests();
-      }
-    },
+    onContributorRequestSent: handleContributorRequestSentFromSocket,
+    onContributorRequestReviewed: handleContributorRequestReviewedFromSocket,
+    onUserBlocked: handleUserBlockedFromSocket,
+    onNeedRefresh: handleNeedRefreshFromSocket,
   });
 
   const displayMessages = socketConnected ? liveMessages : messages;
 
-  const displayMemberCount = socketConnected
-    ? liveMemberCount
-    : liveChat?._count?.participants ?? 0;
+  const liveMembers = useMemo(() => {
+    const map = new Map<string, LiveMember>();
+
+    const sessionUser = session?.user as BasicAuthor | undefined;
+    const sessionName = getAuthorName(sessionUser);
+
+    if (viewerId) {
+      map.set(viewerId, {
+        id: viewerId,
+        name: sessionName,
+        image: sessionUser?.image ?? null,
+        subtitle: "You",
+      });
+    }
+
+    const participants = participantsResponse?.data ?? [];
+
+    participants.forEach((participant) => {
+      const user = participant.user as BasicAuthor | null | undefined;
+      const userId = participant.userId || user?.id;
+
+      if (!userId) return;
+
+      map.set(userId, {
+        id: userId,
+        name: getAuthorName(user),
+        image: user?.image ?? null,
+        subtitle: "Watching live",
+      });
+    });
+
+    displayMessages.forEach((message) => {
+      const author = message.author as BasicAuthor | undefined;
+
+      if (!message.authorId || map.has(message.authorId)) return;
+
+      map.set(message.authorId, {
+        id: message.authorId,
+        name: getAuthorName(author),
+        image: author?.image ?? null,
+        subtitle: "Active in chat",
+      });
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.id === viewerId) return -1;
+      if (b.id === viewerId) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [displayMessages, participantsResponse?.data, session?.user, viewerId]);
+
+  const restMemberCount = liveChat?._count?.participants ?? 0;
+
+  const displayMemberCount = Math.max(
+    liveMemberCount,
+    restMemberCount,
+    liveMembers.length,
+  );
 
   const displayMessageCount =
     displayMessages.length > 0
@@ -639,16 +1082,125 @@ export default function LiveDiscussionPage() {
     discussionId,
     canReviewContributorRequests,
   ]);
-console.log("LIVE CONTRIBUTOR DEBUG:", {
-  viewerId,
-  viewerRole,
-  canReviewContributorRequests,
-  contributorRequestsResponse,
-  contributorRequestsError,
-  allRequests: contributorRequestsResponse?.data,
-  pendingLiveRequests,
-  discussionId,
-});
+
+  const showJoinToast = useCallback(
+    (text: string) => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+
+      setJoinToastText(text);
+
+      joinToastOpacity.stopAnimation();
+      joinToastOpacity.setValue(0);
+
+      Animated.sequence([
+        Animated.timing(joinToastOpacity, {
+          toValue: 1,
+          duration: 240,
+          useNativeDriver: true,
+        }),
+        Animated.delay(1450),
+        Animated.timing(joinToastOpacity, {
+          toValue: 0,
+          duration: 240,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      toastTimerRef.current = setTimeout(() => {
+        setJoinToastText(null);
+      }, 2000);
+    },
+    [joinToastOpacity],
+  );
+
+  const addJoinLeaveNotice = useCallback(
+    (type: "joined" | "left", member: LiveMember) => {
+      const text =
+        type === "joined"
+          ? `${member.name} joined live`
+          : `${member.name} left live`;
+
+      const notice: JoinLeaveNotice = {
+        id: `${type}-${member.id}-${Date.now()}`,
+        type,
+        text,
+        createdAt: new Date().toISOString(),
+        member,
+      };
+
+      setJoinLeaveNotices((previous) => [...previous.slice(-20), notice]);
+      showJoinToast(text);
+    },
+    [showJoinToast],
+  );
+
+  useEffect(() => {
+    const currentIds = new Set(liveMembers.map((member) => member.id));
+    const currentMap = new Map(liveMembers.map((member) => [member.id, member]));
+
+    if (!hasLoadedInitialMembersRef.current) {
+      previousMemberIdsRef.current = currentIds;
+      previousMembersRef.current = currentMap;
+      hasLoadedInitialMembersRef.current = true;
+      return;
+    }
+
+    const previousIds = previousMemberIdsRef.current;
+    const previousMap = previousMembersRef.current;
+
+    liveMembers.forEach((member) => {
+      if (!previousIds.has(member.id) && member.id !== viewerId) {
+        addJoinLeaveNotice("joined", member);
+      }
+    });
+
+    previousIds.forEach((memberId) => {
+      if (!currentIds.has(memberId) && memberId !== viewerId) {
+        const previousMember = previousMap.get(memberId);
+
+        if (previousMember) {
+          addJoinLeaveNotice("left", previousMember);
+        }
+      }
+    });
+
+    previousMemberIdsRef.current = currentIds;
+    previousMembersRef.current = currentMap;
+  }, [addJoinLeaveNotice, liveMembers, viewerId]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const chatListItems = useMemo<ChatListItem[]>(() => {
+    const messageItems: ChatListItem[] = displayMessages.map((message) => ({
+      type: "message",
+      id: `message-${message.id}`,
+      createdAt: message.createdAt,
+      message,
+    }));
+
+    const noticeItems: ChatListItem[] = joinLeaveNotices.map((notice) => ({
+      type: "notice",
+      id: `notice-${notice.id}`,
+      createdAt: notice.createdAt,
+      notice,
+    }));
+
+    return [...messageItems, ...noticeItems].sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id.localeCompare(b.id);
+    });
+  }, [displayMessages, joinLeaveNotices]);
 
   const statusMeta = getLiveStatusMeta(liveStatus);
   const statusColor = getToneColor(statusMeta.tone, colors);
@@ -660,6 +1212,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
     isFetchingLive ||
     isLoadingMessages ||
     isFetchingMessages ||
+    isFetchingParticipants ||
     isSendingMessage ||
     isEndingLive ||
     isDeletingMessage ||
@@ -675,13 +1228,13 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
     messageDraft.trim().length > 0 &&
     !isSendingMessage;
 
- const liveConnectionLabel = isLive
-  ? socketConnected
-    ? "Connected live"
-    : socketError
-      ? "Live now · socket offline"
-      : "Live now"
-  : "History";
+  const liveConnectionLabel = isLive
+    ? socketConnected
+      ? "Connected live"
+      : socketError
+        ? "Live now · socket offline"
+        : "Live now"
+    : "History";
 
   useEffect(() => {
     if (!isLive) {
@@ -712,11 +1265,11 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
   }, [isLive, liveBlinkOpacity]);
 
   useEffect(() => {
-    if (!displayMessages.length) return;
+    if (!chatListItems.length || activeTab !== "chat") return;
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     scrollToBottom(true);
-  }, [displayMessages.length, scrollToBottom]);
+  }, [activeTab, chatListItems.length, scrollToBottom]);
 
   useEffect(() => {
     const showEvent =
@@ -726,35 +1279,41 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
     const showSubscription = Keyboard.addListener(showEvent, () => {
-      scrollToBottom(true);
+      if (activeTab === "chat") {
+        scrollToBottom(true);
+      }
     });
 
     const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      scrollToBottom(true);
+      if (activeTab === "chat") {
+        scrollToBottom(true);
+      }
     });
 
     return () => {
       showSubscription.remove();
       hideSubscription.remove();
     };
-  }, [scrollToBottom]);
+  }, [activeTab, scrollToBottom]);
 
   const refreshLivePage = useCallback(async () => {
     await Promise.all([
       refetchDiscussion(),
       refetchLive(),
       liveChat ? refetchMessages() : Promise.resolve(),
+      liveChat ? refetchParticipants() : Promise.resolve(),
       canReviewContributorRequests
         ? refetchContributorRequests()
         : Promise.resolve(),
     ]);
   }, [
+    canReviewContributorRequests,
+    liveChat,
+    refetchContributorRequests,
     refetchDiscussion,
     refetchLive,
     refetchMessages,
-    liveChat,
-    canReviewContributorRequests,
-    refetchContributorRequests,
+    refetchParticipants,
   ]);
 
   const handleSendMessage = useCallback(async () => {
@@ -775,7 +1334,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
     if (!canSendFromPermission) {
       Alert.alert(
         "Contributor access required",
-        "You need contributor access to ask questions in this live chat.",
+        "You need contributor access to send messages in this live chat.",
       );
       return;
     }
@@ -795,7 +1354,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
         clientMessageId: makeClientMessageId(),
       }).unwrap();
 
-      await refetchMessages();
+      await Promise.all([refetchMessages(), refetchParticipants()]);
     } catch (error) {
       setMessageDraft(cleanMessage);
       Alert.alert("Could not send message", getErrorMessage(error));
@@ -810,6 +1369,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
     sendSocketMessage,
     sendLiveMessage,
     refetchMessages,
+    refetchParticipants,
   ]);
 
   const handleRequestContributor = useCallback(async () => {
@@ -817,7 +1377,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
 
     try {
       const message =
-        "I want contributor access so I can ask questions in this live discussion.";
+        "I want contributor access so I can send messages in this live discussion.";
 
       const socketSent = socketConnected
         ? requestContributorViaSocket(message)
@@ -833,7 +1393,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
 
       Alert.alert(
         "Request sent",
-        "Your contributor request has been sent to the community team.",
+        "Your contributor request has been sent to the discussion team.",
       );
 
       await refetchLive();
@@ -863,7 +1423,11 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
           reviewNote: "Approved from live discussion.",
         }).unwrap();
 
-        await Promise.all([refetchContributorRequests(), refetchLive()]);
+        await Promise.all([
+          refetchContributorRequests(),
+          refetchLive(),
+          refetchParticipants(),
+        ]);
       } catch (error) {
         Alert.alert("Could not approve request", getErrorMessage(error));
       }
@@ -873,6 +1437,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
       approveContributorRequest,
       refetchContributorRequests,
       refetchLive,
+      refetchParticipants,
     ],
   );
 
@@ -902,6 +1467,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
       try {
         if (socketConnected) {
           deleteSocketMessage(messageId);
+          setActionTarget(null);
           return;
         }
 
@@ -911,6 +1477,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
           messageId,
         }).unwrap();
 
+        setActionTarget(null);
         await refetchMessages();
       } catch (error) {
         Alert.alert("Could not delete message", getErrorMessage(error));
@@ -943,15 +1510,18 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
           reason,
         }).unwrap();
 
+        setActionTarget(null);
+
         await Promise.all([
           refetchLive(),
           refetchMessages(),
+          refetchParticipants(),
           canReviewContributorRequests
             ? refetchContributorRequests()
             : Promise.resolve(),
         ]);
       } catch (error) {
-        Alert.alert("Could not update user", getErrorMessage(error));
+        Alert.alert("Could not update member", getErrorMessage(error));
       }
     },
     [
@@ -960,73 +1530,34 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
       updateDiscussionParticipantMode,
       refetchLive,
       refetchMessages,
+      refetchParticipants,
       canReviewContributorRequests,
       refetchContributorRequests,
     ],
   );
 
-  const handleLongPressMessage = useCallback(
+  const openMessageActions = useCallback(
     (message: CommunityDiscussionLiveMessage) => {
-      const isMine = message.authorId === viewerId;
       const author = message.author as BasicAuthor | undefined;
-      const targetName = getAuthorName(author);
 
-      const actions: {
-        text: string;
-        style?: "default" | "cancel" | "destructive";
-        onPress?: () => void;
-      }[] = [];
-
-      if (canDeleteMessages || isMine) {
-        actions.push({
-          text: "Delete message",
-          style: "destructive",
-          onPress: () => {
-            void handleDeleteLiveMessage(message.id);
-          },
-        });
-      }
-
-      if (canManageLive && !isMine) {
-        actions.push({
-          text: `Limit ${targetName}`,
-          onPress: () => {
-            void handleUpdateUserMode(
-              message.authorId,
-              "VIEWER_LIMITED",
-              "Limited from live discussion.",
-            );
-          },
-        });
-
-        actions.push({
-          text: `Block ${targetName}`,
-          style: "destructive",
-          onPress: () => {
-            void handleUpdateUserMode(
-              message.authorId,
-              "BLOCKED",
-              "Blocked from live discussion.",
-            );
-          },
-        });
-      }
-
-      actions.push({
-        text: "Cancel",
-        style: "cancel",
+      setActionTarget({
+        userId: message.authorId,
+        name: getAuthorName(author),
+        image: author?.image ?? null,
+        messageId: message.id,
+        isOwnMessage: message.authorId === viewerId,
       });
-
-      Alert.alert("Message options", targetName, actions);
     },
-    [
-      viewerId,
-      canDeleteMessages,
-      canManageLive,
-      handleDeleteLiveMessage,
-      handleUpdateUserMode,
-    ],
+    [viewerId],
   );
+
+  const openMemberActions = useCallback((member: LiveMember) => {
+    setActionTarget({
+      userId: member.id,
+      name: member.name,
+      image: member.image ?? null,
+    });
+  }, []);
 
   const handleEndLive = useCallback(() => {
     if (!communityId || !discussionId) return;
@@ -1061,9 +1592,20 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
 
   const emptyMessageText = isLive
     ? canSendFromPermission
-      ? "Be the first to ask a question."
-      : "You can watch this live chat. Request contributor access to ask questions."
+      ? "Be the first to send a message."
+      : "You can watch this live chat. Request contributor access to send messages."
     : "Messages will appear here when the live discussion starts.";
+
+  const canDeleteSelectedMessage = Boolean(
+    actionTarget?.messageId &&
+      (canDeleteMessages || actionTarget.isOwnMessage),
+  );
+
+  const canManageSelectedUser = Boolean(
+    canManageLive &&
+      actionTarget?.userId &&
+      actionTarget.userId !== viewerId,
+  );
 
   if (shouldSkipQuery) {
     return (
@@ -1158,23 +1700,23 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
       >
         <View
           style={[
-            styles.compactHeader,
+            styles.header,
             {
               backgroundColor: colors.background,
               borderBottomColor: colors.separator,
             },
           ]}
         >
-          <Pressable onPress={() => router.back()} style={styles.iconButton}>
-            <Ionicons name="chevron-back" size={24} color={colors.foreground} />
+          <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={25} color={colors.foreground} />
           </Pressable>
 
-          <View style={styles.headerTitleWrap}>
-            <View style={styles.liveHeaderRow}>
+          <View style={styles.headerCenter}>
+            <View style={styles.liveStatusRow}>
               {isLive ? (
                 <Animated.View
                   style={[
-                    styles.blinkDot,
+                    styles.liveDot,
                     {
                       opacity: liveBlinkOpacity,
                       backgroundColor: colors.danger,
@@ -1192,7 +1734,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
               <Text
                 numberOfLines={1}
                 style={[
-                  styles.liveHeaderStatus,
+                  styles.liveStatusText,
                   {
                     color: isLive ? colors.danger : statusColor,
                   },
@@ -1203,7 +1745,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
 
               <Text
                 numberOfLines={1}
-                style={[styles.liveHeaderMeta, { color: colors.muted }]}
+                style={[styles.headerMetaText, { color: colors.muted }]}
               >
                 · {displayMemberCount} watching · {displayMessageCount} messages
               </Text>
@@ -1224,36 +1766,41 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
             </Text>
           </View>
 
-          {isBusy ? <ActivityIndicator size="small" /> : null}
-
-          <Pressable onPress={refreshLivePage} style={styles.iconButton}>
-            <Ionicons
-              name="refresh-outline"
-              size={22}
-              color={colors.foreground}
-            />
-          </Pressable>
+          {isBusy ? (
+            <ActivityIndicator size="small" />
+          ) : (
+            <View style={styles.headerRightGap} />
+          )}
         </View>
 
         <View
           style={[
-            styles.topicStrip,
+            styles.topicCard,
             {
               backgroundColor: colors.surface,
-              borderBottomColor: colors.separator,
+              borderColor: colors.border,
             },
           ]}
         >
           <Pressable
             onPress={() => setShowTopicDetails((previous) => !previous)}
-            style={styles.topicMain}
+            style={styles.topicPress}
           >
             <View style={styles.topicTopRow}>
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={16}
-                color={colors.accent}
-              />
+              <View
+                style={[
+                  styles.topicIconBox,
+                  {
+                    backgroundColor: colors.surfaceSecondary,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={17}
+                  color={colors.accent}
+                />
+              </View>
 
               <Text
                 numberOfLines={2}
@@ -1271,7 +1818,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
 
             {showTopicDetails ? (
               <Text
-                numberOfLines={4}
+                numberOfLines={3}
                 style={[styles.topicDescription, { color: colors.muted }]}
               >
                 {discussion.body || "No description provided."}
@@ -1284,215 +1831,388 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
               onPress={handleEndLive}
               disabled={isEndingLive}
               style={[
-                styles.endButtonSmall,
+                styles.endButton,
                 {
                   borderColor: colors.danger,
-                  opacity: isEndingLive ? 0.7 : 1,
+                  opacity: isEndingLive ? 0.65 : 1,
                 },
               ]}
             >
-              <Text style={[styles.endButtonSmallText, { color: colors.danger }]}>
-                End
+              <Text style={[styles.endButtonText, { color: colors.danger }]}>
+                End live
               </Text>
             </Pressable>
           ) : null}
         </View>
 
-        {canReviewContributorRequests && pendingLiveRequests.length > 0 ? (
-          <View
+        <View
+          style={[
+            styles.tabBar,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Pressable
+            onPress={() => setActiveTab("chat")}
             style={[
-              styles.requestPanel,
+              styles.tabButton,
               {
-                backgroundColor: colors.surfaceSecondary,
-                borderBottomColor: colors.separator,
+                backgroundColor:
+                  activeTab === "chat" ? colors.accent : "transparent",
               },
             ]}
           >
-            <View style={styles.requestPanelHeader}>
-              <Text
-                style={[styles.requestPanelTitle, { color: colors.foreground }]}
-              >
-                Contributor requests
-              </Text>
+            <Ionicons
+              name="chatbubbles-outline"
+              size={16}
+              color={
+                activeTab === "chat" ? colors.accentForeground : colors.muted
+              }
+            />
 
-              {isFetchingContributorRequests ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Text style={[styles.requestCountText, { color: colors.muted }]}>
-                  {pendingLiveRequests.length} pending
-                </Text>
-              )}
-            </View>
+            <Text
+              style={[
+                styles.tabText,
+                {
+                  color:
+                    activeTab === "chat"
+                      ? colors.accentForeground
+                      : colors.muted,
+                },
+              ]}
+            >
+              Chat
+            </Text>
+          </Pressable>
 
-            {pendingLiveRequests.map((request) => (
-              <View
-                key={request.id}
-                style={[
-                  styles.requestItem,
+          <Pressable
+            onPress={() => setActiveTab("members")}
+            style={[
+              styles.tabButton,
+              {
+                backgroundColor:
+                  activeTab === "members" ? colors.accent : "transparent",
+              },
+            ]}
+          >
+            <Ionicons
+              name="people-outline"
+              size={16}
+              color={
+                activeTab === "members"
+                  ? colors.accentForeground
+                  : colors.muted
+              }
+            />
+
+            <Text
+              style={[
+                styles.tabText,
+                {
+                  color:
+                    activeTab === "members"
+                      ? colors.accentForeground
+                      : colors.muted,
+                },
+              ]}
+            >
+              Members
+            </Text>
+          </Pressable>
+        </View>
+
+        {joinToastText ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.joinToast,
+              {
+                opacity: joinToastOpacity,
+                transform: [
                   {
-                    backgroundColor: colors.surface,
+                    translateY: joinToastOpacity.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-10, 0],
+                    }),
+                  },
+                ],
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="person-add-outline"
+              size={16}
+              color={colors.success}
+            />
+
+            <Text
+              numberOfLines={1}
+              style={[styles.joinToastText, { color: colors.foreground }]}
+            >
+              {joinToastText}
+            </Text>
+          </Animated.View>
+        ) : null}
+
+        {activeTab === "chat" ? (
+          <>
+            {canReviewContributorRequests && pendingLiveRequests.length > 0 ? (
+              <View
+                style={[
+                  styles.requestPanel,
+                  {
+                    backgroundColor: colors.surfaceSecondary,
                     borderColor: colors.border,
                   },
                 ]}
               >
-                <RequestUserLine request={request} colors={colors} />
-
-                <View style={styles.requestActions}>
-                  <Pressable
-                    disabled={isApprovingRequest || isRejectingRequest}
-                    onPress={() => handleApproveContributorRequest(request.id)}
-                    style={[
-                      styles.approveButton,
-                      {
-                        backgroundColor: colors.success,
-                        opacity:
-                          isApprovingRequest || isRejectingRequest ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <Text style={styles.requestActionText}>Accept</Text>
-                  </Pressable>
-
-                  <Pressable
-                    disabled={isApprovingRequest || isRejectingRequest}
-                    onPress={() => handleRejectContributorRequest(request.id)}
-                    style={[
-                      styles.rejectButton,
-                      {
-                        borderColor: colors.danger,
-                        opacity:
-                          isApprovingRequest || isRejectingRequest ? 0.7 : 1,
-                      },
-                    ]}
-                  >
+                <View style={styles.requestPanelHeader}>
+                  <View>
                     <Text
                       style={[
-                        styles.rejectButtonText,
-                        { color: colors.danger },
+                        styles.requestPanelTitle,
+                        { color: colors.foreground },
                       ]}
                     >
-                      Reject
+                      Contributor requests
                     </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : null}
 
-        {isScheduled ||
-        isEnded ||
-        isCancelled ||
-        socketError ||
-        viewerContext?.message ? (
-          <View
-            style={[
-              styles.noticeBar,
-              {
-                backgroundColor: colors.surfaceSecondary,
-                borderBottomColor: colors.separator,
-              },
-            ]}
-          >
-            <Text
-              numberOfLines={2}
-              style={[
-                styles.noticeText,
+                    <Text
+                      style={[
+                        styles.requestPanelSubtitle,
+                        { color: colors.muted },
+                      ]}
+                    >
+                      {pendingLiveRequests.length} pending request
+                      {pendingLiveRequests.length > 1 ? "s" : ""}
+                    </Text>
+                  </View>
+
+                  {isFetchingContributorRequests ? (
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  ) : null}
+                </View>
+
+                {pendingLiveRequests.map((request) => (
+                  <RequestCard
+                    key={request.id}
+                    request={request}
+                    colors={colors}
+                    disabled={isApprovingRequest || isRejectingRequest}
+                    onAccept={(requestId) => {
+                      void handleApproveContributorRequest(requestId);
+                    }}
+                    onReject={(requestId) => {
+                      void handleRejectContributorRequest(requestId);
+                    }}
+                  />
+                ))}
+              </View>
+            ) : null}
+
+            {contributorRequestsError && canReviewContributorRequests ? (
+              <View
+                style={[
+                  styles.requestErrorBox,
+                  {
+                    backgroundColor: colors.surfaceSecondary,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.requestErrorText, { color: colors.danger }]}
+                >
+                  Could not load contributor requests:{" "}
+                  {getErrorMessage(contributorRequestsError)}
+                </Text>
+              </View>
+            ) : null}
+
+            {(isScheduled ||
+              isEnded ||
+              isCancelled ||
+              socketError ||
+              viewerContext?.message) ? (
+              <View
+                style={[
+                  styles.noticeBar,
+                  {
+                    backgroundColor: colors.surfaceSecondary,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  numberOfLines={2}
+                  style={[
+                    styles.noticeText,
+                    {
+                      color: isCancelled
+                        ? colors.danger
+                        : isScheduled
+                          ? colors.warning
+                          : isEnded
+                            ? colors.success
+                            : colors.muted,
+                    },
+                  ]}
+                >
+                  {socketError
+                    ? `Socket: ${socketError}`
+                    : viewerContext?.message
+                      ? viewerContext.message
+                      : isScheduled
+                        ? `Scheduled: ${formatDateTime(liveChat?.scheduledAt)}`
+                        : isEnded
+                          ? "This live discussion has ended. You can view chat history."
+                          : isCancelled
+                            ? "This live discussion was cancelled."
+                            : ""}
+                </Text>
+              </View>
+            ) : null}
+
+            <FlatList
+              ref={listRef}
+              style={styles.messagesList}
+              contentContainerStyle={[
+                styles.messagesContent,
                 {
-                  color: isCancelled
-                    ? colors.danger
-                    : isScheduled
-                      ? colors.warning
-                      : isEnded
-                        ? colors.success
-                        : colors.muted,
+                  paddingBottom:
+                    (isLive && (canSendFromPermission || canRequestContributor)
+                      ? composerHeight
+                      : 24) + Math.max(insets.bottom, 12),
                 },
               ]}
-            >
-              {socketError
-                ? `Socket: ${socketError}`
-                : viewerContext?.message
-                  ? viewerContext.message
-                  : isScheduled
-                    ? `Scheduled: ${formatDateTime(liveChat?.scheduledAt)}`
-                    : isEnded
-                      ? "This live discussion has ended. You can view chat history."
-                      : isCancelled
-                        ? "This live discussion was cancelled."
-                        : ""}
-            </Text>
-          </View>
-        ) : null}
+              data={chatListItems}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => {
+                if (item.type === "notice") {
+                  return <JoinLeaveCard notice={item.notice} colors={colors} />;
+                }
 
-        <FlatList
-          ref={listRef}
-          style={styles.messagesList}
-          contentContainerStyle={[
-            styles.messagesContent,
-            {
-              paddingBottom: composerHeight + Math.max(insets.bottom, 12) + 18,
-            },
-          ]}
-          data={displayMessages}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <MessageBubble
-              message={item}
-              isMine={item.authorId === viewerId}
-              canManageLive={canManageLive}
-              canDelete={canDeleteMessages || item.authorId === viewerId}
-              colors={colors}
-              onLongPressMessage={handleLongPressMessage}
+                return (
+                  <MessageCard
+                    message={item.message}
+                    colors={colors}
+                    canOpenActions={
+                      canManageLive ||
+                      canDeleteMessages ||
+                      item.message.authorId === viewerId
+                    }
+                    onOpenActions={openMessageActions}
+                  />
+                );
+              }}
+              ListEmptyComponent={
+                isLoadingMessages ? (
+                  <View style={styles.emptyBlock}>
+                    <ActivityIndicator />
+
+                    <Text style={[styles.emptyText, { color: colors.muted }]}>
+                      Loading messages...
+                    </Text>
+                  </View>
+                ) : messagesError ? (
+                  <View style={styles.emptyBlock}>
+                    <Ionicons
+                      name="alert-circle-outline"
+                      size={34}
+                      color={colors.danger}
+                    />
+
+                    <Text style={[styles.emptyText, { color: colors.danger }]}>
+                      {getErrorMessage(messagesError)}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.emptyBlock}>
+                    <Ionicons
+                      name="chatbubbles-outline"
+                      size={36}
+                      color={colors.muted}
+                    />
+
+                    <Text
+                      style={[styles.emptyTitle, { color: colors.foreground }]}
+                    >
+                      No messages yet
+                    </Text>
+
+                    <Text style={[styles.emptyText, { color: colors.muted }]}>
+                      {emptyMessageText}
+                    </Text>
+                  </View>
+                )
+              }
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={
+                Platform.OS === "ios" ? "interactive" : "on-drag"
+              }
+              onContentSizeChange={() => {
+                scrollToBottom(true);
+              }}
             />
-          )}
-          ListEmptyComponent={
-            isLoadingMessages ? (
-              <View style={styles.emptyBlock}>
-                <ActivityIndicator />
+          </>
+        ) : (
+          <FlatList
+            style={styles.membersList}
+            contentContainerStyle={[
+              styles.membersContent,
+              {
+                paddingBottom: Math.max(insets.bottom, 12) + 20,
+              },
+            ]}
+            data={liveMembers}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <MemberRow
+                member={item}
+                colors={colors}
+                isSelf={item.id === viewerId}
+                canManage={canManageLive}
+                onOpenActions={openMemberActions}
+              />
+            )}
+            ListHeaderComponent={
+              <View style={styles.memberListHeader}>
+                <Text
+                  style={[styles.memberListTitle, { color: colors.foreground }]}
+                >
+                  Joined members
+                </Text>
 
-                <Text style={[styles.emptyText, { color: colors.muted }]}>
-                  Loading messages...
+                <Text
+                  style={[styles.memberListSubtitle, { color: colors.muted }]}
+                >
+                  {displayMemberCount} watching now
                 </Text>
               </View>
-            ) : messagesError ? (
+            }
+            ListEmptyComponent={
               <View style={styles.emptyBlock}>
-                <Ionicons
-                  name="alert-circle-outline"
-                  size={34}
-                  color={colors.danger}
-                />
-
-                <Text style={[styles.emptyText, { color: colors.danger }]}>
-                  {getErrorMessage(messagesError)}
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.emptyBlock}>
-                <Ionicons
-                  name="chatbubbles-outline"
-                  size={36}
-                  color={colors.muted}
-                />
+                <Ionicons name="people-outline" size={36} color={colors.muted} />
 
                 <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-                  No messages yet
+                  No members yet
                 </Text>
 
                 <Text style={[styles.emptyText, { color: colors.muted }]}>
-                  {emptyMessageText}
+                  Members will appear here when they join live.
                 </Text>
               </View>
-            )
-          }
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-          onContentSizeChange={() => {
-            scrollToBottom(true);
-          }}
-        />
+            }
+            showsVerticalScrollIndicator={false}
+          />
+        )}
 
-        {isLive && canSendFromPermission ? (
+        {activeTab === "chat" && isLive && canSendFromPermission ? (
           <View
             onLayout={(event) => {
               const nextHeight = event.nativeEvent.layout.height;
@@ -1529,7 +2249,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
                 value={messageDraft}
                 onChangeText={setMessageDraft}
                 multiline
-                placeholder="Ask a question..."
+                placeholder="Type a message..."
                 placeholderTextColor={colors.placeholder}
                 editable={!isSendingMessage}
                 style={[
@@ -1571,7 +2291,7 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
               </Pressable>
             </View>
           </View>
-        ) : isLive && canRequestContributor ? (
+        ) : activeTab === "chat" && isLive && canRequestContributor ? (
           <View
             onLayout={(event) => {
               const nextHeight = event.nativeEvent.layout.height;
@@ -1616,12 +2336,9 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
 
                 <Text
                   numberOfLines={1}
-                  style={[
-                    styles.viewerRequestText,
-                    { color: colors.muted },
-                  ]}
+                  style={[styles.viewerRequestText, { color: colors.muted }]}
                 >
-                  Request contributor access to ask.
+                  Request contributor access to send messages.
                 </Text>
               </View>
 
@@ -1654,6 +2371,48 @@ console.log("LIVE CONTRIBUTOR DEBUG:", {
           </View>
         ) : null}
       </KeyboardAvoidingView>
+
+      <ActionModal
+        visible={Boolean(actionTarget)}
+        target={actionTarget}
+        colors={colors}
+        canDeleteMessage={canDeleteSelectedMessage}
+        canManageUser={canManageSelectedUser}
+        isWorking={isDeletingMessage || isUpdatingUserMode}
+        onClose={() => setActionTarget(null)}
+        onDeleteMessage={() => {
+          if (actionTarget?.messageId) {
+            void handleDeleteLiveMessage(actionTarget.messageId);
+          }
+        }}
+        onLimitMessages={() => {
+          if (actionTarget?.userId) {
+            void handleUpdateUserMode(
+              actionTarget.userId,
+              "VIEWER_LIMITED",
+              "Limited from live discussion.",
+            );
+          }
+        }}
+        onAllowAgain={() => {
+          if (actionTarget?.userId) {
+            void handleUpdateUserMode(
+              actionTarget.userId,
+              "NORMAL",
+              "Allowed again from live discussion.",
+            );
+          }
+        }}
+        onRemoveFromLive={() => {
+          if (actionTarget?.userId) {
+            void handleUpdateUserMode(
+              actionTarget.userId,
+              "BLOCKED",
+              "Removed from live discussion.",
+            );
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }

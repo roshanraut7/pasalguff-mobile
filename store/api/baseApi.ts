@@ -29,12 +29,7 @@ const API_BASE_URL = getApiBaseUrl();
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
-
-  /**
-   * We manually attach the Better Auth cookie below.
-   */
   credentials: "omit",
-
   prepareHeaders: (headers) => {
     headers.set("Accept", "application/json");
     return headers;
@@ -44,7 +39,9 @@ const rawBaseQuery = fetchBaseQuery({
 function isFormDataBody(body: unknown) {
   return (
     typeof FormData !== "undefined" &&
-    body instanceof FormData
+    (body instanceof FormData ||
+      Object.prototype.toString.call(body) === "[object FormData]" ||
+      Boolean((body as any)?._parts))
   );
 }
 
@@ -64,11 +61,6 @@ const baseQueryWithAuth: BaseQueryFn<
     headers.set("Cookie", authCookie);
   }
 
-  /**
-   * IMPORTANT:
-   * Do not set Content-Type for FormData.
-   * React Native must set multipart boundary automatically.
-   */
   const isFormData = isFormDataBody(normalizedArgs.body);
 
   if (normalizedArgs.body && !isFormData && !headers.has("Content-Type")) {
@@ -83,48 +75,55 @@ const baseQueryWithAuth: BaseQueryFn<
 export const baseApi = createApi({
   reducerPath: "api",
   baseQuery: baseQueryWithAuth,
-tagTypes: [
-  "Category",
 
-  "Community",
-  "MyCommunity",
-  "CommunityMembers",
-  "CommunityAccess",
-  "CommunityJoinRequests",
-  "CommunityDiscussion",
+  tagTypes: [
+    "Category",
 
-  "Profile",
-  "AdminCommunities",
-  "Notifications",
-  "CommunityGuidelines",
-  "Onboarding",
-  "OnboardingCategory",
-  "SuggestedCommunity",
+    "Community",
+    "MyCommunity",
+    "CommunityMembers",
+    "CommunityAccess",
+    "CommunityJoinRequests",
+    "CommunityDiscussion",
 
-  "Post",
-  "DraftPost",
-  "AdminUsers",
-  "AdminPosts",
-  "Friend",
-  "CommunityModerators",
+    "Profile",
+    "AdminCommunities",
+    "Notifications",
+    "CommunityGuidelines",
 
-  "Chat",
-  "Message",
+    "Onboarding",
+    "OnboardingCategory",
+    "SuggestedCommunity",
 
-  "PostLike",
-  "PostShare",
-  "PostComment",
-  "PostReply",
+    "Post",
+    "DraftPost",
+    "AdminUsers",
+    "AdminPosts",
 
-  "Follow",
-  "Follower",
-  "Following",
-  "PostAnalytics",
+    "Friend",
+    "Follow",
+    "Follower",
+    "Following",
+
+    "CommunityModerators",
+
+    "Chat",
+    "Message",
+
+    "PostLike",
+    "PostShare",
+    "PostComment",
+    "PostReply",
+
+    "PostAnalytics",
+
     "CommunityDiscussionAnswer",
     "CommunityDiscussionLive",
-"CommunityDiscussionLiveMessage",
-],
+    "CommunityDiscussionLiveMessage",
+  ],
+
   refetchOnFocus: true,
   refetchOnReconnect: true,
+
   endpoints: () => ({}),
 });

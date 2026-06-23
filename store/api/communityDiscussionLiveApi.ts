@@ -1,12 +1,7 @@
-
 import { baseApi } from "./baseApi";
 import type { DiscussionAuthor } from "./communityDiscussionApi";
 
-export type DiscussionLiveStatus =
-  | "SCHEDULED"
-  | "LIVE"
-  | "ENDED"
-  | "CANCELLED";
+export type DiscussionLiveStatus = "SCHEDULED" | "LIVE" | "ENDED" | "CANCELLED";
 
 export type LiveViewerRole =
   | "VIEWER"
@@ -15,10 +10,7 @@ export type LiveViewerRole =
   | "DISCUSSION_CREATOR"
   | "MANAGER";
 
-export type DiscussionParticipantMode =
-  | "NORMAL"
-  | "VIEWER_LIMITED"
-  | "BLOCKED";
+export type DiscussionParticipantMode = "NORMAL" | "VIEWER_LIMITED" | "BLOCKED";
 
 export type LiveViewerContext = {
   role: LiveViewerRole;
@@ -36,6 +28,27 @@ export type LiveViewerContext = {
 
   isViewerLimited: boolean;
   message?: string | null;
+};
+export type CommunityDiscussionLiveParticipant = {
+  id: string;
+  userId: string;
+  joinedAt?: string | null;
+  lastSeenAt?: string | null;
+  user?: {
+    id: string;
+    name?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    image?: string | null;
+    businessName?: string | null;
+  } | null;
+};
+export type GetLiveDiscussionParticipantsResponse = {
+  data: CommunityDiscussionLiveParticipant[];
+};
+export type GetLiveDiscussionParticipantsPayload = {
+  communityId: string;
+  discussionId: string;
 };
 
 export type CommunityDiscussionLiveChat = {
@@ -200,6 +213,19 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
         "CommunityDiscussionLive",
       ],
     }),
+    getLiveDiscussionParticipants: builder.query<
+      GetLiveDiscussionParticipantsResponse,
+      GetLiveDiscussionParticipantsPayload
+    >({
+      query: ({ communityId, discussionId }) => ({
+        url: `/communities/${communityId}/discussions/${discussionId}/live/participants`,
+        method: "GET",
+      }),
+      providesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussionLive", id: arg.discussionId },
+        "CommunityDiscussionLive",
+      ],
+    }),
 
     requestLiveContributor: builder.mutation<
       RequestLiveContributorResponse,
@@ -226,12 +252,7 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
       LiveDiscussionResponse,
       ScheduleLiveDiscussionPayload
     >({
-      query: ({
-        communityId,
-        discussionId,
-        scheduledAt,
-        scheduledEndAt,
-      }) => ({
+      query: ({ communityId, discussionId, scheduledAt, scheduledEndAt }) => ({
         url: `/communities/${communityId}/discussions/${discussionId}/live/schedule`,
         method: "PATCH",
         body: {
@@ -393,4 +414,5 @@ export const {
   useGetLiveDiscussionMessagesQuery,
   useSendLiveDiscussionMessageMutation,
   useDeleteLiveDiscussionMessageMutation,
+  useGetLiveDiscussionParticipantsQuery,
 } = communityDiscussionLiveApi;

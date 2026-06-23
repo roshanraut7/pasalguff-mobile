@@ -38,6 +38,7 @@ export type UpdateOnboardingPayload = {
   registrationNo?: string | null;
   address?: string | null;
   categoryIds?: string[];
+  communityIds?: string[];
   onboardingCompleted?: boolean;
 };
 
@@ -49,11 +50,13 @@ export type SuggestedCommunity = {
   avatarImage?: string | null;
   coverImage?: string | null;
   visibility: "PUBLIC" | "PRIVATE";
-  category: {
+  purpose?: "GENERAL" | "DISTRICT_OFFICIAL";
+  districtKey?: string | null;
+  category?: {
     id: string;
     name: string;
     slug: string;
-  };
+  } | null;
   _count?: {
     members: number;
     posts: number;
@@ -87,7 +90,13 @@ export const onboardingApi = baseApi.injectEndpoints({
         method: "PATCH",
         body,
       }),
-      invalidatesTags: ["Onboarding", "SuggestedCommunity"],
+      invalidatesTags: [
+        "Onboarding",
+        "SuggestedCommunity",
+        "Profile",
+        "MyCommunity",
+        "Community",
+      ],
     }),
 
     getSuggestedCommunities: builder.query<SuggestedCommunity[], void>({

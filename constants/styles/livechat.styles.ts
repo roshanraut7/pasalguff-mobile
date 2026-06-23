@@ -1,4 +1,3 @@
-
 import { StyleSheet } from "react-native";
 
 export const styles = StyleSheet.create({
@@ -6,47 +5,86 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
 
-  compactHeader: {
-    minHeight: 74,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+  centerBlock: {
+    flex: 1,
+    padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  centerTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontFamily: "Poppins_700Bold",
+    textAlign: "center",
+  },
+
+  centerText: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
+    textAlign: "center",
+  },
+
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+
+  retryButtonText: {
+    fontSize: 13,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  header: {
+    minHeight: 76,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
 
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  headerTitleWrap: {
+  headerCenter: {
     flex: 1,
   },
 
-  liveHeaderRow: {
+  headerRightGap: {
+    width: 34,
+    height: 34,
+  },
+
+  liveStatusRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
     marginBottom: 2,
   },
 
-  blinkDot: {
+  liveDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
 
-  liveHeaderStatus: {
+  liveStatusText: {
     fontSize: 11,
     fontFamily: "Poppins_800ExtraBold",
   },
 
-  liveHeaderMeta: {
+  headerMetaText: {
     flex: 1,
     fontSize: 11,
     fontFamily: "Poppins_500Medium",
@@ -64,17 +102,19 @@ export const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
 
-  topicStrip: {
-    minHeight: 58,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  topicCard: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
   },
 
-  topicMain: {
+  topicPress: {
     flex: 1,
   },
 
@@ -82,6 +122,14 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+
+  topicIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   topicTitle: {
@@ -92,47 +140,87 @@ export const styles = StyleSheet.create({
   },
 
   topicDescription: {
-    marginTop: 6,
+    marginTop: 7,
+    marginLeft: 40,
     fontSize: 12,
     lineHeight: 18,
     fontFamily: "Poppins_400Regular",
   },
 
-  topicMetaRow: {
-    marginTop: 7,
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-
-  topicMetaText: {
-    fontSize: 11,
-    fontFamily: "Poppins_500Medium",
-  },
-
-  topicLiveText: {
-    fontSize: 11,
-    fontFamily: "Poppins_800ExtraBold",
-  },
-
-  endButtonSmall: {
+  endButton: {
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
   },
 
-  endButtonSmallText: {
+  endButtonText: {
     fontSize: 11,
     fontFamily: "Poppins_700Bold",
   },
 
-  requestPanel: {
-    paddingHorizontal: 12,
+  tabBar: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    padding: 4,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 4,
+  },
+
+  tabButton: {
+    flex: 1,
+    height: 38,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+
+  tabText: {
+    fontSize: 12,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  joinToast: {
+    position: "absolute",
+    top: 154,
+    left: 22,
+    right: 22,
+    zIndex: 50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    elevation: 8,
+  },
+
+  joinToastText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  requestPanel: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 10,
   },
 
   requestPanelHeader: {
@@ -146,41 +234,31 @@ export const styles = StyleSheet.create({
     fontFamily: "Poppins_700Bold",
   },
 
-  requestCountText: {
+  requestPanelSubtitle: {
+    marginTop: 2,
     fontSize: 11,
-    fontFamily: "Poppins_500Medium",
+    fontFamily: "Poppins_400Regular",
   },
 
-  requestItem: {
+  requestCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
+    borderRadius: 15,
     paddingHorizontal: 10,
-    paddingVertical: 9,
-    flexDirection: "row",
-    alignItems: "center",
+    paddingVertical: 10,
     gap: 10,
   },
 
-  requestUserLine: {
-    flex: 1,
+  requestUserRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 9,
   },
 
-  requestAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  requestInfo: {
+  requestTextWrap: {
     flex: 1,
   },
 
-  requestUserName: {
+  requestName: {
     fontSize: 12,
     fontFamily: "Poppins_700Bold",
   },
@@ -195,26 +273,30 @@ export const styles = StyleSheet.create({
   requestActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
   },
 
-  approveButton: {
+  acceptButton: {
+    flex: 1,
+    height: 36,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  rejectButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-
-  requestActionText: {
+  acceptButtonText: {
     color: "#FFFFFF",
     fontSize: 11,
     fontFamily: "Poppins_700Bold",
+  },
+
+  rejectButton: {
+    flex: 1,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   rejectButtonText: {
@@ -222,10 +304,28 @@ export const styles = StyleSheet.create({
     fontFamily: "Poppins_700Bold",
   },
 
+  requestErrorBox: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+
+  requestErrorText: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: "Poppins_500Medium",
+  },
+
   noticeBar: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
 
   noticeText: {
@@ -236,66 +336,45 @@ export const styles = StyleSheet.create({
 
   messagesList: {
     flex: 1,
+    marginTop: 4,
   },
 
   messagesContent: {
     flexGrow: 1,
     paddingHorizontal: 12,
-    paddingTop: 12,
+    paddingTop: 10,
+    gap: 10,
   },
 
-  messageRow: {
-    marginBottom: 10,
+  messageCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+
+  messageTopRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+
+  messageMain: {
+    flex: 1,
+  },
+
+  messageHeaderRow: {
+    minHeight: 24,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 7,
   },
 
-  messageAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  messageAvatarImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
-  },
-
-  messageAvatarText: {
-    fontSize: 10,
+  messageAuthorName: {
+    flexShrink: 1,
+    fontSize: 13,
+    lineHeight: 18,
     fontFamily: "Poppins_700Bold",
-  },
-
-  messageBubble: {
-    maxWidth: "78%",
-    borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-
-  messageAuthor: {
-    marginBottom: 3,
-    fontSize: 11,
-    fontFamily: "Poppins_700Bold",
-  },
-
-  messageText: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: "Poppins_400Regular",
-  },
-
-  messageFooter: {
-    marginTop: 5,
-    alignSelf: "flex-end",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
   },
 
   messageTime: {
@@ -303,7 +382,128 @@ export const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
 
+  messageMenuButton: {
+    marginLeft: "auto",
+    width: 28,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  messageBody: {
+    marginTop: 4,
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
+  },
+
+  avatar: {
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+
+  avatarText: {
+    fontFamily: "Poppins_700Bold",
+  },
+
+  membersList: {
+    flex: 1,
+    marginTop: 4,
+  },
+
+  membersContent: {
+    flexGrow: 1,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    gap: 10,
+  },
+
+  memberListHeader: {
+    paddingHorizontal: 2,
+    paddingBottom: 2,
+  },
+
+  memberListTitle: {
+    fontSize: 17,
+    lineHeight: 23,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  memberListSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+  },
+
+  memberRow: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  memberInfo: {
+    flex: 1,
+  },
+
+  memberName: {
+    fontSize: 13,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  memberSubtitle: {
+    marginTop: 2,
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+  },
+
+  memberMenuButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  emptyBlock: {
+    flex: 1,
+    minHeight: 260,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  emptyTitle: {
+    marginTop: 12,
+    fontSize: 15,
+    fontFamily: "Poppins_700Bold",
+    textAlign: "center",
+  },
+
+  emptyText: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
+    textAlign: "center",
+  },
+
   composerWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
     paddingTop: 8,
@@ -379,60 +579,77 @@ export const styles = StyleSheet.create({
     fontFamily: "Poppins_700Bold",
   },
 
-  centerBlock: {
+  modalOverlay: {
     flex: 1,
-    padding: 24,
+    backgroundColor: "rgba(0, 0, 0, 0.42)",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-end",
+    paddingHorizontal: 12,
+    paddingBottom: 18,
   },
 
-  centerTitle: {
-    marginTop: 12,
+  actionModal: {
+    width: "100%",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 24,
+    padding: 14,
+    gap: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    elevation: 8,
+  },
+
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingBottom: 4,
+  },
+
+  modalTitleWrap: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
+  modalTitle: {
     fontSize: 16,
+    lineHeight: 22,
     fontFamily: "Poppins_700Bold",
-    textAlign: "center",
   },
 
-  centerText: {
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 20,
+  modalSubtitle: {
+    marginTop: 2,
+    fontSize: 11,
+    lineHeight: 16,
     fontFamily: "Poppins_400Regular",
-    textAlign: "center",
   },
 
-  emptyBlock: {
-    flex: 1,
-    minHeight: 260,
-    paddingHorizontal: 20,
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  emptyTitle: {
-    marginTop: 12,
-    fontSize: 15,
-    fontFamily: "Poppins_700Bold",
-    textAlign: "center",
+  modalActionButton: {
+    minHeight: 48,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    paddingHorizontal: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
 
-  emptyText: {
-    marginTop: 8,
+  modalActionText: {
+    flex: 1,
     fontSize: 13,
-    lineHeight: 20,
-    fontFamily: "Poppins_400Regular",
-    textAlign: "center",
-  },
-
-  retryButton: {
-    marginTop: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-  },
-
-  retryButtonText: {
-    fontSize: 13,
+    lineHeight: 18,
     fontFamily: "Poppins_700Bold",
   },
 });

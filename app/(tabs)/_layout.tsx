@@ -350,6 +350,7 @@ export default function TabLayout() {
           }}
         />
 
+        {/* ✅ CHANGED: intercept tab press, open as modal */}
         <Tabs.Screen
           name="create"
           options={{
@@ -361,9 +362,7 @@ export default function TabLayout() {
                   width: 58,
                   height: 58,
                   borderRadius: 29,
-                  backgroundColor: focused
-                    ? colors.accent
-                    : colors.surfaceTertiary,
+                  backgroundColor: colors.surfaceTertiary, // never shows as focused
                   alignItems: "center",
                   justifyContent: "center",
                   marginBottom: 18,
@@ -379,10 +378,16 @@ export default function TabLayout() {
                 <Ionicons
                   name="add"
                   size={28}
-                  color={focused ? colors.accentForeground : colors.foreground}
+                  color={colors.foreground}
                 />
               </View>
             ),
+          }}
+          listeners={{
+            tabPress: (e) => {
+              e.preventDefault(); // block navigating to create tab
+              router.push("/pages/createpost"); // open as modal
+            },
           }}
         />
 

@@ -18,6 +18,7 @@ import type { CommunityDiscussion } from "@/store/api/communityDiscussionApi";
 
 dayjs.extend(relativeTime);
 
+
 type AppColors = ReturnType<typeof useAppTheme>["colors"];
 
 type CommunityDiscussionHomeCardProps = {
