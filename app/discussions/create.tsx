@@ -539,7 +539,7 @@ export default function CreateDiscussionScreen() {
       }
 
       router.replace({
-        pathname: "/discussions/[discussionId]",
+        pathname: "/discussions/[discussionId]/live",
         params: {
           discussionId,
           communityId: response.data.communityId,

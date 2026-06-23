@@ -19,6 +19,24 @@ export type DiscussionSource =
 export type DiscussionAnswerStatus = "ACTIVE" | "DELETED";
 export type DiscussionAnswerVoteValue = "UP" | "DOWN" | "REMOVE";
 export type ViewerVoteValue = "UP" | "DOWN" | null;
+export type CommunityDiscussionLivePreview = {
+  id: string;
+  discussionId: string;
+  status: "SCHEDULED" | "LIVE" | "ENDED" | "CANCELLED";
+  scheduledAt?: string | null;
+  scheduledEndAt?: string | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  createdById: string;
+  startedById?: string | null;
+  endedById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: {
+    messages: number;
+    participants: number;
+  };
+};
 
 export type DiscussionParticipantMode =
   | "NORMAL"
@@ -75,6 +93,7 @@ export type CommunityDiscussion = {
 
   community: DiscussionCommunity;
   author: DiscussionAuthor;
+  liveChat?:CommunityDiscussionLivePreview | null;
 };
 
 export type CommunityDiscussionAnswerReply = {
@@ -207,7 +226,6 @@ export type GetCommunityDiscussionResponse = {
 };
 
 export type GetHomeFeedDiscussionsPayload = {
-  communityId: string;
   limit?: number;
   cursor?: string;
   search?: string;
@@ -407,22 +425,22 @@ export const communityDiscussionApi = baseApi.injectEndpoints({
       ],
     }),
 
-    getHomeFeedDiscussions: builder.query<
-      GetHomeFeedDiscussionsResponse,
-      GetHomeFeedDiscussionsPayload
-    >({
-      query: ({ communityId, limit, cursor, search, sortBy }) => ({
-        url: `/communities/${communityId}/discussions/feed`,
-        method: "GET",
-        params: {
-          ...(limit ? { limit } : {}),
-          ...(cursor ? { cursor } : {}),
-          ...(search ? { search } : {}),
-          ...(sortBy ? { sortBy } : {}),
-        },
-      }),
-      providesTags: ["CommunityDiscussion"],
-    }),
+  getHomeFeedDiscussions: builder.query<
+  GetHomeFeedDiscussionsResponse,
+  GetHomeFeedDiscussionsPayload
+>({
+  query: ({ limit, cursor, search, sortBy }) => ({
+    url: `/discussions/feed`,
+    method: "GET",
+    params: {
+      ...(limit ? { limit } : {}),
+      ...(cursor ? { cursor } : {}),
+      ...(search ? { search } : {}),
+      ...(sortBy ? { sortBy } : {}),
+    },
+  }),
+  providesTags: ["CommunityDiscussion"],
+}),
 
     getCommunityDiscussion: builder.query<
       GetCommunityDiscussionResponse,

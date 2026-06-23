@@ -1,3 +1,4 @@
+
 import { baseApi } from "./baseApi";
 import type { DiscussionAuthor } from "./communityDiscussionApi";
 
@@ -6,6 +7,36 @@ export type DiscussionLiveStatus =
   | "LIVE"
   | "ENDED"
   | "CANCELLED";
+
+export type LiveViewerRole =
+  | "VIEWER"
+  | "CONTRIBUTOR"
+  | "LIVE_CREATOR"
+  | "DISCUSSION_CREATOR"
+  | "MANAGER";
+
+export type DiscussionParticipantMode =
+  | "NORMAL"
+  | "VIEWER_LIMITED"
+  | "BLOCKED";
+
+export type LiveViewerContext = {
+  role: LiveViewerRole;
+  participantMode: DiscussionParticipantMode;
+
+  canWatchLive: boolean;
+  canSendMessage: boolean;
+  canRequestContributor: boolean;
+
+  canScheduleLive: boolean;
+  canStartLive: boolean;
+  canEndLive: boolean;
+  canCancelLive: boolean;
+  canDeleteMessages: boolean;
+
+  isViewerLimited: boolean;
+  message?: string | null;
+};
 
 export type CommunityDiscussionLiveChat = {
   id: string;
@@ -56,16 +87,36 @@ export type ScheduleLiveDiscussionPayload = {
   communityId: string;
   discussionId: string;
   scheduledAt: string;
-  scheduledEndAt:string;
+  scheduledEndAt: string;
 };
 
 export type GetLiveDiscussionResponse = {
   data: CommunityDiscussionLiveChat | null;
+  viewerContext: LiveViewerContext;
 };
 
 export type LiveDiscussionResponse = {
   message: string;
   data: CommunityDiscussionLiveChat;
+};
+
+export type JoinLiveDiscussionResponse = {
+  message: string;
+  data: {
+    liveChat: CommunityDiscussionLiveChat;
+    participant: {
+      id: string;
+      liveChatId: string;
+      userId: string;
+      joinedAt?: string;
+      leftAt?: string | null;
+      lastSeenAt?: string;
+    };
+  };
+};
+
+export type LeaveLiveDiscussionResponse = {
+  message: string;
 };
 
 export type GetLiveDiscussionMessagesPayload = {
@@ -107,6 +158,33 @@ export type DeleteLiveDiscussionMessageResponse = {
   data: CommunityDiscussionLiveMessage;
 };
 
+export type RequestLiveContributorPayload = {
+  communityId: string;
+  discussionId: string;
+  message?: string;
+};
+
+export type RequestLiveContributorResponse = {
+  message: string;
+  data: {
+    id: string;
+    communityId: string;
+    userId: string;
+
+    message?: string | null;
+    status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+
+    requestedFromDiscussionId?: string | null;
+
+    reviewedById?: string | null;
+    reviewedAt?: string | null;
+    reviewNote?: string | null;
+
+    createdAt: string;
+    updatedAt: string;
+  };
+};
+
 export const communityDiscussionLiveApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getLiveDiscussion: builder.query<
@@ -123,11 +201,37 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
       ],
     }),
 
+    requestLiveContributor: builder.mutation<
+      RequestLiveContributorResponse,
+      RequestLiveContributorPayload
+    >({
+      query: ({ communityId, discussionId, message }) => ({
+        url: `/communities/${communityId}/discussions/${discussionId}/live/contributor-request`,
+        method: "POST",
+        body: {
+          message:
+            message ??
+            "I want contributor access so I can ask questions in this live discussion.",
+        },
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussionLive", id: arg.discussionId },
+        { type: "CommunityDiscussion", id: arg.discussionId },
+        "CommunityDiscussionLive",
+        "CommunityDiscussion",
+      ],
+    }),
+
     scheduleLiveDiscussion: builder.mutation<
       LiveDiscussionResponse,
       ScheduleLiveDiscussionPayload
     >({
-      query: ({ communityId, discussionId, scheduledAt,scheduledEndAt }) => ({
+      query: ({
+        communityId,
+        discussionId,
+        scheduledAt,
+        scheduledEndAt,
+      }) => ({
         url: `/communities/${communityId}/discussions/${discussionId}/live/schedule`,
         method: "PATCH",
         body: {
@@ -191,6 +295,34 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
       ],
     }),
 
+    joinLiveDiscussion: builder.mutation<
+      JoinLiveDiscussionResponse,
+      LiveDiscussionPayload
+    >({
+      query: ({ communityId, discussionId }) => ({
+        url: `/communities/${communityId}/discussions/${discussionId}/live/join`,
+        method: "POST",
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussionLive", id: arg.discussionId },
+        "CommunityDiscussionLive",
+      ],
+    }),
+
+    leaveLiveDiscussion: builder.mutation<
+      LeaveLiveDiscussionResponse,
+      LiveDiscussionPayload
+    >({
+      query: ({ communityId, discussionId }) => ({
+        url: `/communities/${communityId}/discussions/${discussionId}/live/leave`,
+        method: "POST",
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussionLive", id: arg.discussionId },
+        "CommunityDiscussionLive",
+      ],
+    }),
+
     getLiveDiscussionMessages: builder.query<
       GetLiveDiscussionMessagesResponse,
       GetLiveDiscussionMessagesPayload
@@ -223,7 +355,9 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, arg) => [
         { type: "CommunityDiscussionLiveMessage", id: arg.discussionId },
+        { type: "CommunityDiscussionLive", id: arg.discussionId },
         "CommunityDiscussionLiveMessage",
+        "CommunityDiscussionLive",
       ],
     }),
 
@@ -237,7 +371,9 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, arg) => [
         { type: "CommunityDiscussionLiveMessage", id: arg.discussionId },
+        { type: "CommunityDiscussionLive", id: arg.discussionId },
         "CommunityDiscussionLiveMessage",
+        "CommunityDiscussionLive",
       ],
     }),
   }),
@@ -247,10 +383,13 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
 
 export const {
   useGetLiveDiscussionQuery,
+  useRequestLiveContributorMutation,
   useScheduleLiveDiscussionMutation,
   useStartLiveDiscussionMutation,
   useEndLiveDiscussionMutation,
   useCancelLiveDiscussionMutation,
+  useJoinLiveDiscussionMutation,
+  useLeaveLiveDiscussionMutation,
   useGetLiveDiscussionMessagesQuery,
   useSendLiveDiscussionMessageMutation,
   useDeleteLiveDiscussionMessageMutation,

@@ -199,7 +199,6 @@ export default function HomeScreen() {
     refetch: refetchDiscussions,
   } = useGetHomeFeedDiscussionsQuery(
   {
-    communityId: "YOUR_PUBLIC_JOINED_COMMUNITY_ID",
     limit: 8,
     cursor: discussionCursor,
     sortBy: "newest",

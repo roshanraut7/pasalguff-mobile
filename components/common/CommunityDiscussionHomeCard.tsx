@@ -1,3 +1,4 @@
+
 import React, { useMemo } from "react";
 import {
   Pressable,
@@ -65,6 +66,36 @@ function getStatusTone(
   return colors.accent;
 }
 
+function getLiveTone(
+  status: string | null | undefined,
+  colors: AppColors,
+) {
+  if (status === "LIVE") return colors.danger;
+  if (status === "SCHEDULED") return colors.warning;
+  if (status === "ENDED") return colors.success;
+  if (status === "CANCELLED") return colors.danger;
+
+  return colors.muted;
+}
+
+function getLiveLabel(status?: string | null) {
+  if (status === "LIVE") return "Live now";
+  if (status === "SCHEDULED") return "Scheduled live";
+  if (status === "ENDED") return "Live ended";
+  if (status === "CANCELLED") return "Live cancelled";
+
+  return "Live chat";
+}
+
+function getLiveIcon(status?: string | null) {
+  if (status === "LIVE") return "radio" as const;
+  if (status === "SCHEDULED") return "calendar-outline" as const;
+  if (status === "ENDED") return "checkmark-circle-outline" as const;
+  if (status === "CANCELLED") return "close-circle-outline" as const;
+
+  return "chatbubbles-outline" as const;
+}
+
 export default function CommunityDiscussionHomeCard({
   discussion,
 }: CommunityDiscussionHomeCardProps) {
@@ -72,8 +103,23 @@ export default function CommunityDiscussionHomeCard({
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const authorName = getAuthorName(discussion.author);
-  const authorImage = toAbsoluteFileUrl(discussion.author.image) ?? undefined;
+
+  const authorImage = discussion.author.image
+    ? toAbsoluteFileUrl(discussion.author.image) ?? undefined
+    : undefined;
+
   const statusColor = getStatusTone(discussion.status, colors);
+
+  const liveChat = discussion.liveChat ?? null;
+  const liveStatus = liveChat?.status ?? null;
+  const hasLiveChat = Boolean(liveChat);
+
+  const liveColor = getLiveTone(liveStatus, colors);
+  const liveLabel = getLiveLabel(liveStatus);
+  const liveIcon = getLiveIcon(liveStatus);
+
+  const isLiveNow = liveStatus === "LIVE";
+  const isScheduledLive = liveStatus === "SCHEDULED";
 
   const openDiscussion = () => {
     router.push({
@@ -86,8 +132,34 @@ export default function CommunityDiscussionHomeCard({
     });
   };
 
+  const openLiveChat = () => {
+    router.push({
+      pathname: "/discussions/[discussionId]/live",
+      params: {
+        discussionId: discussion.id,
+        communityId: discussion.communityId,
+        communityName: discussion.community.name,
+      },
+    });
+  };
+
+  const openPrimary = () => {
+    if (hasLiveChat) {
+      openLiveChat();
+      return;
+    }
+
+    openDiscussion();
+  };
+
+  const primaryButtonLabel = hasLiveChat
+    ? isLiveNow
+      ? "Join"
+      : "Open Live"
+    : "Open";
+
   return (
-    <Pressable onPress={openDiscussion}>
+    <Pressable onPress={openPrimary}>
       <Surface variant="default" style={styles.card}>
         <View style={styles.topRow}>
           <View style={styles.authorRow}>
@@ -110,15 +182,22 @@ export default function CommunityDiscussionHomeCard({
             </View>
           </View>
 
-          <View style={styles.discussionBadge}>
-            <Ionicons
-              name="chatbubbles-outline"
-              size={13}
-              color={colors.accent}
-            />
+          {isLiveNow ? (
+            <View style={styles.liveSmallBadge}>
+              <View style={styles.liveSmallDot} />
+              <Text style={styles.liveSmallText}>LIVE</Text>
+            </View>
+          ) : (
+            <View style={styles.discussionBadge}>
+              <Ionicons
+                name="chatbubbles-outline"
+                size={13}
+                color={colors.accent}
+              />
 
-            <Text style={styles.discussionBadgeText}>Discussion</Text>
-          </View>
+              <Text style={styles.discussionBadgeText}>Discussion</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.statusRow}>
@@ -164,13 +243,95 @@ export default function CommunityDiscussionHomeCard({
 
             <Text style={styles.visibilityText}>{discussion.visibility}</Text>
           </View>
+
+          {hasLiveChat ? (
+            <View
+              style={[
+                styles.liveStatusPill,
+                {
+                  borderColor: liveColor,
+                },
+              ]}
+            >
+              <Ionicons name={liveIcon} size={12} color={liveColor} />
+
+              <Text
+                style={[
+                  styles.liveStatusText,
+                  {
+                    color: liveColor,
+                  },
+                ]}
+              >
+                {liveLabel}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
-        <Text style={styles.title}>{discussion.title}</Text>
+        <Text numberOfLines={2} style={styles.title}>
+          {discussion.title}
+        </Text>
 
         <Text numberOfLines={3} style={styles.body}>
           {discussion.body}
         </Text>
+
+        {hasLiveChat ? (
+          <View
+            style={[
+              styles.liveBox,
+              {
+                borderColor: liveColor,
+                backgroundColor: colors.surfaceSecondary,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.liveIconWrap,
+                {
+                  backgroundColor: isLiveNow
+                    ? colors.danger
+                    : colors.surfaceTertiary,
+                },
+              ]}
+            >
+              <Ionicons
+                name={liveIcon}
+                size={19}
+                color={isLiveNow ? "#FFFFFF" : liveColor}
+              />
+            </View>
+
+            <View style={styles.liveContent}>
+              <Text
+                style={[
+                  styles.liveTitle,
+                  {
+                    color: liveColor,
+                  },
+                ]}
+              >
+                {isLiveNow
+                  ? "Live chat is running now"
+                  : isScheduledLive
+                    ? "Live chat is scheduled"
+                    : liveLabel}
+              </Text>
+
+              <Text numberOfLines={1} style={styles.liveSubtitle}>
+                {isLiveNow
+                  ? `${formatCount(liveChat?._count?.participants)} watching · ${formatCount(liveChat?._count?.messages)} messages`
+                  : isScheduledLive && liveChat?.scheduledAt
+                    ? `Starts ${dayjs(liveChat.scheduledAt).fromNow()}`
+                    : liveChat?.endedAt
+                      ? `Ended ${dayjs(liveChat.endedAt).fromNow()}`
+                      : "Open live chat details"}
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.metricsRow}>
           <View style={styles.metricItem}>
@@ -179,6 +340,7 @@ export default function CommunityDiscussionHomeCard({
               size={15}
               color={colors.muted}
             />
+
             <Text style={styles.metricText}>
               {formatCount(discussion.answerCount)} answers
             </Text>
@@ -186,6 +348,7 @@ export default function CommunityDiscussionHomeCard({
 
           <View style={styles.metricItem}>
             <Ionicons name="eye-outline" size={15} color={colors.muted} />
+
             <Text style={styles.metricText}>
               {formatCount(discussion.viewCount)} views
             </Text>
@@ -197,6 +360,7 @@ export default function CommunityDiscussionHomeCard({
               size={15}
               color={colors.muted}
             />
+
             <Text style={styles.metricText}>
               {formatCount(discussion.followerCount)} followers
             </Text>
@@ -205,17 +369,35 @@ export default function CommunityDiscussionHomeCard({
 
         <View style={styles.footerRow}>
           <Text style={styles.footerHint}>
-            Tap to join the discussion
+            {hasLiveChat
+              ? isLiveNow
+                ? "Tap Join to enter live chat"
+                : "Tap Open Live to view live page"
+              : "Tap Open to join the discussion"}
           </Text>
 
-          <View style={styles.openButton}>
-            <Text style={styles.openButtonText}>Open</Text>
+          <Pressable
+            onPress={(event) => {
+              event.stopPropagation();
+              openPrimary();
+            }}
+            style={[
+              styles.openButton,
+              {
+                backgroundColor: hasLiveChat && isLiveNow
+                  ? colors.danger
+                  : colors.accent,
+              },
+            ]}
+          >
+            <Text style={styles.openButtonText}>{primaryButtonLabel}</Text>
+
             <Ionicons
               name="arrow-forward"
               size={15}
               color={colors.accentForeground}
             />
-          </View>
+          </Pressable>
         </View>
       </Surface>
     </Pressable>
@@ -283,6 +465,29 @@ function createStyles(colors: AppColors) {
       fontFamily: "Poppins_700Bold",
     },
 
+    liveSmallBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: "#EF4444",
+    },
+
+    liveSmallDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 999,
+      backgroundColor: "#FFFFFF",
+    },
+
+    liveSmallText: {
+      color: "#FFFFFF",
+      fontSize: 11,
+      fontFamily: "Poppins_800ExtraBold",
+    },
+
     statusRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -330,6 +535,22 @@ function createStyles(colors: AppColors) {
       fontFamily: "Poppins_600SemiBold",
     },
 
+    liveStatusPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    liveStatusText: {
+      fontSize: 11,
+      fontFamily: "Poppins_700Bold",
+    },
+
     title: {
       color: colors.foreground,
       fontSize: 18,
@@ -341,6 +562,40 @@ function createStyles(colors: AppColors) {
       color: colors.foreground,
       fontSize: 14,
       lineHeight: 22,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    liveBox: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: 16,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+
+    liveIconWrap: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    liveContent: {
+      flex: 1,
+    },
+
+    liveTitle: {
+      fontSize: 13,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    liveSubtitle: {
+      marginTop: 2,
+      color: colors.muted,
+      fontSize: 11,
       fontFamily: "Poppins_400Regular",
     },
 
@@ -389,7 +644,6 @@ function createStyles(colors: AppColors) {
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderRadius: 999,
-      backgroundColor: colors.accent,
     },
 
     openButtonText: {
@@ -399,3 +653,4 @@ function createStyles(colors: AppColors) {
     },
   });
 }
+
