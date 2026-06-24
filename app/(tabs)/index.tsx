@@ -24,6 +24,7 @@ import CommunityPostCard from "@/components/post/CommunityPostCard";
 import DislikeReasonModal from "@/components/post/DislikeReasonModal";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
 import CommunityDiscussionHomeCard from "@/components/common/CommunityDiscussionHomeCard";
+import FollowCommunityModal from "@/components/common/FollowCommunityModal";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { usePostInteractions } from "@/hooks/media/usePostInteractions";
@@ -40,6 +41,22 @@ import type { CommunityPost, PostMedia } from "@/types/post";
 type HomeFeedTab = "FOR_YOU" | "COMMUNITY" | "DISCUSSION";
 
 type HomeListItem = CommunityPost | CommunityDiscussion;
+
+type PendingFollowAction = "COMMENT" | "POLL";
+
+type CommunityFollowState = CommunityPost & {
+  isCommunityFollowedByMe?: boolean;
+  isJoinedByMe?: boolean;
+  community?: {
+    id?: string;
+    name?: string | null;
+    slug?: string | null;
+    avatarImage?: string | null;
+    isCommunityFollowedByMe?: boolean;
+    isJoinedByMe?: boolean;
+    isMember?: boolean;
+  } | null;
+};
 
 type HomePostItemProps = {
   item: CommunityPost;
@@ -131,6 +148,12 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isFeedScrolling, setIsFeedScrolling] = useState(false);
 
+  const [followModalPost, setFollowModalPost] =
+    useState<CommunityPost | null>(null);
+
+  const [pendingFollowAction, setPendingFollowAction] =
+    useState<PendingFollowAction | null>(null);
+
   const isDiscussionTab = activeTab === "DISCUSSION";
 
   const postFeedType: "FOR_YOU" | "COMMUNITY" =
@@ -139,38 +162,39 @@ export default function HomeScreen() {
   const { viewer, openViewer, closeViewer } = usePostMediaViewer();
   const [votePostPoll] = useVotePostPollMutation();
 
-  const {
-    commentPost,
-    activeCommentPost,
-    comments,
-    commentInput,
-    setCommentInput,
+ const {
+  commentPost,
+  activeCommentPost,
+  comments,
+  commentInput,
+  setCommentInput,
 
-    isLoadingComments,
-    isFetchingComments,
-    isCreatingComment,
-    isCreatingReply,
+  isLoadingComments,
+  isFetchingComments,
+  isCreatingComment,
+  isCreatingReply,
 
-    dislikePostTarget,
-    dislikeReason,
-    setDislikeReason,
-    dislikeError,
-    isSubmittingDislike,
+  dislikePostTarget,
+  dislikeReason,
+  setDislikeReason,
+  dislikeError,
+  isSubmittingDislike,
 
-    openComments,
-    closeComments,
-    handleLikePost,
-    handleDislikePost,
-    handleSubmitDislike,
-    closeDislikeModal,
-    handleSharePost,
-    handleCreateComment,
-    refetchComments,
-  } = usePostInteractions({
-    posts,
-    setPosts,
-    sessionUser: session?.user,
-  });
+  openComments,
+  closeComments,
+  handleLikePost,
+  handleDislikePost,
+  handleSubmitDislike,
+  closeDislikeModal,
+  handleSharePost,
+  handleCreateComment,
+  handleCommentLike,
+  refetchComments,
+} = usePostInteractions({
+  posts,
+  setPosts,
+  sessionUser: session?.user,
+});
 
   const {
     data: feedResponse,
@@ -198,15 +222,15 @@ export default function HomeScreen() {
     error: discussionError,
     refetch: refetchDiscussions,
   } = useGetHomeFeedDiscussionsQuery(
-  {
-    limit: 8,
-    cursor: discussionCursor,
-    sortBy: "newest",
-  },
-  {
-    skip: !session?.user || !isDiscussionTab,
-    refetchOnMountOrArgChange: true,
-  },
+    {
+      limit: 8,
+      cursor: discussionCursor,
+      sortBy: "newest",
+    },
+    {
+      skip: !session?.user || !isDiscussionTab,
+      refetchOnMountOrArgChange: true,
+    },
   );
 
   useEffect(() => {
@@ -308,6 +332,78 @@ export default function HomeScreen() {
     };
   }, [clearShowOptionsTimer, optionsOpacity, optionsTranslateY]);
 
+  const isPostCommunityFollowed = useCallback(
+    (post: CommunityPost) => {
+      const normalizedPost = post as CommunityFollowState;
+
+      if (typeof normalizedPost.isCommunityFollowedByMe === "boolean") {
+        return normalizedPost.isCommunityFollowedByMe;
+      }
+
+      if (typeof normalizedPost.isJoinedByMe === "boolean") {
+        return normalizedPost.isJoinedByMe;
+      }
+
+      if (
+        typeof normalizedPost.community?.isCommunityFollowedByMe === "boolean"
+      ) {
+        return normalizedPost.community.isCommunityFollowedByMe;
+      }
+
+      if (typeof normalizedPost.community?.isJoinedByMe === "boolean") {
+        return normalizedPost.community.isJoinedByMe;
+      }
+
+      if (typeof normalizedPost.community?.isMember === "boolean") {
+        return normalizedPost.community.isMember;
+      }
+
+      /*
+       * Fallback:
+       * COMMUNITY tab normally contains joined community posts.
+       * FOR_YOU tab normally contains discovery posts from communities
+       * the user has not joined yet.
+       */
+      return activeTab === "COMMUNITY";
+    },
+    [activeTab],
+  );
+
+  const openFollowRequiredModal = useCallback(
+    (post: CommunityPost, action: PendingFollowAction) => {
+      setFollowModalPost(post);
+      setPendingFollowAction(action);
+    },
+    [],
+  );
+
+  const closeFollowRequiredModal = useCallback(() => {
+    setFollowModalPost(null);
+    setPendingFollowAction(null);
+  }, []);
+
+  const handleFollowCommunityFromModal = useCallback(() => {
+    if (!followModalPost) return;
+
+    const normalizedPost = followModalPost as CommunityFollowState;
+
+    /*
+     * This button sends the user to the community page, where they can follow.
+     * If your route is different, only change this router.push line.
+     */
+    const communityRouteId =
+      normalizedPost.community?.slug || followModalPost.communityId;
+
+    closeFollowRequiredModal();
+
+    router.push({
+  pathname: "/user/community/[slug]",
+  params: {
+    slug: communityRouteId,
+  },
+});
+  }, [followModalPost, closeFollowRequiredModal]);
+
   const handleChangeTab = useCallback(
     (tab: HomeFeedTab) => {
       if (tab === activeTab) return;
@@ -315,6 +411,7 @@ export default function HomeScreen() {
       closeComments();
       closeDislikeModal();
       closeViewer();
+      closeFollowRequiredModal();
       showOptions();
 
       setIsFeedScrolling(false);
@@ -340,6 +437,7 @@ export default function HomeScreen() {
       closeComments,
       closeDislikeModal,
       closeViewer,
+      closeFollowRequiredModal,
       showOptions,
     ],
   );
@@ -394,6 +492,30 @@ export default function HomeScreen() {
       }
     },
     [votePostPoll],
+  );
+
+  const handleProtectedOpenComments = useCallback(
+    (post: CommunityPost) => {
+      if (!isPostCommunityFollowed(post)) {
+        openFollowRequiredModal(post, "COMMENT");
+        return;
+      }
+
+      openComments(post);
+    },
+    [isPostCommunityFollowed, openFollowRequiredModal, openComments],
+  );
+
+  const handleProtectedVotePostPoll = useCallback(
+    async (post: CommunityPost, optionId: string) => {
+      if (!isPostCommunityFollowed(post)) {
+        openFollowRequiredModal(post, "POLL");
+        return;
+      }
+
+      await handleVotePostPoll(post, optionId);
+    },
+    [isPostCommunityFollowed, openFollowRequiredModal, handleVotePostPoll],
   );
 
   const handleRefresh = useCallback(async () => {
@@ -521,7 +643,8 @@ export default function HomeScreen() {
     viewer.visible ||
     isFeedScrolling ||
     Boolean(commentPost) ||
-    Boolean(dislikePostTarget);
+    Boolean(dislikePostTarget) ||
+    Boolean(followModalPost);
 
   const renderPostItem = useCallback(
     ({ item }: { item: CommunityPost }) => (
@@ -534,18 +657,18 @@ export default function HomeScreen() {
         onPressShare={handleSharePost}
         onPressAuthor={handleAuthorPress}
         onPressMedia={openViewer}
-        onPressPollOption={handleVotePostPoll}
+        onPressPollOption={handleProtectedVotePostPoll}
       />
     ),
     [
       disableMediaPlayback,
       handleLikePost,
       handleDislikePost,
-      openComments,
+      handleProtectedOpenComments,
       handleSharePost,
       handleAuthorPress,
       openViewer,
-      handleVotePostPoll,
+      handleProtectedVotePostPoll,
     ],
   );
 
@@ -756,6 +879,9 @@ export default function HomeScreen() {
     colors.muted,
   ]);
 
+  const followModalCommunityName = (followModalPost as CommunityFollowState | null)
+    ?.community?.name;
+
   if (isPending) {
     return (
       <SafeAreaView className="flex-1 bg-background" edges={[]}>
@@ -819,27 +945,35 @@ export default function HomeScreen() {
         />
       </SafeAreaView>
 
-      <CommentPostModal
-        visible={!!commentPost}
-        post={activeCommentPost}
-        comments={comments}
-        isLoading={
-          (isLoadingComments || isFetchingComments) &&
-          comments.length === 0
-        }
-        isCreating={isCreatingComment || isCreatingReply}
-        inputValue={commentInput}
-        onChangeInput={setCommentInput}
-        onClose={closeComments}
-        onSubmit={handleCreateComment}
-        onPressMedia={openViewer}
-        onPressPostLike={handleLikePost}
-        onPressPostShare={handleSharePost}
-        onRefreshComments={() => {
-          void refetchComments();
-        }}
-        colors={colors}
-      />
+<CommentPostModal
+  visible={!!commentPost}
+  post={activeCommentPost}
+  comments={comments}
+  isLoading={
+    (isLoadingComments || isFetchingComments) &&
+    comments.length === 0
+  }
+  isCreating={isCreatingComment || isCreatingReply}
+  inputValue={commentInput}
+  onChangeInput={setCommentInput}
+  onClose={closeComments}
+  onSubmit={handleCreateComment}
+  onPressMedia={openViewer}
+  onPressPostLike={handleLikePost}
+  onPressPostShare={handleSharePost}
+  onPressCommentLike={handleCommentLike}
+  onRefreshComments={() => {
+    void refetchComments();
+  }}
+  canWriteComment={
+    activeCommentPost ? isPostCommunityFollowed(activeCommentPost) : false
+  }
+  onRequestFollow={() => {
+    if (!activeCommentPost) return;
+    openFollowRequiredModal(activeCommentPost, "COMMENT");
+  }}
+  colors={colors}
+/>
 
       <PostMediaViewer
         visible={viewer.visible}
@@ -858,6 +992,13 @@ export default function HomeScreen() {
         onSubmit={() => {
           void handleSubmitDislike();
         }}
+      />
+
+      <FollowCommunityModal
+        visible={!!followModalPost}
+        communityName={followModalCommunityName}
+        onClose={closeFollowRequiredModal}
+        onFollow={handleFollowCommunityFromModal}
       />
     </>
   );

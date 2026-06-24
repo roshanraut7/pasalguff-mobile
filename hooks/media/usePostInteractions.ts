@@ -14,9 +14,11 @@ import {
   useCreatePostCommentMutation,
   useDislikePostMutation,
   useGetPostCommentsQuery,
+  useLikeCommentMutation,
   useLikePostMutation,
   useRemoveDislikePostMutation,
   useSharePostMutation,
+  useUnlikeCommentMutation,
   useUnlikePostMutation,
 } from "@/store/api/postApi";
 
@@ -54,12 +56,80 @@ type ReactionResponse = {
   approvalRate: number | null;
 };
 
+type CommentReactionResponse = {
+  message?: string;
+  commentId: string;
+  likeCount: number;
+  liked: boolean;
+};
+
 function updatePostInList<TPost extends CommunityPost>(
   posts: TPost[],
   postId: string,
   updater: (post: TPost) => TPost,
 ) {
   return posts.map((post) => (post.id === postId ? updater(post) : post));
+}
+
+function updateCommentInTree(
+  comments: FeedComment[],
+  commentId: string,
+  updater: (comment: FeedComment) => FeedComment,
+): FeedComment[] {
+  return comments.map((comment) => {
+    if (comment.id === commentId) {
+      return updater(comment);
+    }
+
+    if (comment.replies?.length) {
+      return {
+        ...comment,
+        replies: updateCommentInTree(comment.replies, commentId, updater),
+      };
+    }
+
+    return comment;
+  });
+}
+
+function getCommentLiked(comment: FeedComment) {
+  const normalizedComment = comment as FeedComment & {
+    liked?: boolean;
+    isLiked?: boolean;
+    isLikedByMe?: boolean;
+  };
+
+  return Boolean(
+    normalizedComment.liked ||
+      normalizedComment.isLiked ||
+      normalizedComment.isLikedByMe,
+  );
+}
+
+function getCommentLikeCount(comment: FeedComment) {
+  const normalizedComment = comment as FeedComment & {
+    likeCount?: number | null;
+  };
+
+  const count = Number(normalizedComment.likeCount ?? 0);
+
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+function applyCommentReactionToComment(
+  comment: FeedComment,
+  reaction: {
+    liked: boolean;
+    likeCount: number;
+  },
+): FeedComment {
+  return {
+    ...(comment as any),
+    liked: reaction.liked,
+    isLiked: reaction.liked,
+    isLikedByMe: reaction.liked,
+    likeCount: reaction.likeCount,
+  } as FeedComment;
 }
 
 export function usePostInteractions<TPost extends CommunityPost>({
@@ -88,6 +158,7 @@ export function usePostInteractions<TPost extends CommunityPost>({
   const [isSubmittingDislike, setIsSubmittingDislike] = useState(false);
 
   const likingPostIdsRef = useRef<Set<string>>(new Set());
+  const likingCommentIdsRef = useRef<Set<string>>(new Set());
   const dislikingPostIdsRef = useRef<Set<string>>(new Set());
 
   const activeCommentPost = useMemo(() => {
@@ -115,6 +186,10 @@ export function usePostInteractions<TPost extends CommunityPost>({
 
   const [likePost] = useLikePostMutation();
   const [unlikePost] = useUnlikePostMutation();
+
+  const [likeComment] = useLikeCommentMutation();
+  const [unlikeComment] = useUnlikeCommentMutation();
+
   const [dislikePost] = useDislikePostMutation();
   const [removeDislikePost] = useRemoveDislikePostMutation();
   const [sharePost] = useSharePostMutation();
@@ -196,11 +271,6 @@ export function usePostInteractions<TPost extends CommunityPost>({
     setComments([]);
   }, []);
 
-  /**
-   * Like remains available inside your existing comment preview.
-   * If a previously disliked post is liked from the feed, the backend removes
-   * its dislike and the main feed state is updated from the server response.
-   */
   const handleLikePost = useCallback(
     async (post: TPost) => {
       if (likingPostIdsRef.current.has(post.id)) return;
@@ -220,10 +290,6 @@ export function usePostInteractions<TPost extends CommunityPost>({
       const previousDislikeReason = post.myDislikeReason ?? null;
       const previousApprovalRate = post.approvalRate ?? null;
 
-      /**
-       * Optimistic update for the main feed card.
-       * Pressing Like also clears an existing Dislike in the UI.
-       */
       setPosts((prev) =>
         updatePostInList(prev, post.id, (item) => ({
           ...item,
@@ -241,10 +307,6 @@ export function usePostInteractions<TPost extends CommunityPost>({
         })),
       );
 
-      /**
-       * Keep the existing Like count working in the comments post preview.
-       * Do not add or display Dislike controls/reasons there for now.
-       */
       updateCommentPost(post.id, (item) => ({
         ...item,
         isLikedByMe: !wasLiked,
@@ -313,6 +375,72 @@ export function usePostInteractions<TPost extends CommunityPost>({
     ],
   );
 
+  const handleCommentLike = useCallback(
+    async (comment: FeedComment) => {
+      if (!activeCommentPost) return;
+      if (likingCommentIdsRef.current.has(comment.id)) return;
+
+      likingCommentIdsRef.current.add(comment.id);
+
+      const wasLiked = getCommentLiked(comment);
+      const previousLikeCount = getCommentLikeCount(comment);
+
+      const optimisticLiked = !wasLiked;
+      const optimisticLikeCount = optimisticLiked
+        ? previousLikeCount + 1
+        : Math.max(0, previousLikeCount - 1);
+
+      setComments((prev) =>
+        updateCommentInTree(prev, comment.id, (item) =>
+          applyCommentReactionToComment(item, {
+            liked: optimisticLiked,
+            likeCount: optimisticLikeCount,
+          }),
+        ),
+      );
+
+      try {
+        const result: CommentReactionResponse = wasLiked
+          ? await unlikeComment({
+              communityId: activeCommentPost.communityId,
+              postId: activeCommentPost.id,
+              commentId: comment.id,
+            }).unwrap()
+          : await likeComment({
+              communityId: activeCommentPost.communityId,
+              postId: activeCommentPost.id,
+              commentId: comment.id,
+            }).unwrap();
+
+        setComments((prev) =>
+          updateCommentInTree(prev, comment.id, (item) =>
+            applyCommentReactionToComment(item, {
+              liked: result.liked,
+              likeCount:
+                typeof result.likeCount === "number"
+                  ? result.likeCount
+                  : optimisticLikeCount,
+            }),
+          ),
+        );
+      } catch (error) {
+        console.log("Comment like/unlike failed:", error);
+
+        setComments((prev) =>
+          updateCommentInTree(prev, comment.id, (item) =>
+            applyCommentReactionToComment(item, {
+              liked: wasLiked,
+              likeCount: previousLikeCount,
+            }),
+          ),
+        );
+      } finally {
+        likingCommentIdsRef.current.delete(comment.id);
+      }
+    },
+    [activeCommentPost, likeComment, unlikeComment],
+  );
+
   const closeDislikeModal = useCallback(() => {
     if (isSubmittingDislike) return;
 
@@ -321,12 +449,6 @@ export function usePostInteractions<TPost extends CommunityPost>({
     setDislikeError(null);
   }, [isSubmittingDislike]);
 
-  /**
-   * First press on Dislike opens the free-text reason modal.
-   * Second press on an already disliked post removes the dislike directly.
-   *
-   * This intentionally updates the main feed only, not CommentPostModal.
-   */
   const handleDislikePost = useCallback(
     async (post: TPost) => {
       if (dislikingPostIdsRef.current.has(post.id)) return;
@@ -356,10 +478,6 @@ export function usePostInteractions<TPost extends CommunityPost>({
     [applyFeedReactionResponse, removeDislikePost],
   );
 
-  /**
-   * Submit a written dislike reason.
-   * No options/category list is used.
-   */
   const handleSubmitDislike = useCallback(async () => {
     if (!dislikePostTarget || isSubmittingDislike) return;
 
@@ -483,7 +601,11 @@ export function usePostInteractions<TPost extends CommunityPost>({
           author: currentAuthor,
           replies: [],
           replyCount: 0,
-        };
+          likeCount: 0,
+          liked: false,
+          isLiked: false,
+          isLikedByMe: false,
+        } as FeedComment;
 
         setComments((prev) => addReplyToComment(prev, rootCommentId, tempReply));
         updatePostCommentCount(activeCommentPost.id, 1);
@@ -542,7 +664,11 @@ export function usePostInteractions<TPost extends CommunityPost>({
         author: currentAuthor,
         replies: [],
         replyCount: 0,
-      };
+        likeCount: 0,
+        liked: false,
+        isLiked: false,
+        isLikedByMe: false,
+      } as FeedComment;
 
       setComments((prev) => mergeCommentTrees([tempComment], prev));
       updatePostCommentCount(activeCommentPost.id, 1);
@@ -608,6 +734,7 @@ export function usePostInteractions<TPost extends CommunityPost>({
     openComments,
     closeComments,
     handleLikePost,
+    handleCommentLike,
     handleDislikePost,
     handleSubmitDislike,
     closeDislikeModal,

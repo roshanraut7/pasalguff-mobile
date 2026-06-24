@@ -23,8 +23,12 @@ import {
   chatApi,
   type Chat,
   type ChatMessage,
+  type ChatSuggestionItem,
+  useCreateDirectChatMutation,
   useGetMyChatsQuery,
+  useLazySearchChatSuggestionsQuery,
 } from "@/store/api/chatApi";
+import ChatSuggestionModal from "@/components/ChatSuggestionModal";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 
 const RAW_API_BASE_URL =
@@ -91,18 +95,39 @@ export default function MessagesScreen() {
   const [search, setSearch] = useState("");
   const [presenceTick, setPresenceTick] = useState(0);
 
+  const [suggestionModalVisible, setSuggestionModalVisible] = useState(false);
+  const [suggestionSearch, setSuggestionSearch] = useState("");
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [creatingChatUserId, setCreatingChatUserId] = useState<string | null>(
+    null,
+  );
+
   const [localChats, setLocalChats] = useState<Chat[]>([]);
   const [localUnread, setLocalUnread] = useState<UnreadMap>({});
- const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
 
- const {
-  data: chats = [],
-  isLoading,
-  isError,
-  refetch,
-} = useGetMyChatsQuery();
+  const {
+    data: chats = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useGetMyChatsQuery();
+
+  const [
+    searchChatSuggestions,
+    {
+      data: suggestionsResponse,
+      isFetching: isFetchingSuggestions,
+    },
+  ] = useLazySearchChatSuggestionsQuery();
+
+  const [createDirectChat, { isLoading: isCreatingDirectChat }] =
+    useCreateDirectChatMutation();
+
+  const chatSuggestions = suggestionsResponse?.data ?? [];
 
   useEffect(() => {
     setLocalChats(sortChatsByUpdatedAt(chats));
@@ -117,6 +142,23 @@ export default function MessagesScreen() {
       clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (!suggestionModalVisible) return;
+
+    const timer = setTimeout(() => {
+      setSuggestionError(null);
+
+      void searchChatSuggestions({
+        search: suggestionSearch.trim(),
+        limit: 20,
+      });
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [suggestionModalVisible, suggestionSearch, searchChatSuggestions]);
 
   const clearUnreadForChat = useCallback((chatId: string) => {
     setLocalUnread((prev) => {
@@ -291,14 +333,15 @@ export default function MessagesScreen() {
       );
     });
   }, [search, chatRows]);
+
   const handlePullRefresh = useCallback(async () => {
-  try {
-    setIsPullRefreshing(true);
-    await refetch();
-  } finally {
-    setIsPullRefreshing(false);
-  }
-}, [refetch]);
+    try {
+      setIsPullRefreshing(true);
+      await refetch();
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [refetch]);
 
   const handleOpenChat = useCallback(
     (chatId: string) => {
@@ -306,6 +349,73 @@ export default function MessagesScreen() {
       router.push(`/messages/${chatId}`);
     },
     [clearUnreadForChat],
+  );
+
+  const handleOpenSuggestionModal = useCallback(() => {
+    setSuggestionSearch("");
+    setSuggestionError(null);
+    setCreatingChatUserId(null);
+    setSuggestionModalVisible(true);
+
+    void searchChatSuggestions({
+      search: "",
+      limit: 20,
+    });
+  }, [searchChatSuggestions]);
+
+  const handleCloseSuggestionModal = useCallback(() => {
+    setSuggestionModalVisible(false);
+    setSuggestionSearch("");
+    setSuggestionError(null);
+    setCreatingChatUserId(null);
+  }, []);
+
+  const handlePressSuggestionUser = useCallback(
+    async (item: ChatSuggestionItem) => {
+      try {
+        setSuggestionError(null);
+        setCreatingChatUserId(item.user.id);
+
+        if (item.existingChatId) {
+          handleCloseSuggestionModal();
+          clearUnreadForChat(item.existingChatId);
+          router.push(`/messages/${item.existingChatId}`);
+          return;
+        }
+
+        if (!item.relationship?.canMessage) {
+          setSuggestionError(
+            "You can only start a chat when both users follow each other.",
+          );
+          return;
+        }
+
+        const createdChat = await createDirectChat({
+          targetUserId: item.user.id,
+          body: {},
+        }).unwrap();
+
+        handleCloseSuggestionModal();
+
+        await refetch();
+
+        router.push(`/messages/${createdChat.id}`);
+      } catch (error: any) {
+        console.log("Create direct chat failed:", error);
+
+        setSuggestionError(
+          error?.data?.message ?? "Could not start chat. Please try again.",
+        );
+      } finally {
+        setCreatingChatUserId(null);
+      }
+    },
+    [
+      clearUnreadForChat,
+      createDirectChat,
+      handleCloseSuggestionModal,
+      refetch,
+    ],
   );
 
   return (
@@ -318,7 +428,10 @@ export default function MessagesScreen() {
 
           <Text style={styles.title}>Messages</Text>
 
-          <Pressable style={styles.newChatButton}>
+          <Pressable
+            style={styles.newChatButton}
+            onPress={handleOpenSuggestionModal}
+          >
             <Ionicons
               name="create-outline"
               size={20}
@@ -357,14 +470,17 @@ export default function MessagesScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
             refreshControl={
-              <RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} />
+              <RefreshControl
+                refreshing={isPullRefreshing}
+                onRefresh={handlePullRefresh}
+              />
             }
           >
             {filteredChats.length === 0 ? (
               <View style={styles.centerWrap}>
                 <Text style={styles.emptyTitle}>No messages yet</Text>
                 <Text style={styles.emptyText}>
-                  Open a community member profile and press Message.
+                  Tap the create icon to start a new message.
                 </Text>
               </View>
             ) : (
@@ -383,6 +499,19 @@ export default function MessagesScreen() {
           </ScrollView>
         )}
       </View>
+
+      <ChatSuggestionModal
+        visible={suggestionModalVisible}
+        searchValue={suggestionSearch}
+        suggestions={chatSuggestions}
+        isLoading={isFetchingSuggestions}
+        isCreatingChat={isCreatingDirectChat}
+        loadingUserId={creatingChatUserId}
+        errorText={suggestionError}
+        onChangeSearch={setSuggestionSearch}
+        onClose={handleCloseSuggestionModal}
+        onPressUser={handlePressSuggestionUser}
+      />
     </SafeAreaView>
   );
 }

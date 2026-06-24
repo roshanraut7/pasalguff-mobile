@@ -15,11 +15,13 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+
 import type { FeedComment } from "@/utils/post/comment";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import type { CommunityPost, PostMedia } from "@/types/post";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
+
 type Colors = ReturnType<typeof useAppTheme>["colors"];
 
 type CommentPostModalProps = {
@@ -36,12 +38,14 @@ type CommentPostModalProps = {
   onPressPostLike?: (post: CommunityPost) => void;
   onPressPostShare?: (post: CommunityPost) => void;
   onRefreshComments?: () => void;
+  onPressCommentLike?: (comment: FeedComment) => void;
+  canWriteComment?: boolean;
+  onRequestFollow?: () => void;
   colors: Colors;
 };
 
 const MIN_INPUT_HEIGHT = 42;
 const MAX_INPUT_HEIGHT = 126;
-
 
 function getCommentAuthorName(comment: FeedComment) {
   const author = comment.author;
@@ -94,8 +98,15 @@ function formatCount(value?: number | null) {
 
   if (count <= 0) return "";
   if (count < 1000) return `${count}`;
-  if (count < 1_000_000) return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
+  if (count < 1_000_000) {
+    return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
+  }
+
   return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
+}
+
+function isCommentLiked(comment: FeedComment) {
+  return Boolean((comment as any).liked || (comment as any).isLiked);
 }
 
 const CommentAvatar = memo(function CommentAvatar({
@@ -111,7 +122,7 @@ const CommentAvatar = memo(function CommentAvatar({
   const imageUrl = getAuthorImage(comment);
 
   return (
-    <View style={[styles.avatar, { width: size, height: size }]}> 
+    <View style={[styles.avatar, { width: size, height: size }]}>
       {imageUrl ? (
         <Image
           source={{ uri: imageUrl }}
@@ -128,17 +139,18 @@ const CommentAvatar = memo(function CommentAvatar({
 
 const ReplyItem = memo(function ReplyItem({
   item,
-  parent,
   styles,
   onReply,
+  onPressLike,
 }: {
   item: FeedComment;
-  parent: FeedComment;
   styles: ReturnType<typeof createStyles>;
   onReply: (comment: FeedComment) => void;
+  onPressLike?: (comment: FeedComment) => void;
 }) {
   const replyAuthorName = getCommentAuthorName(item);
-  const likeLabel = formatCount(item.likeCount);
+  const likeLabel = formatCount((item as any).likeCount);
+  const liked = isCommentLiked(item);
 
   return (
     <View style={styles.replyRow}>
@@ -151,15 +163,28 @@ const ReplyItem = memo(function ReplyItem({
         </View>
 
         <View style={styles.replyActions}>
-          <Text style={styles.replyActionText}>Like</Text>
+          <Pressable hitSlop={8} onPress={() => onPressLike?.(item)}>
+            <Text
+              style={[
+                styles.replyActionText,
+                liked && styles.likedActionText,
+              ]}
+            >
+              {liked ? "Liked" : "Like"}
+            </Text>
+          </Pressable>
 
           <Pressable hitSlop={8} onPress={() => onReply(item)}>
             <Text style={styles.replyActionText}>Reply</Text>
           </Pressable>
 
-          <Text style={styles.replyTime}>{formatCommentTime(item.createdAt)}</Text>
+          <Text style={styles.replyTime}>
+            {formatCommentTime(item.createdAt)}
+          </Text>
 
-          {likeLabel ? <Text style={styles.replyReactionCount}>{likeLabel} ♥</Text> : null}
+          {likeLabel ? (
+            <Text style={styles.replyReactionCount}>{likeLabel} ♥</Text>
+          ) : null}
         </View>
       </View>
     </View>
@@ -170,20 +195,23 @@ const CommentItem = memo(function CommentItem({
   item,
   styles,
   onReply,
+  onPressLike,
   isRepliesExpanded,
   onViewReplies,
 }: {
   item: FeedComment;
   styles: ReturnType<typeof createStyles>;
   onReply: (comment: FeedComment) => void;
+  onPressLike?: (comment: FeedComment) => void;
   isRepliesExpanded: boolean;
   onViewReplies: (comment: FeedComment) => void;
 }) {
   const authorName = getCommentAuthorName(item);
   const replies = item.replies ?? [];
-  const totalReplyCount = Math.max(item.replyCount ?? 0, replies.length);
+  const totalReplyCount = Math.max((item as any).replyCount ?? 0, replies.length);
   const visibleReplies = isRepliesExpanded ? replies : [];
-  const likeLabel = formatCount(item.likeCount);
+  const likeLabel = formatCount((item as any).likeCount);
+  const liked = isCommentLiked(item);
 
   return (
     <View style={styles.commentBlock}>
@@ -197,7 +225,16 @@ const CommentItem = memo(function CommentItem({
           </View>
 
           <View style={styles.commentActions}>
-            <Text style={styles.commentActionText}>Like</Text>
+            <Pressable hitSlop={8} onPress={() => onPressLike?.(item)}>
+              <Text
+                style={[
+                  styles.commentActionText,
+                  liked && styles.likedActionText,
+                ]}
+              >
+                {liked ? "Liked" : "Like"}
+              </Text>
+            </Pressable>
 
             <Pressable hitSlop={8} onPress={() => onReply(item)}>
               <Text style={styles.commentActionText}>Reply</Text>
@@ -237,9 +274,9 @@ const CommentItem = memo(function CommentItem({
             <ReplyItem
               key={reply.id}
               item={reply}
-              parent={item}
               styles={styles}
               onReply={onReply}
+              onPressLike={onPressLike}
             />
           ))}
 
@@ -257,6 +294,7 @@ const CommentItem = memo(function CommentItem({
     </View>
   );
 });
+
 function CommentPostModal({
   visible,
   post,
@@ -271,6 +309,9 @@ function CommentPostModal({
   onPressPostLike,
   onPressPostShare,
   onRefreshComments,
+  onPressCommentLike,
+  canWriteComment = true,
+  onRequestFollow,
   colors,
 }: CommentPostModalProps) {
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -293,11 +334,14 @@ function CommentPostModal({
       setIsInputFocused(false);
       setTextInputHeight(MIN_INPUT_HEIGHT);
       setExpandedReplyIds(new Set());
+      setReplyingTo(null);
       return;
     }
 
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
     const showSub = Keyboard.addListener(showEvent, (event) => {
       setKeyboardHeight(event.endCoordinates?.height ?? 0);
@@ -345,6 +389,11 @@ function CommentPostModal({
       : 0;
 
   const handleReply = (comment: FeedComment) => {
+    if (!canWriteComment) {
+      onRequestFollow?.();
+      return;
+    }
+
     setReplyingTo(comment);
 
     requestAnimationFrame(() => {
@@ -365,11 +414,15 @@ function CommentPostModal({
       return next;
     });
 
-    // Useful when the parent has replyCount but the API did not include replies yet.
     onRefreshComments?.();
   };
 
   const handleSubmitPress = () => {
+    if (!canWriteComment) {
+      onRequestFollow?.();
+      return;
+    }
+
     if (!inputValue.trim() || isCreating) return;
 
     const selectedReply = replyingTo;
@@ -388,6 +441,13 @@ function CommentPostModal({
   };
 
   const handleInputFocus = () => {
+    if (!canWriteComment) {
+      inputRef.current?.blur();
+      Keyboard.dismiss();
+      onRequestFollow?.();
+      return;
+    }
+
     setIsInputFocused(true);
 
     setTimeout(() => {
@@ -409,6 +469,15 @@ function CommentPostModal({
     );
 
     setTextInputHeight(nextHeight);
+  };
+
+  const handlePostCardCommentPress = () => {
+    if (!canWriteComment) {
+      onRequestFollow?.();
+      return;
+    }
+
+    inputRef.current?.focus();
   };
 
   const handleClose = () => {
@@ -452,20 +521,26 @@ function CommentPostModal({
 
             <View style={styles.header}>
               <Pressable onPress={handleClose} style={styles.headerIconButton}>
-                <Ionicons name="chevron-down" size={24} color="#050505" />
+                <Ionicons
+                  name="chevron-down"
+                  size={24}
+                  color={colors.foreground}
+                />
               </Pressable>
 
               <View style={styles.headerCenter}>
                 <Text style={styles.headerTitle}>Post</Text>
                 <Text style={styles.headerSubtitle}>
                   {totalComments > 0
-                    ? `${totalComments} ${totalComments === 1 ? "comment" : "comments"}`
+                    ? `${totalComments} ${
+                        totalComments === 1 ? "comment" : "comments"
+                      }`
                     : "Be the first to comment"}
                 </Text>
               </View>
 
               <Pressable onPress={handleClose} style={styles.closeButton}>
-                <Ionicons name="close" size={22} color="#050505" />
+                <Ionicons name="close" size={22} color={colors.foreground} />
               </Pressable>
             </View>
 
@@ -474,7 +549,9 @@ function CommentPostModal({
               data={isLoading ? [] : comments}
               keyExtractor={(item) => item.id}
               keyboardShouldPersistTaps="always"
-              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
+              keyboardDismissMode={
+                Platform.OS === "ios" ? "interactive" : "none"
+              }
               showsVerticalScrollIndicator={false}
               style={styles.list}
               contentContainerStyle={[
@@ -490,7 +567,7 @@ function CommentPostModal({
                       post={post}
                       disableMediaPlayback={false}
                       onPressLike={onPressPostLike}
-                      onPressComment={() => inputRef.current?.focus()}
+                      onPressComment={handlePostCardCommentPress}
                       onPressShare={onPressPostShare}
                       onPressMedia={onPressMedia}
                     />
@@ -511,12 +588,14 @@ function CommentPostModal({
                     <Ionicons
                       name="chatbubble-ellipses-outline"
                       size={34}
-                      color="#8A8D91"
+                      color={colors.muted}
                     />
 
                     <Text style={styles.emptyTitle}>No comments yet</Text>
 
-                    <Text style={styles.emptyText}>Be the first to write a comment.</Text>
+                    <Text style={styles.emptyText}>
+                      Be the first to write a comment.
+                    </Text>
                   </View>
                 )
               }
@@ -525,6 +604,7 @@ function CommentPostModal({
                   item={item}
                   styles={styles}
                   onReply={handleReply}
+                  onPressLike={onPressCommentLike}
                   isRepliesExpanded={expandedReplyIds.has(item.id)}
                   onViewReplies={handleViewReplies}
                 />
@@ -544,7 +624,7 @@ function CommentPostModal({
                   </Text>
 
                   <Pressable hitSlop={8} onPress={() => setReplyingTo(null)}>
-                    <Ionicons name="close" size={16} color="#65676B" />
+                    <Ionicons name="close" size={16} color={colors.muted} />
                   </Pressable>
                 </View>
               ) : null}
@@ -566,11 +646,13 @@ function CommentPostModal({
                     onBlur={handleInputBlur}
                     onContentSizeChange={handleInputContentSizeChange}
                     placeholder={
-                      replyingTo
-                        ? `Reply to ${getCommentAuthorName(replyingTo)}...`
-                        : "Write a comment..."
+                      !canWriteComment
+                        ? "Follow community to comment..."
+                        : replyingTo
+                          ? `Reply to ${getCommentAuthorName(replyingTo)}...`
+                          : "Write a comment..."
                     }
-                    placeholderTextColor="#65676B"
+                    placeholderTextColor={colors.muted}
                     editable={!isCreating}
                     multiline
                     scrollEnabled={textInputHeight >= MAX_INPUT_HEIGHT - 2}
@@ -600,7 +682,7 @@ function CommentPostModal({
                     <Ionicons
                       name="send"
                       size={19}
-                      color={inputValue.trim() ? "#FFFFFF" : "#BCC0C4"}
+                      color={inputValue.trim() ? "#FFFFFF" : colors.muted}
                     />
                   )}
                 </Pressable>
@@ -824,6 +906,10 @@ function createStyles(colors: Colors) {
       color: colors.muted,
       fontSize: 12,
       fontFamily: "Poppins_700Bold",
+    },
+
+    likedActionText: {
+      color: colors.accent,
     },
 
     commentTime: {

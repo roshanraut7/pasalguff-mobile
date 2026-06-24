@@ -1254,11 +1254,7 @@ const handleStartDiscussion = useCallback(() => {
      Derived
   ────────────────────────────────────────────────────────────── */
 
-  const titleRequired =
-    postTab === "poll" ||
-    ["ANNOUNCEMENT", "QUESTION", "OFFER", "EVENT", "NEWS"].includes(
-      selectedTag,
-    );
+const titleRequired = false;     
 
   const sharedTabProps = {
     p,

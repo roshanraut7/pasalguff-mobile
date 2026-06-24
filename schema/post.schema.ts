@@ -68,6 +68,7 @@ const visibilitySchema = z.enum(POST_VISIBILITIES);
 export const draftPostSchema = z.object({
   communityId: z.string().min(1, "Please choose a community"),
 
+  // Title is optional for all posts
   title: z.string().trim().optional().default(""),
 
   tag: z.enum(POST_TAGS).default("GENERAL"),
@@ -91,24 +92,15 @@ export const publishPostSchema = draftPostSchema.superRefine((value, ctx) => {
     mediaCount: value.media.length,
   });
 
-  const hasTitle = value.title.trim().length > 0;
   const hasText = value.plainText.trim().length > 0;
   const hasLink = value.linkUrl.trim().length > 0;
   const hasMedia = value.media.length > 0;
   const hasPoll = Boolean(value.poll);
 
-  if (!hasTitle) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["title"],
-      message: "Title is required",
-    });
-  }
-
-  /**
-   * Important:
-   * Poll-only post should be allowed.
-   * So we check text/link/media/poll together.
+  /*
+   * Title is NOT required.
+   * User only needs at least one real post content:
+   * text, media, link, or poll.
    */
   if (!hasText && !hasLink && !hasMedia && !hasPoll) {
     ctx.addIssue({
@@ -131,6 +123,22 @@ export const publishPostSchema = draftPostSchema.superRefine((value, ctx) => {
       code: "custom",
       path: ["media"],
       message: "Add at least one image or video before publishing",
+    });
+  }
+
+  if (hasLink && hasMedia) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["linkUrl"],
+      message: "A post cannot contain both uploaded media and an embedded link",
+    });
+  }
+
+  if (hasPoll && (hasMedia || hasLink)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["poll"],
+      message: "A poll post cannot also contain media or an embedded link",
     });
   }
 

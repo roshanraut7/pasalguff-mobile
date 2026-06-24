@@ -32,6 +32,18 @@ import type {
   DislikePostArgs,
   PostReactionResponse
 } from "@/types/post";
+type CommentReactionArgs = {
+  communityId: string;
+  postId: string;
+  commentId: string;
+};
+
+type CommentReactionResponse = {
+  message: string;
+  commentId: string;
+  likeCount: number;
+  liked: boolean;
+};
 
 /* =========================================================
    POST API
@@ -102,12 +114,13 @@ export const postApi = baseApi.injectEndpoints({
         body,
       }),
 
-      invalidatesTags: (_result, _error, arg) => [
-        { type: "Post" as const, id: "LIST" },
-        {type:"Post" as const,id:"HOME-FEED"},
-        { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
-        { type: "AdminPosts" as const, id: "LIST" },
-      ],
+     invalidatesTags: (_result, _error, arg) => [
+  { type: "Post" as const, id: "LIST" },
+  { type: "Post" as const, id: "MY_POSTS" },
+  { type: "Post" as const, id: "HOME-FEED" },
+  { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
+  { type: "AdminPosts" as const, id: "LIST" },
+],
     }),
 
     createDraftPost: builder.mutation<CommunityPost, CreateCommunityPostArgs>({
@@ -184,14 +197,15 @@ export const postApi = baseApi.injectEndpoints({
       }),
 
       invalidatesTags: (_result, _error, arg) => [
-        { type: "Post" as const, id: arg.postId },
-        { type: "Post" as const, id: "LIST" },
-        { type: "Post" as const, id: "HOME-FEED" },
-        { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
-        { type: "DraftPost" as const, id: "LIST" },
-        { type: "AdminPosts" as const, id: arg.postId },
-        { type: "AdminPosts" as const, id: "LIST" },
-      ],
+  { type: "Post" as const, id: arg.postId },
+  { type: "Post" as const, id: "LIST" },
+  { type: "Post" as const, id: "MY_POSTS" },
+  { type: "Post" as const, id: "HOME-FEED" },
+  { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
+  { type: "DraftPost" as const, id: "LIST" },
+  { type: "AdminPosts" as const, id: arg.postId },
+  { type: "AdminPosts" as const, id: "LIST" },
+],
     }),
 
     publishDraft: builder.mutation<CommunityPost, PostActionArgs>({
@@ -200,13 +214,16 @@ export const postApi = baseApi.injectEndpoints({
         method: "PATCH",
       }),
 
-      invalidatesTags: (_result, _error, arg) => [
-        { type: "Post" as const, id: arg.postId },
-        { type: "Post" as const, id: "LIST" },
-        { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
-        { type: "DraftPost" as const, id: "LIST" },
-        { type: "AdminPosts" as const, id: "LIST" },
-      ],
+     invalidatesTags: (_result, _error, arg) => [ 
+  { type: "Post" as const, id: arg.postId },
+  { type: "Post" as const, id: "LIST" },
+  { type: "Post" as const, id: "MY_POSTS" },
+  { type: "Post" as const, id: "HOME-FEED" },
+  { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
+  { type: "DraftPost" as const, id: "LIST" },
+  { type: "AdminPosts" as const, id: arg.postId },
+  { type: "AdminPosts" as const, id: "LIST" },
+],
     }),
 
     deletePost: builder.mutation<DeletePostResponse, PostActionArgs>({
@@ -215,15 +232,16 @@ export const postApi = baseApi.injectEndpoints({
         method: "DELETE",
       }),
 
-      invalidatesTags: (_result, _error, arg) => [
-        { type: "Post" as const, id: arg.postId },
-        { type: "Post" as const, id: "LIST" },
-        { type: "Post" as const, id: "HOME-FEED" },
-        { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
-        { type: "DraftPost" as const, id: "LIST" },
-        { type: "AdminPosts" as const, id: arg.postId },
-        { type: "AdminPosts" as const, id: "LIST" },
-      ],
+ invalidatesTags: (_result, _error, arg) => [
+  { type: "Post" as const, id: arg.postId },
+  { type: "Post" as const, id: "LIST" },
+  { type: "Post" as const, id: "MY_POSTS" },
+  { type: "Post" as const, id: "HOME-FEED" },
+  { type: "Post" as const, id: `COMMUNITY-${arg.communityId}` },
+  { type: "DraftPost" as const, id: "LIST" },
+  { type: "AdminPosts" as const, id: arg.postId },
+  { type: "AdminPosts" as const, id: "LIST" },
+],
     }),
     getCommunityPostsTable: builder.query<
   CommunityPostsTableResponse,
@@ -378,6 +396,31 @@ removeDislikePost: builder.mutation<PostReactionResponse, PostActionArgs>({
     { type: "PostLike" as const, id: arg.postId },
     { type: "AdminPosts" as const, id: arg.postId },
     { type: "AdminPosts" as const, id: "LIST" },
+  ],
+}),
+likeComment: builder.mutation<CommentReactionResponse, CommentReactionArgs>({
+  query: ({ communityId, postId, commentId }) => ({
+    url: `/communities/${communityId}/posts/${postId}/comments/${commentId}/likes`,
+    method: "POST",
+  }),
+
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "PostComment" as const, id: arg.commentId },
+    { type: "PostComment" as const, id: `POST-${arg.postId}` },
+    { type: "PostReply" as const, id: arg.commentId },
+  ],
+}),
+
+unlikeComment: builder.mutation<CommentReactionResponse, CommentReactionArgs>({
+  query: ({ communityId, postId, commentId }) => ({
+    url: `/communities/${communityId}/posts/${postId}/comments/${commentId}/likes/me`,
+    method: "DELETE",
+  }),
+
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "PostComment" as const, id: arg.commentId },
+    { type: "PostComment" as const, id: `POST-${arg.postId}` },
+    { type: "PostReply" as const, id: arg.commentId },
   ],
 }),
 
@@ -639,4 +682,6 @@ export const {
     useVotePostPollMutation,
      useDislikePostMutation,
       useRemoveDislikePostMutation,
+      useLikeCommentMutation,
+      useUnlikeCommentMutation
 } = postApi;

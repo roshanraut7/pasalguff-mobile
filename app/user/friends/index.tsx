@@ -18,13 +18,14 @@ import { router } from "expo-router";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
-
 import {
+  useFollowUserMutation,
   useGetMyFollowersQuery,
   useGetMyFollowingQuery,
   useUnfollowUserMutation,
   type FollowItem,
 } from "@/store/api/followApi";
+
 
 type TabKey = "followers" | "following";
 

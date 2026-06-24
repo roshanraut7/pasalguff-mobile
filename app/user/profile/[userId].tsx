@@ -74,7 +74,10 @@ type PublicProfilePermissions = {
 type PublicProfileWithPermissions = PublicUserProfile & {
   follow?: {
     isFollowing: boolean;
+    followsMe?: boolean;
+    isMutual?: boolean;
     followedAt?: string | null;
+    buttonText?: "Follow" | "Follow Back" | "Following";
   };
   stats?: {
     followersCount: number;
@@ -118,8 +121,10 @@ function formatDate(value?: string | null) {
 }
 
 function followLabel(profile: PublicProfileWithPermissions) {
+  if (profile.follow?.buttonText) return profile.follow.buttonText;
   if (profile.follow?.isFollowing) return "Following";
-  if (profile.permissions?.canFollow) return "Not following";
+  if (profile.follow?.followsMe) return "Follow Back";
+  if (profile.permissions?.canFollow) return "Follow";
 
   return "Private";
 }
@@ -298,6 +303,11 @@ function ProfileActionButtons({
   const canFollow = Boolean(profile.permissions?.canFollow);
   const canUnfollow = Boolean(profile.permissions?.canUnfollow);
   const isFollowing = Boolean(profile.follow?.isFollowing);
+  const followsMe = Boolean(profile.follow?.followsMe);
+
+const followButtonLabel =
+  profile.follow?.buttonText ??
+  (isFollowing ? "Following" : followsMe ? "Follow Back" : "Follow");
 
   if (isOwnProfile) {
     return null;
@@ -309,52 +319,52 @@ function ProfileActionButtons({
 
   return (
     <View style={styles.profileActionRow}>
-      {canUnfollow || isFollowing ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={isLoading}
-          onPress={onUnfollow}
-          style={styles.profileActionButton}
-        >
-          <IconButtonContent
-            icon="checkmark-circle-outline"
-            label="Following"
-            color={colors.accent}
-          />
-        </Button>
-      ) : canFollow ? (
-        <Button
-          size="sm"
-          variant="primary"
-          isDisabled={isLoading}
-          onPress={onFollow}
-          style={styles.profileActionButton}
-        >
-          <IconButtonContent
-            icon="person-add-outline"
-            label="Follow"
-            color={colors.accentForeground}
-          />
-        </Button>
-      ) : null}
+  {canUnfollow || isFollowing ? (
+    <Button
+      size="sm"
+      variant="secondary"
+      isDisabled={isLoading}
+      onPress={onUnfollow}
+      style={styles.profileActionButton}
+    >
+      <IconButtonContent
+        icon="checkmark-circle-outline"
+        label="Following"
+        color={colors.accent}
+      />
+    </Button>
+  ) : canFollow ? (
+    <Button
+      size="sm"
+      variant="primary"
+      isDisabled={isLoading}
+      onPress={onFollow}
+      style={styles.profileActionButton}
+    >
+      <IconButtonContent
+        icon="person-add-outline"
+        label={followButtonLabel}
+        color={colors.accentForeground}
+      />
+    </Button>
+  ) : null}
 
-      {canMessage ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={isLoading}
-          onPress={onMessage}
-          style={styles.profileActionButton}
-        >
-          <IconButtonContent
-            icon="chatbubble-ellipses-outline"
-            label="Message"
-            color={colors.accent}
-          />
-        </Button>
-      ) : null}
-    </View>
+  {canMessage ? (
+    <Button
+      size="sm"
+      variant="secondary"
+      isDisabled={isLoading}
+      onPress={onMessage}
+      style={styles.profileActionButton}
+    >
+      <IconButtonContent
+        icon="chatbubble-ellipses-outline"
+        label="Message"
+        color={colors.accent}
+      />
+    </Button>
+  ) : null}
+</View>
   );
 }
 

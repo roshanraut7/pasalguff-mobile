@@ -2,6 +2,7 @@ import { baseApi } from "./baseApi";
 
 export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE" | "AUDIO";
 export type MessageStatus = "SENT" | "DELIVERED";
+
 export type ChatUser = {
   id: string;
   name: string;
@@ -88,6 +89,28 @@ export type UploadChatFileResponse = {
   mimetype: string;
   size: number;
 };
+
+/* ──────────────────────────────────────────────────────────────
+   Chat Suggestions
+────────────────────────────────────────────────────────────── */
+
+export type ChatSuggestionRelationship = {
+  isFollowing: boolean;
+  followsMe: boolean;
+  isMutual: boolean;
+  canMessage: boolean;
+};
+
+export type ChatSuggestionItem = {
+  user: ChatUser;
+  relationship: ChatSuggestionRelationship;
+  existingChatId?: string | null;
+};
+
+export type ChatSuggestionsResponse = {
+  data: ChatSuggestionItem[];
+};
+
 export const chatApi = baseApi.injectEndpoints({
   overrideExisting: true,
   endpoints: (builder) => ({
@@ -106,6 +129,21 @@ export const chatApi = baseApi.injectEndpoints({
               })),
             ]
           : [{ type: "Chat" as const, id: "LIST" }],
+    }),
+
+    searchChatSuggestions: builder.query<
+      ChatSuggestionsResponse,
+      { search?: string; limit?: number }
+    >({
+      query: ({ search = "", limit = 20 }) => ({
+        url: "/chats/suggestions",
+        method: "GET",
+        params: {
+          search,
+          limit,
+        },
+      }),
+      providesTags: [{ type: "Chat" as const, id: "SUGGESTIONS" }],
     }),
 
     getChat: builder.query<Chat, string>({
@@ -141,7 +179,10 @@ export const chatApi = baseApi.injectEndpoints({
         method: "POST",
         body: body ?? {},
       }),
-      invalidatesTags: [{ type: "Chat", id: "LIST" }],
+      invalidatesTags: [
+        { type: "Chat", id: "LIST" },
+        { type: "Chat", id: "SUGGESTIONS" },
+      ],
     }),
 
     sendMessage: builder.mutation<
@@ -183,6 +224,8 @@ export const chatApi = baseApi.injectEndpoints({
 
 export const {
   useGetMyChatsQuery,
+  useSearchChatSuggestionsQuery,
+  useLazySearchChatSuggestionsQuery,
   useGetChatQuery,
   useGetChatMessagesQuery,
   useCreateDirectChatMutation,

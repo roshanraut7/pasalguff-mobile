@@ -339,6 +339,15 @@ export default function ProfileScreen() {
     },
     [deletePost],
   );
+  const handleEditPost = useCallback((post: CommunityPost) => {
+  router.push({
+    pathname: "/pages/editpost",
+    params: {
+      postId: post.id,
+      communityId: post.communityId,
+    },
+  });
+}, []);
 
   const uploadPickedAsset = async (
     asset: ImagePicker.ImagePickerAsset,
@@ -417,38 +426,41 @@ export default function ProfileScreen() {
   const isUploadingAvatar = uploadingTarget === "avatar";
   const isUploadingCover = uploadingTarget === "cover";
 
-  const renderPost = useCallback(
-    ({ item }: { item: CommunityPost }) => {
-      return (
-        <CommunityPostCard
-          post={item}
-          disableMediaPlayback={viewer.visible}
-          canDelete
-          isDeleting={isDeletingPost}
-          onDelete={handleDeletePost}
-          onPressLike={handleLikePost}
-          onPressComment={openComments}
-          onPressShare={handleSharePost}
-          onPressAuthor={(authorId) => {
-            router.push({
-              pathname: "/user/profile/[userId]",
-              params: { userId: authorId },
-            });
-          }}
-          onPressMedia={openViewer}
-        />
-      );
-    },
-    [
-      viewer.visible,
-      isDeletingPost,
-      handleDeletePost,
-      handleLikePost,
-      openComments,
-      handleSharePost,
-      openViewer,
-    ],
-  );
+const renderPost = useCallback(
+  ({ item }: { item: CommunityPost }) => {
+    return (
+      <CommunityPostCard
+        post={item}
+        disableMediaPlayback={viewer.visible}
+        canEdit
+        canDelete
+        isDeleting={isDeletingPost}
+        onEdit={handleEditPost}
+        onDelete={handleDeletePost}
+        onPressLike={handleLikePost}
+        onPressComment={openComments}
+        onPressShare={handleSharePost}
+        onPressAuthor={(authorId) => {
+          router.push({
+            pathname: "/user/profile/[userId]",
+            params: { userId: authorId },
+          });
+        }}
+        onPressMedia={openViewer}
+      />
+    );
+  },
+  [
+    viewer.visible,
+    isDeletingPost,
+    handleEditPost,
+    handleDeletePost,
+    handleLikePost,
+    openComments,
+    handleSharePost,
+    openViewer,
+  ],
+);
 
   const showInitialPostLoader =
     tab === "posts" &&

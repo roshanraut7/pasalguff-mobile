@@ -67,9 +67,11 @@ type CommunityPostCardProps = {
   onPressMedia?: (media: PostMedia[], startIndex: number) => void;
   onPressPollOption?: (post: CommunityPost, optionId: string) => void;
 
-  canDelete?: boolean;
-  isDeleting?: boolean;
-  onDelete?: (post: CommunityPost) => Promise<void> | void;
+ canEdit?: boolean;
+canDelete?: boolean;
+isDeleting?: boolean;
+onEdit?: (post: CommunityPost) => void;
+onDelete?: (post: CommunityPost) => Promise<void> | void;
 };
 
 function getAuthorName(author: CommunityPost["author"]) {
@@ -451,6 +453,8 @@ export default function CommunityPostCard({
   onPressPollOption,
   canDelete = false,
   isDeleting = false,
+  canEdit=false,
+  onEdit,
   onDelete,
 }: CommunityPostCardProps) {
   const { width } = useWindowDimensions();
@@ -606,7 +610,7 @@ export default function CommunityPostCard({
           </View>
         </Pressable>
 
-        {canDelete ? (
+        {canDelete || canEdit ? (
           <View style={styles.moreWrap}>
             <Menu>
               <Menu.Trigger asChild>
@@ -622,27 +626,44 @@ export default function CommunityPostCard({
               <Menu.Portal>
                 <Menu.Overlay />
 
-                <Menu.Content
-                  presentation="popover"
-                  placement="bottom"
-                  align="end"
-                  width={180}
-                  className="rounded-2xl border border-border bg-surface"
-                >
-                  <Menu.Item
-                    onPress={() => setIsDeleteDialogOpen(true)}
-                    variant="danger"
-                    className="flex-row items-center gap-3"
-                  >
-                    <Ionicons
-                      name="trash-outline"
-                      size={18}
-                      color={colors.danger}
-                    />
+               <Menu.Content
+  presentation="popover"
+  placement="bottom"
+  align="end"
+  width={190}
+  className="rounded-2xl border border-border bg-surface"
+>
+  {canEdit ? (
+    <Menu.Item
+      onPress={() => onEdit?.(post)}
+      className="flex-row items-center gap-3"
+    >
+      <Ionicons
+        name="create-outline"
+        size={18}
+        color={colors.accent}
+      />
 
-                    <Menu.ItemTitle>Delete post</Menu.ItemTitle>
-                  </Menu.Item>
-                </Menu.Content>
+      <Menu.ItemTitle>Edit post</Menu.ItemTitle>
+    </Menu.Item>
+  ) : null}
+
+  {canDelete ? (
+    <Menu.Item
+      onPress={() => setIsDeleteDialogOpen(true)}
+      variant="danger"
+      className="flex-row items-center gap-3"
+    >
+      <Ionicons
+        name="trash-outline"
+        size={18}
+        color={colors.danger}
+      />
+
+      <Menu.ItemTitle>Delete post</Menu.ItemTitle>
+    </Menu.Item>
+  ) : null}
+</Menu.Content>
               </Menu.Portal>
             </Menu>
           </View>

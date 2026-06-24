@@ -13,11 +13,19 @@ export type FollowUser = {
   displayName: string;
   createdAt: string;
 };
+export type FollowRelationship = {
+  isFollowing: boolean;
+  followsMe: boolean;
+  isMutual: boolean;
+  canMessage: boolean;
+  buttonText: "Follow" | "Follow Back" | "Following";
+};
 
 export type FollowItem = {
   id: string;
   followedAt: string;
   user: FollowUser;
+  relationship?: FollowRelationship;
 };
 
 export type FollowMeta = {
@@ -33,7 +41,7 @@ export type FollowListResponse = {
 };
 
 export type DiscoverFollowUser = FollowUser & {
-  isFollowing: boolean;
+  relationship?: FollowRelationship;
 };
 
 export type DiscoverFollowResponse = {
@@ -51,11 +59,14 @@ export type FollowResponse = {
     id: string;
     createdAt: string;
     user: FollowUser;
+    relationship?: FollowRelationship;
   };
 };
 
 export type UnfollowResponse = {
   message: string;
+  user?: FollowUser;
+  relationship?: FollowRelationship;
 };
 
 export type FollowListQuery = {
