@@ -1485,64 +1485,66 @@ function AudioMessageBubble({
     player.play();
   };
 
-  return (
-    <Pressable style={styles.fileBubble} onPress={handleTogglePlayback}>
-      <View style={styles.fileIconWrap}>
-        <Ionicons
-          name={isPlaying ? "pause" : "play"}
-          size={20}
-          color={isMe ? "#ffffff" : colors.foreground}
+ return (
+  <Pressable
+    style={[styles.fileBubble, { width: "100%", maxWidth: "100%" }]}
+    onPress={handleTogglePlayback}
+  >
+    <View style={styles.fileIconWrap}>
+      <Ionicons
+        name={isPlaying ? "pause" : "play"}
+        size={20}
+        color={isMe ? "#ffffff" : colors.foreground}
+      />
+    </View>
+
+    <View style={[styles.fileTextWrap, { flex: 1, minWidth: 0 }]}>
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.fileNameText,
+          isMe ? styles.bubbleTextMe : styles.bubbleTextOther,
+        ]}
+      >
+        Voice message
+      </Text>
+
+      <View
+        style={{
+          height: 4,
+          borderRadius: 999,
+          overflow: "hidden",
+          marginTop: 8,
+          backgroundColor: isMe ? "rgba(255,255,255,0.35)" : colors.border,
+          width: "100%",
+        }}
+      >
+        <View
+          style={{
+            height: "100%",
+            width: `${progress * 100}%`,
+            backgroundColor: isMe ? "#ffffff" : colors.accent,
+          }}
         />
       </View>
 
-      <View style={[styles.fileTextWrap, { minWidth: 160 }]}>
-        <Text
-          numberOfLines={1}
-          style={[
-            styles.fileNameText,
-            isMe ? styles.bubbleTextMe : styles.bubbleTextOther,
-          ]}
-        >
-          Voice message
-        </Text>
-
-        <View
-          style={{
-            height: 4,
-            borderRadius: 999,
-            overflow: "hidden",
-            marginTop: 8,
-            backgroundColor: isMe ? "rgba(255,255,255,0.35)" : colors.border,
-          }}
-        >
-          <View
-            style={{
-              height: "100%",
-              width: `${progress * 100}%`,
-              backgroundColor: isMe ? "#ffffff" : colors.accent,
-            }}
-          />
-        </View>
-
-        <Text
-          numberOfLines={1}
-          style={[
-            styles.fileMetaText,
-            isMe ? styles.fileMetaTextMe : styles.fileMetaTextOther,
-            { marginTop: 6 },
-          ]}
-        >
-          {duration > 0
-            ? `${formatAudioDuration(currentTime)} / ${formatAudioDuration(
-                duration,
-              )}`
-            : fileSize
-              ? formatFileSize(fileSize)
-              : "Audio"}
-        </Text>
-      </View>
-    </Pressable>
-  );
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.fileMetaText,
+          isMe ? styles.fileMetaTextMe : styles.fileMetaTextOther,
+          { marginTop: 6 },
+        ]}
+      >
+        {duration > 0
+          ? `${formatAudioDuration(currentTime)} / ${formatAudioDuration(duration)}`
+          : fileSize
+            ? formatFileSize(fileSize)
+            : "Audio"}
+      </Text>
+    </View>
+  </Pressable>
+);
 }
 
 function formatAudioDuration(seconds: number) {

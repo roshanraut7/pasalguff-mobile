@@ -2,7 +2,7 @@
    BASIC TYPES
    ========================================================= */
 
-export type CommunityPostType = "TEXT" | "MEDIA" | "LINK";
+export type CommunityPostType = "TEXT" | "MEDIA" | "LINK" |"POLL";
 
 export type PostVisibility =
   | "PUBLIC"

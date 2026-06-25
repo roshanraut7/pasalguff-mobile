@@ -45,6 +45,8 @@ type HomeListItem = CommunityPost | CommunityDiscussion;
 type PendingFollowAction = "COMMENT" | "POLL";
 
 type CommunityFollowState = CommunityPost & {
+  visibility?: string | null;
+  communityVisibility?: string | null;
   isCommunityFollowedByMe?: boolean;
   isJoinedByMe?: boolean;
   community?: {
@@ -52,6 +54,7 @@ type CommunityFollowState = CommunityPost & {
     name?: string | null;
     slug?: string | null;
     avatarImage?: string | null;
+    visibility?: string | null;
     isCommunityFollowedByMe?: boolean;
     isJoinedByMe?: boolean;
     isMember?: boolean;
@@ -368,6 +371,33 @@ export default function HomeScreen() {
     },
     [activeTab],
   );
+  const canCommentOnPost = useCallback(
+  (post: CommunityPost) => {
+    const normalizedPost = post as CommunityFollowState;
+
+    const visibility = String(
+      normalizedPost.community?.visibility ??
+        normalizedPost.communityVisibility ??
+        normalizedPost.visibility ??
+        "",
+    ).toUpperCase();
+
+    /**
+     * Public community:
+     * Anyone who can view the post can comment.
+     */
+    if (visibility === "PUBLIC") {
+      return true;
+    }
+
+    /**
+     * Restricted/private community:
+     * Only joined/followed members can comment.
+     */
+    return isPostCommunityFollowed(post);
+  },
+  [isPostCommunityFollowed],
+);
 
   const openFollowRequiredModal = useCallback(
     (post: CommunityPost, action: PendingFollowAction) => {
@@ -494,17 +524,17 @@ export default function HomeScreen() {
     [votePostPoll],
   );
 
-  const handleProtectedOpenComments = useCallback(
-    (post: CommunityPost) => {
-      if (!isPostCommunityFollowed(post)) {
-        openFollowRequiredModal(post, "COMMENT");
-        return;
-      }
+const handleProtectedOpenComments = useCallback(
+  (post: CommunityPost) => {
+    if (!canCommentOnPost(post)) {
+      openFollowRequiredModal(post, "COMMENT");
+      return;
+    }
 
-      openComments(post);
-    },
-    [isPostCommunityFollowed, openFollowRequiredModal, openComments],
-  );
+    openComments(post);
+  },
+  [canCommentOnPost, openFollowRequiredModal, openComments],
+);
 
   const handleProtectedVotePostPoll = useCallback(
     async (post: CommunityPost, optionId: string) => {
@@ -965,9 +995,9 @@ export default function HomeScreen() {
   onRefreshComments={() => {
     void refetchComments();
   }}
-  canWriteComment={
-    activeCommentPost ? isPostCommunityFollowed(activeCommentPost) : false
-  }
+ canWriteComment={
+  activeCommentPost ? canCommentOnPost(activeCommentPost) : false
+}
   onRequestFollow={() => {
     if (!activeCommentPost) return;
     openFollowRequiredModal(activeCommentPost, "COMMENT");

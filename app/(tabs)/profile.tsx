@@ -164,6 +164,7 @@ export default function ProfileScreen() {
     handleSharePost,
     handleCreateComment,
     refetchComments,
+    handleCommentLike,
   } = usePostInteractions({
     posts: allPosts,
     setPosts: setAllPosts,
@@ -941,6 +942,7 @@ const renderPost = useCallback(
         onPressMedia={openViewer}
         onPressPostLike={handleLikePost}
         onPressPostShare={handleSharePost}
+          onPressCommentLike={handleCommentLike}
         onRefreshComments={() => {
           void refetchComments();
         }}

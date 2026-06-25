@@ -101,6 +101,7 @@ export default function CommunityDetailScreen() {
     handleSharePost,
     handleCreateComment,
     refetchComments,
+    handleCommentLike,
   } = usePostInteractions({
     posts: postItems,
     setPosts: setPostItems,
@@ -1148,6 +1149,7 @@ export default function CommunityDetailScreen() {
         onPressMedia={openViewer}
         onPressPostLike={handleLikePost}
         onPressPostShare={handleSharePost}
+         onPressCommentLike={handleCommentLike}
         onRefreshComments={() => {
           void refetchComments();
         }}

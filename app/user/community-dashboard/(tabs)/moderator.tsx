@@ -1,30 +1,31 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { router, useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
+  Keyboard,
   KeyboardAvoidingView,
-  Modal,
+  Modal as RNModal,
   Platform,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { Avatar, Dialog } from "heroui-native";
+import EvilIcons from "@expo/vector-icons/EvilIcons";
+import { Avatar } from "heroui-native";
+import { Modal as PaperModal, Portal } from "react-native-paper";
 
-import DataTable from "@/components/common/data-table";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
-  createModeratorColumns,
-  createModeratorFilters,
   getModeratorInitials,
   getModeratorPermissions,
   getPermissionLabel,
-  type ModeratorAction,
 } from "@/components/column/user-community/moderator.columns";
 import {
   useAssignCommunityModeratorMutation,
@@ -41,8 +42,42 @@ import ModeratorPermissionForm, {
 type ModeratorStatusFilter = "ACTIVE" | "LEFT" | "BANNED";
 type PermissionFormMode = "assign" | "edit";
 
+type ModeratorAction =
+  | "view"
+  | "editPermissions"
+  | "activity"
+  | "suspend"
+  | "reactivate"
+  | "remove";
+
+type StatusFilterOption = {
+  label: string;
+  value: ModeratorStatusFilter;
+  icon: keyof typeof Ionicons.glyphMap;
+};
+
 type CommunityMemberWithPermissionFlags = CommunityMemberItem &
   Partial<ModeratorPermissionValues>;
+
+const PAGE_SIZE = 20;
+
+const STATUS_FILTERS: StatusFilterOption[] = [
+  {
+    label: "Active",
+    value: "ACTIVE",
+    icon: "people-outline",
+  },
+  {
+    label: "Banned",
+    value: "BANNED",
+    icon: "ban-outline",
+  },
+  {
+    label: "Left",
+    value: "LEFT",
+    icon: "exit-outline",
+  },
+];
 
 function getParamValue(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? "";
@@ -51,7 +86,14 @@ function getParamValue(value: string | string[] | undefined) {
 
 function getApiErrorMessage(error: unknown) {
   if (typeof error === "object" && error !== null && "data" in error) {
-    const data = (error as { data?: { message?: string | string[]; error?: string } }).data;
+    const data = (
+      error as {
+        data?: {
+          message?: string | string[];
+          error?: string;
+        };
+      }
+    ).data;
 
     if (Array.isArray(data?.message)) {
       return data.message.join("\n");
@@ -67,6 +109,17 @@ function getApiErrorMessage(error: unknown) {
   }
 
   return "Something went wrong. Please try again.";
+}
+
+function formatLabel(value?: string | null, fallback = "Not set") {
+  if (!value) return fallback;
+
+  return value
+    .toLowerCase()
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function getModeratorDefaultValues(
@@ -102,7 +155,12 @@ function getModeratorDefaultValues(
 
 export default function ModeratorScreen() {
   const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const searchInputRef = useRef<TextInput | null>(null);
+  const searchFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endReachedLockedRef = useRef(false);
 
   const localParams = useLocalSearchParams<{
     communityId?: string | string[];
@@ -123,7 +181,9 @@ export default function ModeratorScreen() {
   const [selectedModerator, setSelectedModerator] =
     useState<CommunityMemberItem | null>(null);
 
-  const [actionDialogVisible, setActionDialogVisible] = useState(false);
+  const [actionSheetVisible, setActionSheetVisible] = useState(false);
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const [permissionModalVisible, setPermissionModalVisible] = useState(false);
   const [permissionFormMode, setPermissionFormMode] =
@@ -131,19 +191,16 @@ export default function ModeratorScreen() {
   const [permissionFormModerator, setPermissionFormModerator] =
     useState<CommunityMemberItem | null>(null);
 
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+  const [accumulatedModerators, setAccumulatedModerators] = useState<
+    CommunityMemberItem[]
+  >([]);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
-
-  const [activeFilters, setActiveFilters] = useState<Record<string, string>>({
-    status: "ACTIVE",
-  });
-
-  const statusFilter = activeFilters.status as ModeratorStatusFilter;
+  const [statusFilter, setStatusFilter] =
+    useState<ModeratorStatusFilter>("ACTIVE");
 
   const [assignModerator, { isLoading: isAssigningModerator }] =
     useAssignCommunityModeratorMutation();
@@ -151,28 +208,67 @@ export default function ModeratorScreen() {
   const [updateModeratorPermissions, { isLoading: isUpdatingPermissions }] =
     useUpdateModeratorPermissionsMutation();
 
-  const [removeModerator] = useRemoveModeratorMutation();
+  const [removeModerator, { isLoading: isRemovingModerator }] =
+    useRemoveModeratorMutation();
 
   const isSubmittingPermissionForm =
     isAssigningModerator || isUpdatingPermissions;
 
+  const isActionLoading = isSubmittingPermissionForm || isRemovingModerator;
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearch(search.trim());
-      setPage(0);
-    }, 400);
+      const trimmedSearch = search.trim();
+      const nextSearch = trimmedSearch.length >= 2 ? trimmedSearch : "";
+
+      setDebouncedSearch((previousSearch) =>
+        previousSearch === nextSearch ? previousSearch : nextSearch,
+      );
+    }, 350);
 
     return () => clearTimeout(timer);
   }, [search]);
 
   useEffect(() => {
-    setPage(0);
+    setPage(1);
     setSearch("");
     setDebouncedSearch("");
-    setActiveFilters({
-      status: "ACTIVE",
-    });
+    setAccumulatedModerators([]);
+    setStatusFilter("ACTIVE");
+    setIsSearchOpen(false);
+    setFilterSheetVisible(false);
+    setActionSheetVisible(false);
+    endReachedLockedRef.current = false;
   }, [communityId]);
+
+  useEffect(() => {
+    setPage(1);
+    setAccumulatedModerators([]);
+    endReachedLockedRef.current = false;
+  }, [debouncedSearch, statusFilter]);
+
+  useEffect(() => {
+    if (!isSearchOpen) {
+      if (searchFocusTimerRef.current) {
+        clearTimeout(searchFocusTimerRef.current);
+        searchFocusTimerRef.current = null;
+      }
+
+      return;
+    }
+
+    searchFocusTimerRef.current = setTimeout(() => {
+      searchInputRef.current?.focus();
+      searchFocusTimerRef.current = null;
+    }, 80);
+
+    return () => {
+      if (searchFocusTimerRef.current) {
+        clearTimeout(searchFocusTimerRef.current);
+        searchFocusTimerRef.current = null;
+      }
+    };
+  }, [isSearchOpen]);
 
   const {
     data: moderatorsResponse,
@@ -183,8 +279,8 @@ export default function ModeratorScreen() {
   } = useGetCommunityModeratorsQuery(
     {
       communityId,
-      page: page + 1,
-      limit: pageSize,
+      page,
+      limit: PAGE_SIZE,
       search: debouncedSearch || undefined,
       status: statusFilter,
     },
@@ -194,55 +290,147 @@ export default function ModeratorScreen() {
     },
   );
 
-  const moderators = moderatorsResponse?.data ?? [];
+  const moderators = accumulatedModerators;
+  const totalItems = moderatorsResponse?.meta?.total ?? 0;
+  const totalPages = Math.max(1, moderatorsResponse?.meta?.totalPages ?? 1);
+  const hasNextPage = page < totalPages;
 
-  const columns = useMemo(
-    () =>
-      createModeratorColumns({
-        colors,
-        onActionPress: openActionDialog,
-      }),
-    [colors],
-  );
+  const selectedStatusFilter =
+    STATUS_FILTERS.find((filter) => filter.value === statusFilter) ??
+    STATUS_FILTERS[0];
 
-  const filters = useMemo(() => createModeratorFilters(), []);
+  const moderatorCountLabel =
+    statusFilter === "ACTIVE"
+      ? "moderators and admins"
+      : statusFilter === "BANNED"
+        ? "banned moderators"
+        : "left moderators";
 
-  function handleFilterChange(key: string, value: string) {
-    setActiveFilters((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+  const showInitialLoading =
+    (isLoading || (isFetching && page === 1)) && moderators.length === 0;
 
-    setPage(0);
+  const showEmptyState =
+    !showInitialLoading &&
+    !isFetching &&
+    !error &&
+    moderators.length === 0;
+
+  useEffect(() => {
+    const incomingModerators = moderatorsResponse?.data;
+
+    if (!incomingModerators) return;
+
+    endReachedLockedRef.current = false;
+
+    setAccumulatedModerators((previousModerators) => {
+      if (page === 1) {
+        return incomingModerators;
+      }
+
+      const existingIds = new Set(
+        previousModerators.map((moderator) => moderator.id),
+      );
+
+      const uniqueNewModerators = incomingModerators.filter(
+        (moderator) => !existingIds.has(moderator.id),
+      );
+
+      return [...previousModerators, ...uniqueNewModerators];
+    });
+  }, [moderatorsResponse?.data, page]);
+
+  function focusSearchInput() {
+    searchInputRef.current?.focus();
   }
 
-  function handlePageSizeChange(nextPageSize: number) {
-    setPageSize(nextPageSize);
-    setPage(0);
+  function handleSearchButtonPress() {
+    if (isSearchOpen) {
+      handleCloseSearch();
+      return;
+    }
+
+    setIsSearchOpen(true);
+  }
+
+  function handleCloseSearch() {
+    setSearch("");
+    setDebouncedSearch("");
+    setIsSearchOpen(false);
+    Keyboard.dismiss();
+  }
+
+  function handleClearSearch() {
+    if (search.length === 0) return;
+
+    setSearch("");
+    focusSearchInput();
+  }
+
+  function handleStatusFilterChange(nextStatus: ModeratorStatusFilter) {
+    setFilterSheetVisible(false);
+
+    if (nextStatus === statusFilter) return;
+
+    setStatusFilter(nextStatus);
+  }
+
+  function handleLoadMoreModerators() {
+    if (endReachedLockedRef.current) return;
+    if (isLoading || isFetching || isActionLoading) return;
+    if (!hasNextPage) return;
+
+    endReachedLockedRef.current = true;
+    setPage((previousPage) => Math.min(previousPage + 1, totalPages));
   }
 
   async function handlePullRefresh() {
     setIsPullRefreshing(true);
+    endReachedLockedRef.current = false;
 
     try {
-      await refetch();
+      if (page !== 1) {
+        setPage(1);
+        return;
+      }
+
+      const refreshed = await refetch();
+
+      if ("data" in refreshed && refreshed.data?.data) {
+        setAccumulatedModerators(refreshed.data.data);
+      }
     } finally {
       setIsPullRefreshing(false);
     }
   }
 
-  function openActionDialog(moderator: CommunityMemberItem) {
-    setSelectedModerator(moderator);
-    setActionDialogVisible(true);
+  async function refreshFirstPageAfterAction() {
+    endReachedLockedRef.current = false;
+
+    if (page === 1) {
+      const refreshed = await refetch();
+
+      if ("data" in refreshed && refreshed.data?.data) {
+        setAccumulatedModerators(refreshed.data.data);
+      }
+
+      return;
+    }
+
+    setPage(1);
   }
 
-  function closeActionDialog() {
-    setActionDialogVisible(false);
+  function openActionSheet(moderator: CommunityMemberItem) {
+    setSelectedModerator(moderator);
+    setActionSheetVisible(true);
+  }
+
+  function closeActionSheet() {
+    setActionSheetVisible(false);
     setSelectedModerator(null);
   }
 
   function openAssignModeratorModal() {
-    setActionDialogVisible(false);
+    setActionSheetVisible(false);
     setSelectedModerator(null);
     setPermissionFormMode("assign");
     setPermissionFormModerator(null);
@@ -250,7 +438,7 @@ export default function ModeratorScreen() {
   }
 
   function openEditPermissionModal(moderator: CommunityMemberItem) {
-    setActionDialogVisible(false);
+    setActionSheetVisible(false);
     setSelectedModerator(null);
     setPermissionFormMode("edit");
     setPermissionFormModerator(moderator);
@@ -291,7 +479,7 @@ export default function ModeratorScreen() {
         setPermissionFormModerator(null);
 
         Alert.alert("Moderator assigned", "The selected member is now a moderator.");
-        refetch();
+        await refreshFirstPageAfterAction();
         return;
       }
 
@@ -317,36 +505,32 @@ export default function ModeratorScreen() {
       setPermissionFormModerator(null);
 
       Alert.alert("Permissions updated", "Moderator permissions were updated.");
-      refetch();
+      await refreshFirstPageAfterAction();
     } catch (submitError) {
       Alert.alert("Action failed", getApiErrorMessage(submitError));
     }
   }
 
   function handleModeratorAction(action: ModeratorAction) {
-    if (!selectedModerator) return;
+    if (!selectedModerator || isActionLoading) return;
 
     const moderator = selectedModerator;
     const moderatorName = moderator.user.name ?? "Unknown User";
 
-    const actionLabel: Record<ModeratorAction, string> = {
-      view: "View profile",
-      message: "Message",
-      editPermissions: "Edit permissions",
-      activity: "View activity",
-      suspend: "Suspend moderator",
-      reactivate: "Reactivate moderator",
-      remove: "Remove moderator",
-    };
+    if (action === "view") {
+      closeActionSheet();
+      Alert.alert("View profile", `View profile: ${moderatorName}`);
+      return;
+    }
 
     if (action === "editPermissions") {
       openEditPermissionModal(moderator);
       return;
     }
 
-    closeActionDialog();
-
     if (action === "activity") {
+      closeActionSheet();
+
       router.push({
         pathname: "/pages/moderator-activity",
         params: {
@@ -355,11 +539,26 @@ export default function ModeratorScreen() {
           communityId: moderator.communityId,
         },
       });
+
+      return;
+    }
+
+    if (action === "suspend") {
+      closeActionSheet();
+      Alert.alert("Suspend moderator", `Suspend moderator: ${moderatorName}`);
+      return;
+    }
+
+    if (action === "reactivate") {
+      closeActionSheet();
+      Alert.alert("Reactivate moderator", `Reactivate moderator: ${moderatorName}`);
       return;
     }
 
     if (action === "remove") {
       const targetUserId = moderator.userId ?? moderator.user?.id;
+
+      closeActionSheet();
 
       if (!communityId) {
         Alert.alert("Missing community", "Community ID was not found.");
@@ -394,7 +593,7 @@ export default function ModeratorScreen() {
                   `${moderatorName} is now a normal community member.`,
                 );
 
-                refetch();
+                await refreshFirstPageAfterAction();
               } catch (removeError) {
                 Alert.alert("Action failed", getApiErrorMessage(removeError));
               }
@@ -402,66 +601,126 @@ export default function ModeratorScreen() {
           },
         ],
       );
-
-      return;
     }
-
-    Alert.alert(actionLabel[action], `${actionLabel[action]}: ${moderatorName}`);
   }
 
-  if (!communityId) {
+  function renderListHeader() {
     return (
-      <View style={styles.centerWrap}>
-        <Ionicons name="warning-outline" size={30} color={colors.warning} />
-
-        <Text style={styles.centerTitle}>Community ID missing</Text>
-
-        <Text style={styles.centerSubtitle}>
-          Open this screen with communityId in the route params.
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <>
-      <ScrollView
-        style={styles.root}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isPullRefreshing}
-            onRefresh={handlePullRefresh}
-            tintColor={colors.accent}
-          />
-        }
-      >
+      <>
         <View style={styles.header}>
-          <View style={{ flex: 1 }}>
+          <View style={styles.headerTextWrap}>
             <Text style={styles.title}>Moderators</Text>
 
             <Text style={styles.subtitle}>
-              {moderatorsResponse?.meta?.total ?? 0} moderators and admins
+              {totalItems} {moderatorCountLabel}
             </Text>
           </View>
 
-          <Pressable
-            onPress={openAssignModeratorModal}
-            style={({ pressed }) => [
-              styles.addButton,
-              pressed && { opacity: 0.75 },
-            ]}
-          >
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={handleSearchButtonPress}
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                isSearchOpen && styles.headerIconButtonActive,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <EvilIcons
+                name={isSearchOpen ? "close" : "search"}
+                size={isSearchOpen ? 28 : 30}
+                color={isSearchOpen ? colors.accent : colors.foreground}
+              />
+            </Pressable>
+
+            <Pressable
+              onPress={() => setFilterSheetVisible(true)}
+              style={({ pressed }) => [
+                styles.headerIconButton,
+                styles.headerIconButtonActive,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <Ionicons
+                name="funnel-outline"
+                size={20}
+                color={colors.accent}
+              />
+            </Pressable>
+
+            <Pressable
+              onPress={openAssignModeratorModal}
+              style={({ pressed }) => [
+                styles.headerAddButton,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <Ionicons
+                name="person-add-outline"
+                size={18}
+                color={colors.accentForeground}
+              />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.metaRow}>
+          <View style={styles.metaChip}>
             <Ionicons
-              name="person-add-outline"
-              size={17}
-              color={colors.accentForeground}
+              name={selectedStatusFilter.icon}
+              size={15}
+              color={colors.accent}
             />
 
-            <Text style={styles.addText}>Add</Text>
-          </Pressable>
+            <Text style={styles.metaChipText}>{selectedStatusFilter.label}</Text>
+          </View>
+
+          {(isFetching || isActionLoading) && moderators.length > 0 ? (
+            <View style={styles.smallLoaderChip}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          ) : null}
         </View>
+
+        {isSearchOpen ? (
+          <>
+            <View style={styles.searchBox}>
+              <EvilIcons name="search" size={28} color={colors.accent} />
+
+              <TextInput
+                ref={searchInputRef}
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search moderators"
+                placeholderTextColor={colors.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                blurOnSubmit={false}
+                returnKeyType="search"
+                style={styles.searchInput}
+              />
+
+              {search.length > 0 ? (
+                <Pressable
+                  onPress={handleClearSearch}
+                  focusable={false}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.clearSearchButton,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <EvilIcons name="close" size={24} color={colors.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {search.trim().length === 1 ? (
+              <Text style={styles.searchHint}>
+                Type at least 2 letters to search.
+              </Text>
+            ) : null}
+          </>
+        ) : null}
 
         {error ? (
           <View style={styles.errorBox}>
@@ -481,164 +740,321 @@ export default function ModeratorScreen() {
             </View>
           </View>
         ) : null}
+      </>
+    );
+  }
 
-        <DataTable
-          rows={moderators}
-          columns={columns}
-          rowKey={(row) => row.id}
-          searchValue={search}
-          onSearchChange={setSearch}
-          searchPlaceholder="Search moderators"
-          filters={filters}
-          activeFilters={activeFilters}
-          onFilterChange={handleFilterChange}
-          emptyTitle={error ? "Failed to load moderators" : "No moderators found"}
-          emptySubtitle={
-            error
-              ? "Pull down to refresh and try again."
-              : "No moderator matched this search."
-          }
-          isLoading={isLoading}
-          isFetching={isFetching}
-          pagination={{
-            page,
-            pageSize,
-            totalItems: moderatorsResponse?.meta?.total ?? 0,
-            totalPages: Math.max(1, moderatorsResponse?.meta?.totalPages ?? 1),
-            onPageChange: setPage,
-            onPageSizeChange: handlePageSizeChange,
-            pageSizeOptions: [10, 20, 50],
+  const listHeaderComponent = renderListHeader();
+
+  function renderListEmpty() {
+    if (showInitialLoading) {
+      return (
+        <View style={styles.stateCard}>
+          <ActivityIndicator size="small" color={colors.accent} />
+
+          <Text style={styles.stateTitle}>Loading moderators...</Text>
+
+          <Text style={styles.stateSubtitle}>
+            Please wait while we prepare the moderator list.
+          </Text>
+        </View>
+      );
+    }
+
+    if (showEmptyState) {
+      return (
+        <View style={styles.stateCard}>
+          <View style={styles.stateIconWrap}>
+            <Ionicons name="shield-outline" size={25} color={colors.muted} />
+          </View>
+
+          <Text style={styles.stateTitle}>No moderators found</Text>
+
+          <Text style={styles.stateSubtitle}>
+            {search.trim().length >= 2
+              ? "No moderators matched this search."
+              : `There are no ${moderatorCountLabel} right now.`}
+          </Text>
+        </View>
+      );
+    }
+
+    return null;
+  }
+
+  function renderListFooter() {
+    if (isFetching && page > 1) {
+      return (
+        <View style={styles.infiniteFooter}>
+          <ActivityIndicator size="small" color={colors.accent} />
+        </View>
+      );
+    }
+
+    return <View style={styles.footerSpacer} />;
+  }
+
+  if (!communityId) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+        <View style={styles.centerWrap}>
+          <Ionicons name="warning-outline" size={30} color={colors.warning} />
+
+          <Text style={styles.centerTitle}>Community ID missing</Text>
+
+          <Text style={styles.centerSubtitle}>
+            Open this screen with communityId in the route params.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <>
+      <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+        <FlatList
+          data={moderators}
+          keyExtractor={(moderator) => moderator.id}
+          renderItem={({ item }) => <ModeratorCard moderator={item} />}
+          ItemSeparatorComponent={() => (
+            <View style={styles.moderatorSeparator} />
+          )}
+          ListHeaderComponent={listHeaderComponent}
+          ListEmptyComponent={renderListEmpty}
+          ListFooterComponent={renderListFooter}
+          style={styles.root}
+          contentContainerStyle={[
+            styles.listContent,
+            {
+              paddingBottom: Math.max(130, insets.bottom + 120),
+            },
+            moderators.length === 0 && styles.emptyListContent,
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="none"
+          onEndReached={handleLoadMoreModerators}
+          onEndReachedThreshold={0.35}
+          onMomentumScrollBegin={() => {
+            endReachedLockedRef.current = false;
           }}
+          refreshControl={
+            <RefreshControl
+              refreshing={isPullRefreshing}
+              onRefresh={handlePullRefresh}
+              tintColor={colors.accent}
+              colors={[colors.accent]}
+            />
+          }
         />
-      </ScrollView>
+      </SafeAreaView>
 
-      <Dialog
-        isOpen={actionDialogVisible}
-        onOpenChange={(open) => {
-          if (!open) closeActionDialog();
-        }}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay />
+      <Portal>
+        <PaperModal
+          visible={actionSheetVisible}
+          onDismiss={closeActionSheet}
+          contentContainerStyle={[
+            styles.actionSheetContainer,
+            {
+              paddingBottom: Math.max(28, insets.bottom + 18),
+            },
+          ]}
+        >
+          <View style={styles.sheetHandle} />
 
-          <Dialog.Content style={styles.actionDialogContent}>
-            <View style={styles.dialogTopRow}>
-              <View style={{ flex: 1 }}>
-                <Dialog.Title style={styles.dialogTitle}>
-                  Moderator actions
-                </Dialog.Title>
+          <View style={styles.sheetHeader}>
+            <View style={styles.moderatorInfo}>
+              {selectedModerator ? (
+                <ModeratorAvatar moderator={selectedModerator} />
+              ) : null}
 
-                <Dialog.Description style={styles.dialogDescription}>
-                  Manage this moderator account.
-                </Dialog.Description>
-              </View>
+              <View style={styles.moderatorTextWrap}>
+                <Text numberOfLines={1} style={styles.sheetTitle}>
+                  {selectedModerator?.user.name ?? "Moderator"}
+                </Text>
 
-              <Dialog.Close variant="ghost" />
-            </View>
-
-            <View style={styles.sheetHeader}>
-              <View style={styles.moderatorInfo}>
-                {selectedModerator ? (
-                  <Avatar
-                    alt={selectedModerator.user.name ?? "Moderator"}
-                    size="lg"
-                    variant="soft"
-                    color="success"
-                  >
-                    {toAbsoluteFileUrl(selectedModerator.user.image) ? (
-                      <Avatar.Image
-                        source={{
-                          uri: toAbsoluteFileUrl(selectedModerator.user.image)!,
-                        }}
-                      />
-                    ) : null}
-
-                    <Avatar.Fallback>
-                      {getModeratorInitials(selectedModerator.user.name)}
-                    </Avatar.Fallback>
-                  </Avatar>
-                ) : null}
-
-                <View style={styles.moderatorTextWrap}>
-                  <Text numberOfLines={1} style={styles.sheetTitle}>
-                    {selectedModerator?.user.name ?? "Moderator"}
-                  </Text>
-
-                  <Text numberOfLines={1} style={styles.sheetSubtitle}>
-                    {selectedModerator?.user.email ??
-                      selectedModerator?.role ??
-                      "Community moderator"}
-                  </Text>
-
-                  {selectedModerator ? (
-                    <View style={styles.permissionPreview}>
-                      {getModeratorPermissions(selectedModerator).map(
-                        (permission) => (
-                          <View key={permission} style={styles.permissionChip}>
-                            <Text style={styles.permissionChipText}>
-                              {getPermissionLabel(permission)}
-                            </Text>
-                          </View>
-                        ),
-                      )}
-                    </View>
-                  ) : null}
-                </View>
+                <Text numberOfLines={1} style={styles.sheetSubtitle}>
+                  {selectedModerator?.user.email ??
+                    selectedModerator?.role ??
+                    "Community moderator"}
+                </Text>
               </View>
             </View>
 
-            <View style={styles.actionGrid}>
-              <GridAction
-                icon="person-outline"
-                label="View profile"
-                onPress={() => handleModeratorAction("view")}
-              />
+            <Pressable
+              onPress={closeActionSheet}
+              disabled={isActionLoading}
+              style={({ pressed }) => [
+                styles.closeButton,
+                pressed && { opacity: 0.7 },
+                isActionLoading && { opacity: 0.45 },
+              ]}
+            >
+              <Ionicons name="close" size={21} color={colors.foreground} />
+            </Pressable>
+          </View>
 
-              <GridAction
-                icon="chatbubble-outline"
-                label="Message"
-                onPress={() => handleModeratorAction("message")}
-              />
-
-              <GridAction
-                icon="options-outline"
-                label="Permissions"
-                onPress={() => handleModeratorAction("editPermissions")}
-              />
-
-              <GridAction
-                icon="analytics-outline"
-                label="Activity"
-                onPress={() => handleModeratorAction("activity")}
-              />
-
-              {selectedModerator?.status === "ACTIVE" ? (
-                <GridAction
-                  icon="pause-circle-outline"
-                  label="Suspend"
-                  danger
-                  onPress={() => handleModeratorAction("suspend")}
-                />
+          {selectedModerator ? (
+            <View style={styles.permissionPreviewBox}>
+              {getModeratorPermissions(selectedModerator).length > 0 ? (
+                getModeratorPermissions(selectedModerator).map((permission) => (
+                  <View key={permission} style={styles.permissionChip}>
+                    <Text style={styles.permissionChipText}>
+                      {getPermissionLabel(permission)}
+                    </Text>
+                  </View>
+                ))
               ) : (
-                <GridAction
-                  icon="refresh-outline"
-                  label="Reactivate"
-                  onPress={() => handleModeratorAction("reactivate")}
-                />
+                <Text style={styles.permissionEmptyText}>
+                  No extra permissions assigned.
+                </Text>
               )}
-
-              <GridAction
-                icon="trash-outline"
-                label="Remove"
-                danger
-                onPress={() => handleModeratorAction("remove")}
-              />
             </View>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog>
+          ) : null}
 
-      <Modal
+          <View style={styles.actionList}>
+            <ActionSheetButton
+              icon="person-outline"
+              label="View profile"
+              onPress={() => handleModeratorAction("view")}
+            />
+
+            <ActionSheetButton
+              icon="options-outline"
+              label="Edit permissions"
+              onPress={() => handleModeratorAction("editPermissions")}
+            />
+
+            <ActionSheetButton
+              icon="analytics-outline"
+              label="View activity"
+              onPress={() => handleModeratorAction("activity")}
+            />
+
+            {selectedModerator?.status === "ACTIVE" ? (
+              <ActionSheetButton
+                icon="pause-circle-outline"
+                label="Suspend moderator"
+                danger
+                onPress={() => handleModeratorAction("suspend")}
+              />
+            ) : (
+              <ActionSheetButton
+                icon="refresh-outline"
+                label="Reactivate moderator"
+                onPress={() => handleModeratorAction("reactivate")}
+              />
+            )}
+
+            <ActionSheetButton
+              icon="trash-outline"
+              label={isRemovingModerator ? "Removing..." : "Remove moderator"}
+              danger
+              disabled={isActionLoading}
+              onPress={() => handleModeratorAction("remove")}
+            />
+          </View>
+        </PaperModal>
+      </Portal>
+
+      <Portal>
+        <PaperModal
+          visible={filterSheetVisible}
+          onDismiss={() => setFilterSheetVisible(false)}
+          contentContainerStyle={[
+            styles.filterModalContainer,
+            {
+              paddingBottom: Math.max(28, insets.bottom + 18),
+            },
+          ]}
+        >
+          <View style={styles.sheetHandle} />
+
+          <View style={styles.filterModalHeader}>
+            <View style={styles.filterTitleWrap}>
+              <Text style={styles.filterModalTitle}>Filter moderators</Text>
+              <Text style={styles.filterModalSubtitle}>
+                Choose which moderator status you want to view.
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => setFilterSheetVisible(false)}
+              style={({ pressed }) => [
+                styles.closeButton,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Ionicons name="close" size={21} color={colors.foreground} />
+            </Pressable>
+          </View>
+
+          <View style={styles.filterOptionList}>
+            {STATUS_FILTERS.map((filter) => {
+              const isActive = statusFilter === filter.value;
+
+              return (
+                <Pressable
+                  key={filter.value}
+                  onPress={() => handleStatusFilterChange(filter.value)}
+                  style={({ pressed }) => [
+                    styles.filterOption,
+                    isActive && styles.filterOptionActive,
+                    pressed && { opacity: 0.75 },
+                  ]}
+                >
+                  <View style={styles.filterOptionLeft}>
+                    <View
+                      style={[
+                        styles.filterOptionIcon,
+                        isActive && styles.filterOptionIconActive,
+                      ]}
+                    >
+                      <Ionicons
+                        name={filter.icon}
+                        size={19}
+                        color={isActive ? colors.accent : colors.muted}
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.filterOptionText,
+                          isActive && { color: colors.accent },
+                        ]}
+                      >
+                        {filter.label}
+                      </Text>
+
+                      <Text style={styles.filterOptionSubtext}>
+                        Show {filter.label.toLowerCase()} moderators
+                      </Text>
+                    </View>
+                  </View>
+
+                  {isActive ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={23}
+                      color={colors.accent}
+                    />
+                  ) : (
+                    <Ionicons
+                      name="ellipse-outline"
+                      size={22}
+                      color={colors.border}
+                    />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        </PaperModal>
+      </Portal>
+
+      <RNModal
         visible={permissionModalVisible}
         animationType="slide"
         presentationStyle="fullScreen"
@@ -673,7 +1089,9 @@ export default function ModeratorScreen() {
                 disabled={isSubmittingPermissionForm}
                 style={({ pressed }) => [
                   styles.permissionCloseButton,
-                  pressed && !isSubmittingPermissionForm ? { opacity: 0.7 } : null,
+                  pressed && !isSubmittingPermissionForm
+                    ? { opacity: 0.7 }
+                    : null,
                 ]}
               >
                 <Ionicons name="close" size={22} color={colors.foreground} />
@@ -697,39 +1115,178 @@ export default function ModeratorScreen() {
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
-      </Modal>
+      </RNModal>
     </>
   );
 
-  function GridAction({
+  function ModeratorCard({ moderator }: { moderator: CommunityMemberItem }) {
+    const name = moderator.user.name ?? "Unknown User";
+    const email = moderator.user.email ?? "No email available";
+    const role = formatLabel(moderator.role, "Moderator");
+    const status = formatLabel(moderator.status, "Active");
+    const statusColor =
+      moderator.status === "BANNED"
+        ? colors.danger
+        : moderator.status === "LEFT"
+          ? colors.muted
+          : colors.accent;
+
+    const permissions = getModeratorPermissions(moderator);
+
+    return (
+      <View style={styles.moderatorCard}>
+        <View style={styles.cardTopRow}>
+          <ModeratorAvatar moderator={moderator} />
+
+          <View style={styles.cardMainText}>
+            <Text numberOfLines={1} style={styles.moderatorName}>
+              {name}
+            </Text>
+
+            <Text numberOfLines={1} style={styles.moderatorEmail}>
+              {email}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() => openActionSheet(moderator)}
+            disabled={isActionLoading}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.moreButton,
+              pressed && { opacity: 0.7 },
+              isActionLoading && { opacity: 0.45 },
+            ]}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={22}
+              color={colors.foreground}
+            />
+          </Pressable>
+        </View>
+
+        <View style={styles.cardDetailRow}>
+          <View style={styles.detailPill}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={15}
+              color={colors.muted}
+            />
+
+            <Text numberOfLines={1} style={styles.detailPillText}>
+              {role}
+            </Text>
+          </View>
+
+          <View style={styles.detailPill}>
+            <Ionicons
+              name="radio-button-on-outline"
+              size={15}
+              color={statusColor}
+            />
+
+            <Text
+              numberOfLines={1}
+              style={[styles.detailPillText, { color: statusColor }]}
+            >
+              {status}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.permissionRow}>
+          {permissions.length > 0 ? (
+            permissions.slice(0, 3).map((permission) => (
+              <View key={permission} style={styles.cardPermissionChip}>
+                <Text numberOfLines={1} style={styles.cardPermissionChipText}>
+                  {getPermissionLabel(permission)}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.noPermissionText}>No extra permissions</Text>
+          )}
+
+          {permissions.length > 3 ? (
+            <View style={styles.cardPermissionChip}>
+              <Text style={styles.cardPermissionChipText}>
+                +{permissions.length - 3}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
+
+  function ModeratorAvatar({ moderator }: { moderator: CommunityMemberItem }) {
+    const imageUri = toAbsoluteFileUrl(moderator.user.image);
+
+    return (
+      <Avatar
+        alt={moderator.user.name ?? "Moderator"}
+        size="lg"
+        variant="soft"
+        color="success"
+      >
+        {imageUri ? (
+          <Avatar.Image
+            source={{
+              uri: imageUri,
+            }}
+          />
+        ) : null}
+
+        <Avatar.Fallback>
+          {getModeratorInitials(moderator.user.name)}
+        </Avatar.Fallback>
+      </Avatar>
+    );
+  }
+
+  function ActionSheetButton({
     icon,
     label,
     danger,
+    disabled,
     onPress,
   }: {
     icon: keyof typeof Ionicons.glyphMap;
     label: string;
     danger?: boolean;
+    disabled?: boolean;
     onPress: () => void;
   }) {
     return (
       <Pressable
         onPress={onPress}
+        disabled={disabled}
         style={({ pressed }) => [
-          styles.gridAction,
-          pressed && { opacity: 0.65 },
+          styles.actionListItem,
+          pressed && { opacity: 0.7 },
+          disabled && { opacity: 0.45 },
         ]}
       >
-        <Ionicons
-          name={icon}
-          size={23}
-          color={danger ? colors.danger : colors.accent}
-        />
+        <View
+          style={[
+            styles.actionListIcon,
+            danger && {
+              borderColor: colors.danger,
+              backgroundColor: colors.surface,
+            },
+          ]}
+        >
+          <Ionicons
+            name={icon}
+            size={20}
+            color={danger ? colors.danger : colors.accent}
+          />
+        </View>
 
         <Text
-          numberOfLines={1}
           style={[
-            styles.gridLabel,
+            styles.actionListLabel,
             {
               color: danger ? colors.danger : colors.foreground,
             },
@@ -737,6 +1294,12 @@ export default function ModeratorScreen() {
         >
           {label}
         </Text>
+
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={danger ? colors.danger : colors.muted}
+        />
       </Pressable>
     );
   }
@@ -744,29 +1307,46 @@ export default function ModeratorScreen() {
 
 function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
   return StyleSheet.create({
-    root: {
+    safeArea: {
       flex: 1,
+      width: "100%",
       backgroundColor: colors.surface,
     },
 
-    scrollContent: {
+    root: {
+      flex: 1,
+      width: "100%",
+      backgroundColor: colors.surface,
+    },
+
+    listContent: {
+      width: "100%",
+    },
+
+    emptyListContent: {
       flexGrow: 1,
-      paddingBottom: 155,
     },
 
     header: {
+      width: "100%",
       paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 14,
+      paddingTop: 14,
+      paddingBottom: 8,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
       gap: 12,
     },
 
+    headerTextWrap: {
+      flex: 1,
+      minWidth: 0,
+    },
+
     title: {
       color: colors.foreground,
       fontSize: 22,
+      lineHeight: 29,
       fontFamily: "Poppins_700Bold",
     },
 
@@ -777,8 +1357,240 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontFamily: "Poppins_400Regular",
     },
 
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+    },
+
+    headerIconButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    headerIconButtonActive: {
+      borderColor: colors.accent,
+      backgroundColor: colors.surface,
+    },
+
+    headerAddButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.accent,
+    },
+
+    metaRow: {
+      paddingHorizontal: 16,
+      paddingBottom: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+
+    metaChip: {
+      minHeight: 34,
+      maxWidth: "75%",
+      paddingHorizontal: 11,
+      borderRadius: 17,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+
+    metaChipText: {
+      color: colors.foreground,
+      fontSize: 12,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    smallLoaderChip: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    searchBox: {
+      marginHorizontal: 16,
+      marginBottom: 12,
+      height: 50,
+      borderRadius: 25,
+      paddingLeft: 12,
+      paddingRight: 8,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    searchInput: {
+      flex: 1,
+      minWidth: 0,
+      height: "100%",
+      paddingVertical: 0,
+      color: colors.foreground,
+      fontSize: 14,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    searchHint: {
+      marginTop: -5,
+      marginHorizontal: 20,
+      marginBottom: 12,
+      color: colors.muted,
+      fontSize: 11,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    clearSearchButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    moderatorSeparator: {
+      height: 12,
+    },
+
+    moderatorCard: {
+      marginHorizontal: 16,
+      borderRadius: 24,
+      padding: 15,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    cardTopRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+
+    cardMainText: {
+      flex: 1,
+      minWidth: 0,
+    },
+
+    moderatorName: {
+      color: colors.foreground,
+      fontSize: 16,
+      lineHeight: 22,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    moderatorEmail: {
+      marginTop: 2,
+      color: colors.muted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    moreButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+
+    cardDetailRow: {
+      marginTop: 14,
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+
+    detailPill: {
+      minHeight: 34,
+      maxWidth: "48%",
+      paddingHorizontal: 10,
+      borderRadius: 17,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+
+    detailPillText: {
+      flexShrink: 1,
+      color: colors.foreground,
+      fontSize: 12,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    permissionRow: {
+      marginTop: 12,
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 7,
+    },
+
+    cardPermissionChip: {
+      maxWidth: "48%",
+      borderRadius: 999,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    cardPermissionChipText: {
+      color: colors.foreground,
+      fontSize: 11,
+      fontFamily: "Poppins_600SemiBold",
+    },
+
+    noPermissionText: {
+      color: colors.muted,
+      fontSize: 11,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    infiniteFooter: {
+      height: 56,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    footerSpacer: {
+      height: 28,
+    },
+
     centerWrap: {
       flex: 1,
+      width: "100%",
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 24,
@@ -799,22 +1611,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       lineHeight: 20,
       textAlign: "center",
       fontFamily: "Poppins_400Regular",
-    },
-
-    addButton: {
-      minHeight: 38,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      borderRadius: 999,
-      paddingHorizontal: 13,
-      backgroundColor: colors.accent,
-    },
-
-    addText: {
-      color: colors.accentForeground,
-      fontSize: 13,
-      fontFamily: "Poppins_700Bold",
     },
 
     errorBox: {
@@ -843,38 +1639,69 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontFamily: "Poppins_400Regular",
     },
 
-    actionDialogContent: {
-      width: "94%",
-      maxHeight: "88%",
-      borderRadius: 28,
-      backgroundColor: colors.surface,
+    stateCard: {
+      marginHorizontal: 16,
+      paddingVertical: 34,
+      paddingHorizontal: 18,
+      borderRadius: 24,
+      alignItems: "center",
       borderWidth: 1,
       borderColor: colors.border,
-      padding: 16,
+      backgroundColor: colors.surfaceSecondary,
     },
 
-    dialogTopRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: 12,
-      marginBottom: 14,
+    stateIconWrap: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      marginBottom: 10,
     },
 
-    dialogTitle: {
+    stateTitle: {
+      marginTop: 10,
       color: colors.foreground,
-      fontSize: 18,
+      fontSize: 15,
       fontFamily: "Poppins_700Bold",
     },
 
-    dialogDescription: {
-      marginTop: 3,
+    stateSubtitle: {
+      marginTop: 4,
       color: colors.muted,
       fontSize: 12,
       lineHeight: 18,
+      textAlign: "center",
       fontFamily: "Poppins_400Regular",
     },
 
+    actionSheetContainer: {
+      marginHorizontal: 0,
+      marginBottom: 0,
+      marginTop: "auto",
+      width: "100%",
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 30,
+      borderTopRightRadius: 30,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+    },
+
+    sheetHandle: {
+      width: 44,
+      height: 5,
+      borderRadius: 999,
+      backgroundColor: colors.border,
+      alignSelf: "center",
+      marginBottom: 12,
+    },
+
     sheetHeader: {
+      paddingHorizontal: 18,
       paddingBottom: 16,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
@@ -892,33 +1719,51 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
 
     moderatorTextWrap: {
       flex: 1,
+      minWidth: 0,
     },
 
     sheetTitle: {
       color: colors.foreground,
-      fontSize: 17,
+      fontSize: 18,
       fontFamily: "Poppins_700Bold",
     },
 
     sheetSubtitle: {
       marginTop: 2,
       color: colors.muted,
-      fontSize: 12,
+      fontSize: 13,
       fontFamily: "Poppins_400Regular",
     },
 
-    permissionPreview: {
-      marginTop: 10,
+    closeButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    permissionPreviewBox: {
+      marginHorizontal: 18,
+      marginTop: 16,
+      padding: 12,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
       flexDirection: "row",
       flexWrap: "wrap",
-      gap: 6,
+      gap: 7,
     },
 
     permissionChip: {
       borderRadius: 999,
       paddingHorizontal: 9,
-      paddingVertical: 5,
-      backgroundColor: colors.surfaceSecondary,
+      paddingVertical: 6,
+      backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
     },
@@ -929,28 +1774,147 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontFamily: "Poppins_600SemiBold",
     },
 
-    actionGrid: {
-      paddingTop: 22,
-      paddingBottom: 8,
-      flexDirection: "row",
-      flexWrap: "wrap",
-      rowGap: 24,
-      columnGap: 12,
+    permissionEmptyText: {
+      color: colors.muted,
+      fontSize: 12,
+      fontFamily: "Poppins_400Regular",
     },
 
-    gridAction: {
-      width: "30%",
+    actionList: {
+      paddingHorizontal: 18,
+      paddingTop: 14,
+      gap: 10,
+    },
+
+    actionListItem: {
+      minHeight: 56,
+      borderRadius: 18,
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+    },
+
+    actionListIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       alignItems: "center",
       justifyContent: "center",
-      gap: 7,
-      paddingVertical: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
     },
 
-    gridLabel: {
+    actionListLabel: {
+      flex: 1,
+      fontSize: 14,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    filterModalContainer: {
+      marginHorizontal: 0,
+      marginBottom: 0,
+      marginTop: "auto",
+      width: "100%",
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 30,
+      borderTopRightRadius: 30,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+    },
+
+    filterModalHeader: {
+      paddingHorizontal: 18,
+      paddingBottom: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+
+    filterTitleWrap: {
+      flex: 1,
+    },
+
+    filterModalTitle: {
+      color: colors.foreground,
+      fontSize: 18,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    filterModalSubtitle: {
+      marginTop: 3,
+      color: colors.muted,
       fontSize: 12,
-      lineHeight: 16,
-      fontFamily: "Poppins_600SemiBold",
-      textAlign: "center",
+      lineHeight: 18,
+      fontFamily: "Poppins_400Regular",
+    },
+
+    filterOptionList: {
+      paddingHorizontal: 18,
+      paddingTop: 14,
+      gap: 10,
+    },
+
+    filterOption: {
+      minHeight: 60,
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+
+    filterOptionActive: {
+      borderColor: colors.accent,
+      backgroundColor: colors.surface,
+    },
+
+    filterOptionLeft: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+    },
+
+    filterOptionIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+
+    filterOptionIconActive: {
+      borderColor: colors.accent,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
+    filterOptionText: {
+      color: colors.foreground,
+      fontSize: 14,
+      fontFamily: "Poppins_700Bold",
+    },
+
+    filterOptionSubtext: {
+      marginTop: 2,
+      color: colors.muted,
+      fontSize: 11,
+      fontFamily: "Poppins_400Regular",
     },
 
     permissionModalScreen: {
