@@ -2,6 +2,12 @@ import { baseApi } from "./baseApi";
 
 export type FollowSortBy = "newest" | "oldest" | "name_asc" | "name_desc";
 
+export type FollowButtonText =
+  | "Follow"
+  | "Follow Back"
+  | "Following"
+  | "Friends";
+
 export type FollowUser = {
   id: string;
   name: string | null;
@@ -13,12 +19,13 @@ export type FollowUser = {
   displayName: string;
   createdAt: string;
 };
+
 export type FollowRelationship = {
   isFollowing: boolean;
   followsMe: boolean;
   isMutual: boolean;
   canMessage: boolean;
-  buttonText: "Follow" | "Follow Back" | "Following";
+  buttonText: FollowButtonText;
 };
 
 export type FollowItem = {
@@ -51,6 +58,11 @@ export type DiscoverFollowResponse = {
     search: string | null;
     sortBy: FollowSortBy;
   };
+};
+
+export type FollowStatusResponse = {
+  user: FollowUser;
+  relationship: FollowRelationship;
 };
 
 export type FollowResponse = {
@@ -98,7 +110,7 @@ function buildQueryParams(params?: Record<string, string | number | undefined>) 
 export const followApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     /**
-     * Discover users from my joined communities that I can follow.
+     * Discover users.
      *
      * GET /follows/discover?page=1&limit=20&search=ram&sortBy=newest
      */
@@ -119,7 +131,7 @@ export const followApi = baseApi.injectEndpoints({
     }),
 
     /**
-     * Get users who follow me.
+     * Get my followers.
      *
      * GET /follows/me/followers?page=1&limit=20
      */
@@ -195,6 +207,22 @@ export const followApi = baseApi.injectEndpoints({
     }),
 
     /**
+     * Get follow status between me and another user.
+     *
+     * GET /follows/status/:userId
+     */
+    getFollowStatus: builder.query<FollowStatusResponse, string>({
+      query: (userId) => ({
+        url: `/follows/status/${userId}`,
+        method: "GET",
+      }),
+      providesTags: (_result, _error, userId) => [
+        "Follow",
+        { type: "Follow" as const, id: userId },
+      ],
+    }),
+
+    /**
      * Follow a user.
      *
      * POST /follows/:userId
@@ -242,6 +270,7 @@ export const {
   useGetMyFollowingQuery,
   useGetUserFollowersQuery,
   useGetUserFollowingQuery,
+  useGetFollowStatusQuery,
   useFollowUserMutation,
   useUnfollowUserMutation,
 } = followApi;

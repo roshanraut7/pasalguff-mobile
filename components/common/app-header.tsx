@@ -67,8 +67,8 @@ export default function AppHeader({
     return toAbsoluteFileUrl(avatarUrl);
   }, [avatarUrl]);
 
-  console.log("APP HEADER RAW AVATAR:", avatarUrl);
-  console.log("APP HEADER DISPLAY AVATAR:", displayAvatarUrl);
+  // console.log("APP HEADER RAW AVATAR:", avatarUrl);
+  // console.log("APP HEADER DISPLAY AVATAR:", displayAvatarUrl);
 
   const toggleSearch = () => {
     const opening = !isSearchOpen;

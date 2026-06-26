@@ -1,7 +1,12 @@
 import { baseApi } from "./baseApi";
 
-export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE" | "AUDIO";
+export type MessageType = "TEXT" | "IMAGE" | "FILE" | "AUDIO";
+// If you want VIDEO chat messages, also add VIDEO in Prisma MessageType enum first.
+// export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE" | "AUDIO";
+
 export type MessageStatus = "SENT" | "DELIVERED";
+
+export type ChatRequestStatus = "ACCEPTED" | "PENDING" | "DECLINED";
 
 export type ChatUser = {
   id: string;
@@ -12,7 +17,6 @@ export type ChatUser = {
   businessName?: string | null;
   businessType?: string | null;
 
-  // For online / active status
   isOnline?: boolean;
   lastSeenAt?: string | null;
 };
@@ -49,13 +53,21 @@ export type ChatMessage = {
 
 export type Chat = {
   id: string;
+
   sourceCommunity?: {
     id: string;
     name: string;
     avatarImage?: string | null;
   } | null;
+
+  requestStatus: ChatRequestStatus;
+  requestedById?: string | null;
+  acceptedAt?: string | null;
+  declinedAt?: string | null;
+
   createdAt: string;
   updatedAt: string;
+
   otherUser?: ChatUser | null;
   members: ChatMember[];
   lastMessage?: ChatMessage | null;
@@ -98,13 +110,30 @@ export type ChatSuggestionRelationship = {
   isFollowing: boolean;
   followsMe: boolean;
   isMutual: boolean;
+
+  /**
+   * true when chat can continue normally.
+   * Usually mutual follow OR already accepted chat.
+   */
   canMessage: boolean;
+
+  /**
+   * true when user can open chat and send message request.
+   * Usually one-way follow.
+   */
+  canSendRequest?: boolean;
 };
 
 export type ChatSuggestionItem = {
   user: ChatUser;
   relationship: ChatSuggestionRelationship;
+
   existingChatId?: string | null;
+
+  chatRequestStatus?: ChatRequestStatus | null;
+  requestedById?: string | null;
+  acceptedAt?: string | null;
+  declinedAt?: string | null;
 };
 
 export type ChatSuggestionsResponse = {
@@ -113,6 +142,7 @@ export type ChatSuggestionsResponse = {
 
 export const chatApi = baseApi.injectEndpoints({
   overrideExisting: true,
+
   endpoints: (builder) => ({
     getMyChats: builder.query<Chat[], void>({
       query: () => ({
@@ -163,7 +193,10 @@ export const chatApi = baseApi.injectEndpoints({
       query: ({ chatId, page = 1, limit = 30 }) => ({
         url: `/chats/${chatId}/messages`,
         method: "GET",
-        params: { page, limit },
+        params: {
+          page,
+          limit,
+        },
       }),
       providesTags: (_result, _error, arg) => [
         { type: "Message" as const, id: arg.chatId },
@@ -179,9 +212,10 @@ export const chatApi = baseApi.injectEndpoints({
         method: "POST",
         body: body ?? {},
       }),
-      invalidatesTags: [
+      invalidatesTags: (_result, _error, arg) => [
         { type: "Chat", id: "LIST" },
         { type: "Chat", id: "SUGGESTIONS" },
+        { type: "Chat", id: arg.targetUserId },
       ],
     }),
 
@@ -212,6 +246,32 @@ export const chatApi = baseApi.injectEndpoints({
       ],
     }),
 
+    acceptMessageRequest: builder.mutation<Chat, string>({
+      query: (chatId) => ({
+        url: `/chats/${chatId}/accept`,
+        method: "PATCH",
+      }),
+      invalidatesTags: (_result, _error, chatId) => [
+        { type: "Chat", id: "LIST" },
+        { type: "Chat", id: chatId },
+        { type: "Chat", id: "SUGGESTIONS" },
+        { type: "Message", id: chatId },
+      ],
+    }),
+
+    declineMessageRequest: builder.mutation<Chat, string>({
+      query: (chatId) => ({
+        url: `/chats/${chatId}/decline`,
+        method: "PATCH",
+      }),
+      invalidatesTags: (_result, _error, chatId) => [
+        { type: "Chat", id: "LIST" },
+        { type: "Chat", id: chatId },
+        { type: "Chat", id: "SUGGESTIONS" },
+        { type: "Message", id: chatId },
+      ],
+    }),
+
     uploadChatFile: builder.mutation<UploadChatFileResponse, FormData>({
       query: (formData) => ({
         url: "/uploads/chat",
@@ -231,5 +291,7 @@ export const {
   useCreateDirectChatMutation,
   useSendMessageMutation,
   useMarkChatReadMutation,
+  useAcceptMessageRequestMutation,
+  useDeclineMessageRequestMutation,
   useUploadChatFileMutation,
 } = chatApi;

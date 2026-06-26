@@ -36,6 +36,8 @@ import { useSession } from "@/api/better-auth-client";
 import {
   type ChatMessage,
   type MessageType,
+  useAcceptMessageRequestMutation,
+  useDeclineMessageRequestMutation,
   useGetChatMessagesQuery,
   useGetChatQuery,
   useMarkChatReadMutation,
@@ -155,8 +157,41 @@ export default function ConversationScreen() {
   const [uploadChatFile, { isLoading: isUploading }] =
     useUploadChatFileMutation();
   const [markChatRead] = useMarkChatReadMutation();
+  const [acceptMessageRequest, { isLoading: isAcceptingRequest }] =
+    useAcceptMessageRequestMutation();
+  const [declineMessageRequest, { isLoading: isDecliningRequest }] =
+    useDeclineMessageRequestMutation();
 
   const messages = messagePage?.items ?? [];
+
+  const requestStatus = String((chat as any)?.requestStatus ?? "ACCEPTED");
+  const requestedById = ((chat as any)?.requestedById ?? null) as string | null;
+
+  const isPendingRequest = requestStatus === "PENDING";
+  const isDeclinedRequest = requestStatus === "DECLINED";
+  const isRequestSender = Boolean(
+    currentUserId && requestedById && requestedById === currentUserId,
+  );
+  const hasCurrentUserSentMessage = messages.some(
+    (item) => item.senderId === currentUserId,
+  );
+
+  const shouldShowRequestActions = isPendingRequest && !isRequestSender;
+
+  const shouldLockComposer =
+    isDeclinedRequest ||
+    shouldShowRequestActions ||
+    (isPendingRequest && isRequestSender && hasCurrentUserSentMessage);
+
+  const composerPlaceholder = isDeclinedRequest
+    ? "This message request was declined"
+    : shouldShowRequestActions
+      ? "Accept the request to reply"
+      : isPendingRequest && isRequestSender && hasCurrentUserSentMessage
+        ? "Message request sent"
+        : isUploading
+          ? "Uploading..."
+          : "Type a message...";
 
   useFocusEffect(
     useCallback(() => {
@@ -294,6 +329,15 @@ export default function ConversationScreen() {
       }
     };
 
+    const handleChatUpdated = async (payload: { chatId: string }) => {
+      if (!mounted) return;
+
+      if (payload.chatId === chatId) {
+        await refetchChat();
+        await refetchMessages();
+      }
+    };
+
     socket.on("connect", () => {
       console.log("Chat socket connected:", socket.id);
       socket.emit("chat:join", { chatId });
@@ -310,6 +354,8 @@ export default function ConversationScreen() {
     socket.on("message:new", handleNewMessage);
     socket.on("message:delivered", handleDelivered);
     socket.on("chat:read", handleChatRead);
+    socket.on("chat:updated", handleChatUpdated);
+    socket.on("message-request:updated", handleChatUpdated);
     socket.on("presence:update", handlePresenceUpdate);
     socket.on("typing:start", handleTypingStart);
     socket.on("typing:stop", handleTypingStop);
@@ -334,6 +380,8 @@ export default function ConversationScreen() {
       socket.off("message:new", handleNewMessage);
       socket.off("message:delivered", handleDelivered);
       socket.off("chat:read", handleChatRead);
+      socket.off("chat:updated", handleChatUpdated);
+      socket.off("message-request:updated", handleChatUpdated);
       socket.off("presence:update", handlePresenceUpdate);
       socket.off("typing:start", handleTypingStart);
       socket.off("typing:stop", handleTypingStop);
@@ -397,7 +445,7 @@ export default function ConversationScreen() {
   const emitTyping = (text: string) => {
     const socket = socketRef.current;
 
-    if (!socket || !chatId) return;
+    if (!socket || !chatId || shouldLockComposer) return;
 
     if (text.trim().length > 0) {
       socket.emit("typing:start", { chatId });
@@ -417,7 +465,9 @@ export default function ConversationScreen() {
   const handleSendText = async () => {
     const text = message.trim();
 
-    if (!text || !chatId || isSending || isUploading) return;
+    if (!text || !chatId || isSending || isUploading || shouldLockComposer) {
+      return;
+    }
 
     socketRef.current?.emit("typing:stop", { chatId });
 
@@ -449,7 +499,15 @@ export default function ConversationScreen() {
   };
 
   const startVoiceRecording = async () => {
-    if (!chatId || isSending || isUploading || recorderState.isRecording) return;
+    if (
+      !chatId ||
+      isSending ||
+      isUploading ||
+      shouldLockComposer ||
+      recorderState.isRecording
+    ) {
+      return;
+    }
 
     try {
       Keyboard.dismiss();
@@ -568,7 +626,7 @@ export default function ConversationScreen() {
     fileSize?: number | null;
     forcedMessageType?: MessageType;
   }) => {
-    if (!chatId || isUploading) return;
+    if (!chatId || isUploading || shouldLockComposer) return;
 
     try {
       const fileName = asset.fileName || `chat-file-${Date.now()}`;
@@ -589,7 +647,9 @@ export default function ConversationScreen() {
       await sendMessage({
         chatId,
         body: {
-          type: asset.forcedMessageType ?? guessMessageType(finalMimeType),
+          type: normalizeMessageType(
+            asset.forcedMessageType ?? guessMessageType(finalMimeType),
+          ),
           mediaUrl: uploaded.url,
           fileName: uploaded.originalName || uploaded.filename || fileName,
           fileSize: uploaded.size || asset.fileSize || undefined,
@@ -655,7 +715,7 @@ export default function ConversationScreen() {
     if (!permission.granted) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
+      mediaTypes: ["images"],
       allowsMultipleSelection: true,
       selectionLimit: 10,
       quality: 0.8,
@@ -744,6 +804,60 @@ export default function ConversationScreen() {
     setDrawerVisible(true);
   };
 
+  const handleAcceptMessageRequest = async () => {
+    if (!chatId || isAcceptingRequest || isDecliningRequest) return;
+
+    try {
+      await acceptMessageRequest(chatId).unwrap();
+
+      await Promise.all([refetchChat(), refetchMessages()]);
+
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 120);
+    } catch (error) {
+      console.log(
+        "Accept message request failed:",
+        JSON.stringify(error, null, 2),
+      );
+
+      Alert.alert("Could not accept", "Please try again.");
+    }
+  };
+
+  const handleDeclineMessageRequest = () => {
+    if (!chatId || isAcceptingRequest || isDecliningRequest) return;
+
+    Alert.alert(
+      "Decline message request?",
+      "This user will not be able to continue this chat unless a new request is allowed later.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Decline",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await declineMessageRequest(chatId).unwrap();
+
+              await Promise.all([refetchChat(), refetchMessages()]);
+            } catch (error) {
+              console.log(
+                "Decline message request failed:",
+                JSON.stringify(error, null, 2),
+              );
+
+              Alert.alert("Could not decline", "Please try again.");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const composerBottom =
     keyboardHeight > 0
       ? keyboardHeight +
@@ -762,11 +876,17 @@ export default function ConversationScreen() {
     }
   }, [chatId, refetchMessages, refetchChat]);
 
-  const headerStatus = isOtherTyping
-    ? "Typing..."
-    : `${formatActiveStatus(chat?.otherUser, presenceTick)}${
-        chat?.sourceCommunity?.name ? ` • ${chat.sourceCommunity.name}` : ""
-      }`;
+  const headerStatus = isPendingRequest
+    ? isRequestSender
+      ? "Message request sent"
+      : "Message request"
+    : isDeclinedRequest
+      ? "Message request declined"
+      : isOtherTyping
+        ? "Typing..."
+        : `${formatActiveStatus(chat?.otherUser, presenceTick)}${
+            chat?.sourceCommunity?.name ? ` • ${chat.sourceCommunity.name}` : ""
+          }`;
 
   const isRecording = recorderState.isRecording;
   const hasTextMessage = message.trim().length > 0;
@@ -777,7 +897,8 @@ export default function ConversationScreen() {
       ? "send"
       : "mic";
 
-  const composerActionDisabled = isSending || isUploading;
+  const composerActionDisabled =
+    isSending || isUploading || isAcceptingRequest || isDecliningRequest || shouldLockComposer;
   const composerActionOpacity = composerActionDisabled ? 0.55 : 1;
 
   if (chatLoading) {
@@ -865,7 +986,15 @@ export default function ConversationScreen() {
           ) : messages.length === 0 && pendingUploads.length === 0 ? (
             <View style={styles.emptyWrap}>
               <Text style={styles.emptyTitle}>No messages yet</Text>
-              <Text style={styles.emptySubText}>Send your first message.</Text>
+              <Text style={styles.emptySubText}>
+                {isDeclinedRequest
+                  ? "This message request was declined."
+                  : shouldShowRequestActions
+                    ? "Accept this message request to reply."
+                    : isPendingRequest && isRequestSender
+                      ? "Your message request is waiting for acceptance."
+                      : "Send your first message."}
+              </Text>
             </View>
           ) : (
             <>
@@ -882,6 +1011,19 @@ export default function ConversationScreen() {
           )}
         </ScrollView>
 
+        {isPendingRequest || isDeclinedRequest ? (
+          <MessageRequestBanner
+            colors={colors}
+            isPending={isPendingRequest}
+            isDeclined={isDeclinedRequest}
+            isRequestSender={isRequestSender}
+            isAccepting={isAcceptingRequest}
+            isDeclining={isDecliningRequest}
+            onAccept={handleAcceptMessageRequest}
+            onDecline={handleDeclineMessageRequest}
+          />
+        ) : null}
+
         <View
           style={[
             styles.composerOuter,
@@ -894,7 +1036,7 @@ export default function ConversationScreen() {
             <Pressable
               onPress={openAttachmentDrawer}
               style={styles.attachButton}
-              disabled={isUploading || isRecording}
+              disabled={composerActionDisabled || isRecording}
             >
               <Ionicons name="add" size={22} color={colors.accent} />
             </Pressable>
@@ -932,7 +1074,7 @@ export default function ConversationScreen() {
                     setMessage(text);
                     emitTyping(text);
                   }}
-                  placeholder={isUploading ? "Uploading..." : "Type a message..."}
+                  placeholder={composerPlaceholder}
                   placeholderTextColor={colors.placeholder}
                   style={styles.input}
                   multiline
@@ -945,7 +1087,7 @@ export default function ConversationScreen() {
                     }
                   }}
                   underlineColorAndroid="transparent"
-                  editable={!isUploading}
+                  editable={!composerActionDisabled}
                 />
               )}
             </View>
@@ -1318,52 +1460,6 @@ function renderMessageContent(
     );
   }
 
-  if (item.type === "VIDEO") {
-    const videoUrl = toAbsoluteFileUrl(item.mediaUrl);
-
-    return (
-      <Pressable
-        style={styles.fileBubble}
-        onPress={() => {
-          if (videoUrl) Linking.openURL(videoUrl);
-        }}
-      >
-        <View style={styles.fileIconWrap}>
-          <Ionicons
-            name="videocam-outline"
-            size={20}
-            color={isMe ? "#ffffff" : colors.foreground}
-          />
-        </View>
-
-        <View style={styles.fileTextWrap}>
-          <Text
-            numberOfLines={1}
-            ellipsizeMode="middle"
-            style={[
-              styles.fileNameText,
-              isMe ? styles.bubbleTextMe : styles.bubbleTextOther,
-            ]}
-          >
-            {item.fileName || "Video"}
-          </Text>
-
-          {item.fileSize ? (
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.fileMetaText,
-                isMe ? styles.fileMetaTextMe : styles.fileMetaTextOther,
-              ]}
-            >
-              {formatFileSize(item.fileSize)}
-            </Text>
-          ) : null}
-        </View>
-      </Pressable>
-    );
-  }
-
   if (item.type === "AUDIO" && item.mediaUrl) {
     const audioUrl = toAbsoluteFileUrl(item.mediaUrl);
 
@@ -1546,6 +1642,227 @@ function AudioMessageBubble({
   </Pressable>
 );
 }
+
+
+function MessageRequestBanner({
+  colors,
+  isPending,
+  isDeclined,
+  isRequestSender,
+  isAccepting,
+  isDeclining,
+  onAccept,
+  onDecline,
+}: {
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  isPending: boolean;
+  isDeclined: boolean;
+  isRequestSender: boolean;
+  isAccepting: boolean;
+  isDeclining: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  if (isDeclined) {
+    return (
+      <View
+        style={{
+          position: "absolute",
+          left: 14,
+          right: 14,
+          bottom: COMPOSER_BAR_HEIGHT + 28,
+          borderRadius: 18,
+          padding: 14,
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        <Text
+          style={{
+            color: colors.foreground,
+            fontSize: 14,
+            fontWeight: "800",
+            textAlign: "center",
+          }}
+        >
+          Message request declined
+        </Text>
+
+        <Text
+          style={{
+            marginTop: 4,
+            color: colors.muted,
+            fontSize: 12,
+            textAlign: "center",
+          }}
+        >
+          This conversation cannot continue right now.
+        </Text>
+      </View>
+    );
+  }
+
+  if (!isPending) return null;
+
+  if (isRequestSender) {
+    return (
+      <View
+        style={{
+          position: "absolute",
+          left: 14,
+          right: 14,
+          bottom: COMPOSER_BAR_HEIGHT + 28,
+          borderRadius: 18,
+          padding: 14,
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        <Text
+          style={{
+            color: colors.foreground,
+            fontSize: 14,
+            fontWeight: "800",
+            textAlign: "center",
+          }}
+        >
+          Message request sent
+        </Text>
+
+        <Text
+          style={{
+            marginTop: 4,
+            color: colors.muted,
+            fontSize: 12,
+            textAlign: "center",
+          }}
+        >
+          You can send more messages after they accept your request.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={{
+        position: "absolute",
+        left: 14,
+        right: 14,
+        bottom: COMPOSER_BAR_HEIGHT + 28,
+        borderRadius: 20,
+        padding: 14,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        shadowColor: "#000",
+        shadowOpacity: 0.12,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 5,
+      }}
+    >
+      <Text
+        style={{
+          color: colors.foreground,
+          fontSize: 15,
+          fontWeight: "900",
+          textAlign: "center",
+        }}
+      >
+        Accept message request?
+      </Text>
+
+      <Text
+        style={{
+          marginTop: 5,
+          color: colors.muted,
+          fontSize: 12,
+          textAlign: "center",
+          lineHeight: 17,
+        }}
+      >
+        Accept to reply and continue this chat.
+      </Text>
+
+      <View
+        style={{
+          flexDirection: "row",
+          gap: 10,
+          marginTop: 13,
+        }}
+      >
+        <Pressable
+          onPress={onDecline}
+          disabled={isAccepting || isDeclining}
+          style={{
+            flex: 1,
+            height: 42,
+            borderRadius: 14,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.surfaceSecondary,
+            opacity: isAccepting || isDeclining ? 0.55 : 1,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.foreground,
+              fontSize: 13,
+              fontWeight: "800",
+            }}
+          >
+            Decline
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={onAccept}
+          disabled={isAccepting || isDeclining}
+          style={{
+            flex: 1,
+            height: 42,
+            borderRadius: 14,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.accent,
+            opacity: isAccepting || isDeclining ? 0.55 : 1,
+          }}
+        >
+          {isAccepting ? (
+            <ActivityIndicator color={colors.accentForeground} />
+          ) : (
+            <Text
+              style={{
+                color: colors.accentForeground,
+                fontSize: 13,
+                fontWeight: "900",
+              }}
+            >
+              Accept
+            </Text>
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function normalizeMessageType(value: MessageType | string): MessageType {
+  if (value === "IMAGE") return "IMAGE";
+  if (value === "AUDIO") return "AUDIO";
+  if (value === "TEXT") return "TEXT";
+
+  /**
+   * Backend Prisma MessageType has no VIDEO enum.
+   * So any video/unknown upload is sent as FILE to avoid TypeScript
+   * and Prisma enum errors.
+   */
+  return "FILE";
+}
+
 
 function formatAudioDuration(seconds: number) {
   const safeSeconds = Math.max(0, Math.floor(seconds || 0));

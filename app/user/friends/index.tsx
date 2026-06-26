@@ -26,7 +26,6 @@ import {
   type FollowItem,
 } from "@/store/api/followApi";
 
-
 type TabKey = "followers" | "following";
 
 function goToUserProfile(userId: string) {
@@ -103,16 +102,41 @@ function FollowAvatar({
 function FollowUserCard({
   item,
   mode,
+  onFollow,
   onUnfollow,
   isActionLoading,
 }: {
   item: FollowItem;
   mode: TabKey;
+  onFollow?: (item: FollowItem) => void;
   onUnfollow?: (item: FollowItem) => void;
   isActionLoading?: boolean;
 }) {
   const { colors } = useAppTheme();
   const user = item.user;
+
+  const relationship = item.relationship;
+
+  const isFollowing = Boolean(relationship?.isFollowing);
+  const followsMe = Boolean(relationship?.followsMe);
+  const isMutual = Boolean(relationship?.isMutual);
+
+  const buttonText =
+    relationship?.buttonText ??
+    (isMutual
+      ? "Friends"
+      : isFollowing
+        ? "Following"
+        : followsMe
+          ? "Follow Back"
+          : "Follow");
+
+  const showFollowBackButton =
+    buttonText === "Follow Back" || (!isFollowing && followsMe);
+
+  const showFriendsButton = buttonText === "Friends" || isMutual;
+
+  const showUnfollowButton = mode === "following" && isFollowing && !isMutual;
 
   return (
     <Pressable
@@ -160,7 +184,30 @@ function FollowUserCard({
             <Button.Label>View Profile</Button.Label>
           </Button>
 
-          {mode === "following" ? (
+          {showFollowBackButton ? (
+            <Button
+              size="sm"
+              variant="primary"
+              isDisabled={isActionLoading}
+              onPress={() => onFollow?.(item)}
+              style={styles.actionButton}
+            >
+              <Button.Label>Follow Back</Button.Label>
+            </Button>
+          ) : null}
+
+          {showFriendsButton ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled
+              style={styles.actionButton}
+            >
+              <Button.Label>Friends</Button.Label>
+            </Button>
+          ) : null}
+
+          {showUnfollowButton ? (
             <Button
               size="sm"
               variant="secondary"
@@ -242,6 +289,7 @@ export default function FollowersScreen() {
     limit: 20,
   });
 
+  const [followUser] = useFollowUserMutation();
   const [unfollowUser] = useUnfollowUserMutation();
 
   const followersCount = followersData?.meta?.total ?? 0;
@@ -279,6 +327,31 @@ export default function FollowersScreen() {
     await refetchFollowing();
   };
 
+  const refetchFollowLists = async () => {
+    await Promise.all([refetchFollowers(), refetchFollowing()]);
+  };
+
+  const handleFollow = async (item: FollowItem) => {
+    const user = item.user;
+
+    try {
+      setActionUserId(user.id);
+
+      await followUser(user.id).unwrap();
+
+      await refetchFollowLists();
+
+      Alert.alert("Success", `You followed back ${user.displayName}.`);
+    } catch (error: any) {
+      Alert.alert(
+        "Failed",
+        error?.data?.message ?? "Could not follow this user.",
+      );
+    } finally {
+      setActionUserId(null);
+    }
+  };
+
   const handleUnfollow = async (item: FollowItem) => {
     const user = item.user;
 
@@ -298,6 +371,8 @@ export default function FollowersScreen() {
               setActionUserId(user.id);
 
               await unfollowUser(user.id).unwrap();
+
+              await refetchFollowLists();
 
               Alert.alert("Updated", "You unfollowed this user.");
             } catch (error: any) {
@@ -346,6 +421,8 @@ export default function FollowersScreen() {
             item={item}
             mode="followers"
             isActionLoading={actionUserId === item.user.id}
+            onFollow={handleFollow}
+            onUnfollow={handleUnfollow}
           />
         )}
       />
@@ -384,6 +461,7 @@ export default function FollowersScreen() {
             item={item}
             mode="following"
             isActionLoading={actionUserId === item.user.id}
+            onFollow={handleFollow}
             onUnfollow={handleUnfollow}
           />
         )}

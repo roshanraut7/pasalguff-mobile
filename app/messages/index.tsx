@@ -28,7 +28,6 @@ import {
   useGetMyChatsQuery,
   useLazySearchChatSuggestionsQuery,
 } from "@/store/api/chatApi";
-import ChatSuggestionModal from "@/components/ChatSuggestionModal";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 
 const RAW_API_BASE_URL =
@@ -36,7 +35,7 @@ const RAW_API_BASE_URL =
 
 type UnreadMap = Record<string, number>;
 
-type NewMessagePayload = {
+type RealtimeChatPayload = {
   chatId: string;
   message?: ChatMessage;
   chat?: Chat;
@@ -94,9 +93,6 @@ export default function MessagesScreen() {
 
   const [search, setSearch] = useState("");
   const [presenceTick, setPresenceTick] = useState(0);
-
-  const [suggestionModalVisible, setSuggestionModalVisible] = useState(false);
-  const [suggestionSearch, setSuggestionSearch] = useState("");
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [creatingChatUserId, setCreatingChatUserId] = useState<string | null>(
     null,
@@ -127,6 +123,8 @@ export default function MessagesScreen() {
   const [createDirectChat, { isLoading: isCreatingDirectChat }] =
     useCreateDirectChatMutation();
 
+  const searchText = search.trim();
+  const isSearching = searchText.length > 0;
   const chatSuggestions = suggestionsResponse?.data ?? [];
 
   useEffect(() => {
@@ -143,14 +141,23 @@ export default function MessagesScreen() {
     };
   }, []);
 
+  /**
+   * Search suggestions now come from the main search box only.
+   * No bottom sheet. No header create icon.
+   */
   useEffect(() => {
-    if (!suggestionModalVisible) return;
+    const query = search.trim();
+
+    setSuggestionError(null);
+
+    if (!query) {
+      setCreatingChatUserId(null);
+      return;
+    }
 
     const timer = setTimeout(() => {
-      setSuggestionError(null);
-
       void searchChatSuggestions({
-        search: suggestionSearch.trim(),
+        search: query,
         limit: 20,
       });
     }, 250);
@@ -158,7 +165,7 @@ export default function MessagesScreen() {
     return () => {
       clearTimeout(timer);
     };
-  }, [suggestionModalVisible, suggestionSearch, searchChatSuggestions]);
+  }, [search, searchChatSuggestions]);
 
   const clearUnreadForChat = useCallback((chatId: string) => {
     setLocalUnread((prev) => {
@@ -172,7 +179,7 @@ export default function MessagesScreen() {
   }, []);
 
   const updateChatInstantly = useCallback(
-    (payload: NewMessagePayload) => {
+    (payload: RealtimeChatPayload) => {
       const incomingChatId = payload.chatId;
       const incomingMessage = payload.message;
 
@@ -240,23 +247,41 @@ export default function MessagesScreen() {
       },
     });
 
-    const handleNewMessage = async (payload: NewMessagePayload) => {
-      if (!mounted) return;
-
-      updateChatInstantly(payload);
-
+    const invalidateChatTags = (chatId: string) => {
       dispatch(
         chatApi.util.invalidateTags([
           { type: "Chat" as const, id: "LIST" },
-          { type: "Chat" as const, id: payload.chatId },
-          { type: "Message" as const, id: payload.chatId },
+          { type: "Chat" as const, id: chatId },
+          { type: "Message" as const, id: chatId },
         ]),
       );
+    };
+
+    const handleNewMessage = async (payload: RealtimeChatPayload) => {
+      if (!mounted) return;
+
+      updateChatInstantly(payload);
+      invalidateChatTags(payload.chatId);
 
       try {
         await refetch();
       } catch (error) {
         console.log("Message list refetch failed:", error);
+      }
+
+      setPresenceTick((value) => value + 1);
+    };
+
+    const handleChatUpdated = async (payload: RealtimeChatPayload) => {
+      if (!mounted) return;
+
+      updateChatInstantly(payload);
+      invalidateChatTags(payload.chatId);
+
+      try {
+        await refetch();
+      } catch (error) {
+        console.log("Chat update refetch failed:", error);
       }
 
       setPresenceTick((value) => value + 1);
@@ -285,6 +310,8 @@ export default function MessagesScreen() {
     socket.on("message:new", handleNewMessage);
     socket.on("message:delivered", handleSoftRefresh);
     socket.on("chat:read", handleSoftRefresh);
+    socket.on("chat:updated", handleChatUpdated);
+    socket.on("message-request:updated", handleChatUpdated);
     socket.on("presence:update", handleSoftRefresh);
 
     socket.on("connect_error", (error) => {
@@ -303,6 +330,8 @@ export default function MessagesScreen() {
       socket.off("message:new", handleNewMessage);
       socket.off("message:delivered", handleSoftRefresh);
       socket.off("chat:read", handleSoftRefresh);
+      socket.off("chat:updated", handleChatUpdated);
+      socket.off("message-request:updated", handleChatUpdated);
       socket.off("presence:update", handleSoftRefresh);
       socket.off("connect_error");
       socket.off("disconnect");
@@ -327,21 +356,48 @@ export default function MessagesScreen() {
       const lastMessage =
         chat.lastMessage?.content || chat.lastMessage?.fileName || "";
 
+      const requestStatus = String((chat as any).requestStatus ?? "");
+
       return (
         name.toLowerCase().includes(q) ||
-        lastMessage.toLowerCase().includes(q)
+        lastMessage.toLowerCase().includes(q) ||
+        requestStatus.toLowerCase().includes(q)
       );
     });
   }, [search, chatRows]);
+
+  const filteredChatIdSet = useMemo(() => {
+    return new Set(filteredChats.map(({ chat }) => chat.id));
+  }, [filteredChats]);
+
+  const inlineSuggestions = useMemo(() => {
+    if (!isSearching) return [];
+
+    return chatSuggestions.filter((item) => {
+      if (!item.existingChatId) return true;
+
+      return !filteredChatIdSet.has(item.existingChatId);
+    });
+  }, [chatSuggestions, filteredChatIdSet, isSearching]);
+
+  const hasAnySearchResult =
+    filteredChats.length > 0 || inlineSuggestions.length > 0;
 
   const handlePullRefresh = useCallback(async () => {
     try {
       setIsPullRefreshing(true);
       await refetch();
+
+      if (search.trim()) {
+        await searchChatSuggestions({
+          search: search.trim(),
+          limit: 20,
+        });
+      }
     } finally {
       setIsPullRefreshing(false);
     }
-  }, [refetch]);
+  }, [refetch, search, searchChatSuggestions]);
 
   const handleOpenChat = useCallback(
     (chatId: string) => {
@@ -351,25 +407,6 @@ export default function MessagesScreen() {
     [clearUnreadForChat],
   );
 
-  const handleOpenSuggestionModal = useCallback(() => {
-    setSuggestionSearch("");
-    setSuggestionError(null);
-    setCreatingChatUserId(null);
-    setSuggestionModalVisible(true);
-
-    void searchChatSuggestions({
-      search: "",
-      limit: 20,
-    });
-  }, [searchChatSuggestions]);
-
-  const handleCloseSuggestionModal = useCallback(() => {
-    setSuggestionModalVisible(false);
-    setSuggestionSearch("");
-    setSuggestionError(null);
-    setCreatingChatUserId(null);
-  }, []);
-
   const handlePressSuggestionUser = useCallback(
     async (item: ChatSuggestionItem) => {
       try {
@@ -377,15 +414,22 @@ export default function MessagesScreen() {
         setCreatingChatUserId(item.user.id);
 
         if (item.existingChatId) {
-          handleCloseSuggestionModal();
           clearUnreadForChat(item.existingChatId);
           router.push(`/messages/${item.existingChatId}`);
           return;
         }
 
-        if (!item.relationship?.canMessage) {
+        const relationship = item.relationship as any;
+
+        const canCreateChatOrRequest =
+          Boolean(relationship?.canMessage) ||
+          Boolean(relationship?.canSendRequest) ||
+          Boolean(relationship?.isFollowing) ||
+          Boolean(relationship?.followsMe);
+
+        if (!canCreateChatOrRequest) {
           setSuggestionError(
-            "You can only start a chat when both users follow each other.",
+            "You need to follow this user or be followed by this user to send a message request.",
           );
           return;
         }
@@ -394,8 +438,6 @@ export default function MessagesScreen() {
           targetUserId: item.user.id,
           body: {},
         }).unwrap();
-
-        handleCloseSuggestionModal();
 
         await refetch();
 
@@ -410,12 +452,7 @@ export default function MessagesScreen() {
         setCreatingChatUserId(null);
       }
     },
-    [
-      clearUnreadForChat,
-      createDirectChat,
-      handleCloseSuggestionModal,
-      refetch,
-    ],
+    [clearUnreadForChat, createDirectChat, refetch],
   );
 
   return (
@@ -428,25 +465,18 @@ export default function MessagesScreen() {
 
           <Text style={styles.title}>Messages</Text>
 
-          <Pressable
-            style={styles.newChatButton}
-            onPress={handleOpenSuggestionModal}
-          >
-            <Ionicons
-              name="create-outline"
-              size={20}
-              color={colors.accentForeground}
-            />
-          </Pressable>
+          <View style={styles.headerSpacer} />
         </View>
 
-        <Text style={styles.subtitle}>Stay connected with your contacts</Text>
+        <Text style={styles.subtitle}>
+          Search your chats or people to start a message
+        </Text>
 
         <View style={styles.searchWrap}>
           <SearchField value={search} onChange={setSearch}>
             <SearchField.Group className="rounded-[18px] bg-surface px-3 py-2">
               <SearchField.SearchIcon className="px-3" />
-              <SearchField.Input placeholder="Search messages" />
+              <SearchField.Input placeholder="Search chats or people" />
               <SearchField.ClearButton className="mr-2 px-2" />
             </SearchField.Group>
           </SearchField>
@@ -476,42 +506,97 @@ export default function MessagesScreen() {
               />
             }
           >
-            {filteredChats.length === 0 ? (
+            {suggestionError ? (
+              <View style={styles.errorBox}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={16}
+                  color={colors.accent}
+                />
+                <Text style={styles.errorText}>{suggestionError}</Text>
+              </View>
+            ) : null}
+
+            {filteredChats.length > 0 ? (
+              <>
+                {isSearching ? (
+                  <Text style={styles.sectionTitle}>Chats</Text>
+                ) : null}
+
+                {filteredChats.map(({ chat, unreadCount }, index) => (
+                  <ConversationRow
+                    key={chat.id}
+                    chat={chat}
+                    unreadCount={unreadCount}
+                    styles={styles}
+                    showBorder={index !== filteredChats.length - 1}
+                    presenceTick={presenceTick}
+                    currentUserId={currentUserId}
+                    onPress={() => handleOpenChat(chat.id)}
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {isSearching ? (
+              <View
+                style={[
+                  styles.suggestionSection,
+                  filteredChats.length === 0 && styles.suggestionSectionTop,
+                ]}
+              >
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>People</Text>
+
+                  {isFetchingSuggestions ? (
+                    <ActivityIndicator size="small" />
+                  ) : null}
+                </View>
+
+                {inlineSuggestions.length > 0 ? (
+                  inlineSuggestions.map((item, index) => (
+                    <SuggestionRow
+                      key={item.user.id}
+                      item={item}
+                      styles={styles}
+                      colors={colors}
+                      isLoading={
+                        isCreatingDirectChat &&
+                        creatingChatUserId === item.user.id
+                      }
+                      showBorder={index !== inlineSuggestions.length - 1}
+                      currentUserId={currentUserId}
+                      onPress={() => handlePressSuggestionUser(item)}
+                    />
+                  ))
+                ) : !isFetchingSuggestions ? (
+                  <Text style={styles.emptyTextSmall}>
+                    No people found for “{searchText}”.
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {!isSearching && filteredChats.length === 0 ? (
               <View style={styles.centerWrap}>
                 <Text style={styles.emptyTitle}>No messages yet</Text>
                 <Text style={styles.emptyText}>
-                  Tap the create icon to start a new message.
+                  Search a person above to start a message.
                 </Text>
               </View>
-            ) : (
-              filteredChats.map(({ chat, unreadCount }, index) => (
-                <ConversationRow
-                  key={chat.id}
-                  chat={chat}
-                  unreadCount={unreadCount}
-                  styles={styles}
-                  showBorder={index !== filteredChats.length - 1}
-                  presenceTick={presenceTick}
-                  onPress={() => handleOpenChat(chat.id)}
-                />
-              ))
-            )}
+            ) : null}
+
+            {isSearching && !hasAnySearchResult && !isFetchingSuggestions ? (
+              <View style={styles.centerWrap}>
+                <Text style={styles.emptyTitle}>No results found</Text>
+                <Text style={styles.emptyText}>
+                  Try another name or search term.
+                </Text>
+              </View>
+            ) : null}
           </ScrollView>
         )}
       </View>
-
-      <ChatSuggestionModal
-        visible={suggestionModalVisible}
-        searchValue={suggestionSearch}
-        suggestions={chatSuggestions}
-        isLoading={isFetchingSuggestions}
-        isCreatingChat={isCreatingDirectChat}
-        loadingUserId={creatingChatUserId}
-        errorText={suggestionError}
-        onChangeSearch={setSuggestionSearch}
-        onClose={handleCloseSuggestionModal}
-        onPressUser={handlePressSuggestionUser}
-      />
     </SafeAreaView>
   );
 }
@@ -522,6 +607,7 @@ function ConversationRow({
   styles,
   showBorder,
   presenceTick,
+  currentUserId,
   onPress,
 }: {
   chat: Chat;
@@ -529,14 +615,16 @@ function ConversationRow({
   styles: ReturnType<typeof createStyles>;
   showBorder: boolean;
   presenceTick: number;
+  currentUserId?: string;
   onPress: () => void;
 }) {
   const name =
     chat.otherUser?.name || chat.otherUser?.businessName || "Unknown User";
 
   const avatar = getAvatarUrl(name, chat.otherUser?.image);
-
+  const requestBadge = getChatRequestBadge(chat, currentUserId);
   const lastMessage = getLastMessagePreview(chat);
+  const presenceText = getChatPresenceText(chat, currentUserId, presenceTick);
   const isUnread = unreadCount > 0;
 
   return (
@@ -563,7 +651,9 @@ function ConversationRow({
             {name}
           </Text>
 
-          {chat.otherUser?.isOnline ? (
+          {requestBadge ? (
+            <Text style={styles.requestBadge}>{requestBadge}</Text>
+          ) : chat.otherUser?.isOnline ? (
             <Text style={styles.onlineText}>Online</Text>
           ) : null}
         </View>
@@ -577,7 +667,7 @@ function ConversationRow({
         </Text>
 
         <Text numberOfLines={1} style={styles.rowPresence}>
-          {formatActiveStatus(chat.otherUser, presenceTick)}
+          {presenceText}
         </Text>
       </View>
 
@@ -602,19 +692,177 @@ function ConversationRow({
   );
 }
 
+function SuggestionRow({
+  item,
+  styles,
+  colors,
+  isLoading,
+  showBorder,
+  currentUserId,
+  onPress,
+}: {
+  item: ChatSuggestionItem;
+  styles: ReturnType<typeof createStyles>;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  isLoading: boolean;
+  showBorder: boolean;
+  currentUserId?: string;
+  onPress: () => void;
+}) {
+  const name = getSuggestionName(item);
+  const avatar = getAvatarUrl(name, item.user.image);
+  const subtitle = getSuggestionSubtitle(item, currentUserId);
+  const actionLabel = getSuggestionActionLabel(item, currentUserId);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={isLoading}
+      style={[styles.suggestionRow, showBorder && styles.rowBorder]}
+    >
+      <View style={styles.avatarWrap}>
+        <Image source={{ uri: avatar }} style={styles.avatar} />
+
+        {item.user.isOnline ? <View style={styles.onlineDot} /> : null}
+      </View>
+
+      <View style={styles.rowMiddle}>
+        <View style={styles.rowNameLine}>
+          <Text numberOfLines={1} style={styles.rowName}>
+            {name}
+          </Text>
+
+          {item.user.isOnline ? (
+            <Text style={styles.onlineText}>Online</Text>
+          ) : null}
+        </View>
+
+        <Text numberOfLines={1} style={styles.rowMessage}>
+          {subtitle}
+        </Text>
+
+        <Text numberOfLines={1} style={styles.rowPresence}>
+          {formatActiveStatus(item.user)}
+        </Text>
+      </View>
+
+      <View style={styles.suggestionAction}>
+        {isLoading ? (
+          <ActivityIndicator size="small" color={colors.accent} />
+        ) : (
+          <Text style={styles.suggestionActionText}>{actionLabel}</Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
 function getLastMessagePreview(chat: Chat) {
+  const requestStatus = String((chat as any).requestStatus ?? "");
   const lastMessage = chat.lastMessage;
 
-  if (!lastMessage) return "No messages yet";
+  if (!lastMessage) {
+    if (requestStatus === "PENDING") return "Message request pending";
+    if (requestStatus === "DECLINED") return "Message request declined";
+
+    return "No messages yet";
+  }
 
   if (lastMessage.type === "IMAGE") return "📷 Photo";
-  if (lastMessage.type === "VIDEO") return "🎥 Video";
   if (lastMessage.type === "AUDIO") return "🎤 Voice message";
   if (lastMessage.type === "FILE") {
     return `📄 ${lastMessage.fileName || "File"}`;
   }
 
   return lastMessage.content || "Message";
+}
+
+function getChatRequestBadge(chat: Chat, currentUserId?: string) {
+  const requestStatus = String((chat as any).requestStatus ?? "");
+  const requestedById = (chat as any).requestedById as string | null | undefined;
+
+  if (requestStatus === "PENDING") {
+    return requestedById === currentUserId ? "Sent" : "Request";
+  }
+
+  if (requestStatus === "DECLINED") {
+    return "Declined";
+  }
+
+  return "";
+}
+
+function getChatPresenceText(
+  chat: Chat,
+  currentUserId?: string,
+  presenceTick?: number,
+) {
+  const requestStatus = String((chat as any).requestStatus ?? "");
+  const requestedById = (chat as any).requestedById as string | null | undefined;
+
+  if (requestStatus === "PENDING") {
+    return requestedById === currentUserId
+      ? "Waiting for them to accept"
+      : "Tap to accept or decline";
+  }
+
+  if (requestStatus === "DECLINED") {
+    return "Message request declined";
+  }
+
+  return formatActiveStatus(chat.otherUser, presenceTick);
+}
+
+function getSuggestionName(item: ChatSuggestionItem) {
+  return item.user.name || item.user.businessName || "Unknown User";
+}
+
+function getSuggestionSubtitle(item: ChatSuggestionItem, currentUserId?: string) {
+  const relationship = item.relationship as any;
+  const requestStatus = String((item as any).chatRequestStatus ?? "");
+  const requestedById = (item as any).requestedById as string | null | undefined;
+
+  if (item.existingChatId && requestStatus === "PENDING") {
+    return requestedById === currentUserId
+      ? "Message request already sent"
+      : "Message request waiting for you";
+  }
+
+  if (item.existingChatId && requestStatus === "DECLINED") {
+    return "Message request declined";
+  }
+
+  if (item.existingChatId) return "Open existing conversation";
+  if (relationship?.isMutual) return "Friends • message directly";
+  if (relationship?.isFollowing) return "Send a message request";
+  if (relationship?.followsMe) return "Follows you • send a message request";
+
+  return "No follow connection";
+}
+
+function getSuggestionActionLabel(
+  item: ChatSuggestionItem,
+  currentUserId?: string,
+) {
+  const relationship = item.relationship as any;
+  const requestStatus = String((item as any).chatRequestStatus ?? "");
+  const requestedById = (item as any).requestedById as string | null | undefined;
+
+  if (item.existingChatId && requestStatus === "PENDING") {
+    return requestedById === currentUserId ? "Sent" : "View";
+  }
+
+  if (item.existingChatId) return "Open";
+  if (relationship?.isMutual || relationship?.canMessage) return "Message";
+  if (
+    relationship?.canSendRequest ||
+    relationship?.isFollowing ||
+    relationship?.followsMe
+  ) {
+    return "Request";
+  }
+
+  return "Unavailable";
 }
 
 function getAvatarUrl(name: string, image?: string | null) {
@@ -706,13 +954,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       borderColor: colors.border,
     },
 
-    newChatButton: {
+    headerSpacer: {
       width: 38,
       height: 38,
-      borderRadius: 19,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.accent,
     },
 
     title: {
@@ -736,7 +980,40 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       paddingBottom: 28,
     },
 
+    sectionHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 4,
+    },
+
+    sectionTitle: {
+      marginTop: 8,
+      marginBottom: 6,
+      fontSize: 13,
+      fontWeight: "800",
+      color: colors.muted,
+      textTransform: "uppercase",
+      letterSpacing: 0.4,
+    },
+
+    suggestionSection: {
+      marginTop: 8,
+    },
+
+    suggestionSectionTop: {
+      marginTop: 0,
+    },
+
     row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 14,
+      paddingHorizontal: 2,
+      borderRadius: 16,
+    },
+
+    suggestionRow: {
       flexDirection: "row",
       alignItems: "center",
       paddingVertical: 14,
@@ -810,6 +1087,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       color: colors.success,
     },
 
+    requestBadge: {
+      overflow: "hidden",
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      fontSize: 10,
+      fontWeight: "900",
+      color: colors.accent,
+      backgroundColor: colors.surfaceSecondary,
+    },
+
     rowMessage: {
       marginTop: 4,
       fontSize: 13,
@@ -861,6 +1149,45 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontWeight: "900",
     },
 
+    suggestionAction: {
+      minWidth: 72,
+      height: 34,
+      borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 12,
+      marginLeft: 8,
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    suggestionActionText: {
+      fontSize: 12,
+      fontWeight: "900",
+      color: colors.accent,
+    },
+
+    errorBox: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 14,
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      marginBottom: 10,
+    },
+
+    errorText: {
+      flex: 1,
+      fontSize: 12,
+      fontWeight: "700",
+      color: colors.foreground,
+    },
+
     centerWrap: {
       flex: 1,
       alignItems: "center",
@@ -881,6 +1208,12 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       fontSize: 13,
       color: colors.muted,
       textAlign: "center",
+    },
+
+    emptyTextSmall: {
+      marginTop: 4,
+      fontSize: 13,
+      color: colors.muted,
     },
 
     retryButton: {

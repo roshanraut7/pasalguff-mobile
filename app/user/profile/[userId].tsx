@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,87 +15,49 @@ import { Ionicons } from "@expo/vector-icons";
 import { Button, Tabs } from "heroui-native";
 
 import { useSession } from "@/api/better-auth-client";
-import CommunityPostCard from "@/components/post/CommunityPostCard";
-import CommentPostModal from "@/components/post/CommentsModal";
-import PostMediaViewer from "@/components/post/PostMediaViewer";
-import { useAppTheme } from "@/hooks/useAppTheme";
-import { usePostInteractions } from "@/hooks/media/usePostInteractions";
-import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
-import { toAbsoluteFileUrl } from "@/lib/file-url";
-
 import { useCreateDirectChatMutation } from "@/store/api/chatApi";
-
-import {
-  useGetPublicProfileCommunitiesQuery,
-  useGetPublicProfilePostsQuery,
-  useGetPublicProfileQuery,
-} from "@/store/api/friendApi";
+import { useAppTheme } from "@/hooks/useAppTheme";
+import { toAbsoluteFileUrl } from "@/lib/file-url";
 
 import {
   useFollowUserMutation,
+  useGetFollowStatusQuery,
   useGetUserFollowersQuery,
   useGetUserFollowingQuery,
   useUnfollowUserMutation,
   type FollowItem,
+  type FollowRelationship,
+  type FollowUser,
 } from "@/store/api/followApi";
-
-import type {
-  PublicProfileCommunity,
-  PublicProfilePost,
-  PublicUserProfile,
-} from "@/types/friend";
-import type { CommunityPost } from "@/types/post";
 
 import { styles } from "@/constants/styles/PublicProfileScreen.styles";
 
-type TabKey = "about" | "posts" | "communities" | "followers" | "following";
+type TabKey = "about" | "followers" | "following";
 
-type ActiveItem = CommunityPost | PublicProfileCommunity | FollowItem;
+type ActiveItem = FollowItem;
 
 type PublicProfilePermissions = {
   canViewProfile: boolean;
   canViewAbout: boolean;
-  canViewPosts: boolean;
-  canViewCommunities: boolean;
   canViewFollowers: boolean;
   canViewFollowing: boolean;
   canMessage: boolean;
   canFollow: boolean;
   canUnfollow: boolean;
   canEditProfile: boolean;
-
-  /**
-   * Temporary backend alias.
-   * Keep this only while old frontend/backend types still reference friends.
-   */
   canViewFriends?: boolean;
 };
 
-type PublicProfileWithPermissions = PublicUserProfile & {
-  follow?: {
-    isFollowing: boolean;
-    followsMe?: boolean;
-    isMutual?: boolean;
+type PublicProfileWithPermissions = FollowUser & {
+  coverImage?: string | null;
+  follow?: FollowRelationship & {
     followedAt?: string | null;
-    buttonText?: "Follow" | "Follow Back" | "Following";
   };
   stats?: {
     followersCount: number;
     followingCount: number;
   };
   permissions?: PublicProfilePermissions;
-};
-
-type PublicProfilePostWithExtraFields = PublicProfilePost & {
-  title?: string | null;
-  linkUrl?: string | null;
-  type?: unknown;
-  tag?: unknown;
-  status?: unknown;
-  visibility?: unknown;
-  updatedAt?: string | null;
-  editedAt?: string | null;
-  isLikedByMe?: boolean;
 };
 
 function getInitials(name?: string | null) {
@@ -120,72 +82,18 @@ function formatDate(value?: string | null) {
   });
 }
 
-function followLabel(profile: PublicProfileWithPermissions) {
-  if (profile.follow?.buttonText) return profile.follow.buttonText;
-  if (profile.follow?.isFollowing) return "Following";
-  if (profile.follow?.followsMe) return "Follow Back";
+function getFollowLabel(profile: PublicProfileWithPermissions) {
+  const isFollowing = Boolean(profile.follow?.isFollowing);
+  const followsMe = Boolean(profile.follow?.followsMe);
+  const isMutual = Boolean(profile.follow?.isMutual || (isFollowing && followsMe));
+
+  if (isMutual) return "Friends";
+  if (isFollowing) return "Following";
+  if (followsMe) return "Follow Back";
   if (profile.permissions?.canFollow) return "Follow";
+  if (profile.follow?.buttonText) return profile.follow.buttonText;
 
   return "Private";
-}
-
-function mapPublicPostToCommunityPost(
-  post: PublicProfilePost,
-  profile: PublicProfileWithPermissions,
-  userId: string,
-): CommunityPost {
-  const safePost = post as PublicProfilePostWithExtraFields;
-
-  const community = safePost.community as PublicProfilePost["community"] & {
-    id?: string | null;
-    slug?: string | null;
-    avatarImage?: string | null;
-    visibility?: string | null;
-  };
-
-  return {
-    id: safePost.id,
-    communityId: community.id ?? "",
-    authorId: userId,
-
-    title: safePost.title ?? null,
-    content: safePost.content ?? "",
-    linkUrl: safePost.linkUrl ?? null,
-
-    type: safePost.type,
-    tag: safePost.tag ?? null,
-    status: safePost.status,
-    visibility: safePost.visibility,
-
-    createdAt: safePost.createdAt,
-    updatedAt: safePost.updatedAt ?? safePost.createdAt,
-    publishedAt: safePost.publishedAt ?? safePost.createdAt,
-    editedAt: safePost.editedAt ?? null,
-
-    author: {
-      id: userId,
-      name: profile.displayName,
-      firstName: profile.firstName ?? null,
-      lastName: profile.lastName ?? null,
-      businessName: profile.businessName ?? null,
-      image: profile.image ?? null,
-    },
-
-    community: {
-      id: community.id ?? "",
-      name: safePost.community.name,
-      slug: community.slug ?? "",
-      avatarImage: community.avatarImage ?? null,
-      visibility: community.visibility ?? null,
-    },
-
-    media: safePost.media ?? [],
-
-    isLikedByMe: Boolean(safePost.isLikedByMe),
-    likeCount: safePost.engagement?.likeCount ?? 0,
-    commentCount: safePost.engagement?.commentCount ?? 0,
-    shareCount: safePost.engagement?.shareCount ?? 0,
-  } as unknown as CommunityPost;
 }
 
 function IconButtonContent({
@@ -299,72 +207,77 @@ function ProfileActionButtons({
 }) {
   const { colors } = useAppTheme();
 
-  const canMessage = Boolean(profile.permissions?.canMessage);
-  const canFollow = Boolean(profile.permissions?.canFollow);
-  const canUnfollow = Boolean(profile.permissions?.canUnfollow);
-  const isFollowing = Boolean(profile.follow?.isFollowing);
-  const followsMe = Boolean(profile.follow?.followsMe);
-
-const followButtonLabel =
-  profile.follow?.buttonText ??
-  (isFollowing ? "Following" : followsMe ? "Follow Back" : "Follow");
-
   if (isOwnProfile) {
     return null;
   }
 
-  if (!canFollow && !canUnfollow && !isFollowing && !canMessage) {
-    return null;
-  }
+  const canMessage = Boolean(profile.permissions?.canMessage);
+  const canFollow = Boolean(profile.permissions?.canFollow);
+  const canUnfollow = Boolean(profile.permissions?.canUnfollow);
+
+  const isFollowing = Boolean(profile.follow?.isFollowing);
+  const followsMe = Boolean(profile.follow?.followsMe);
+  const isMutual = Boolean(profile.follow?.isMutual || (isFollowing && followsMe));
+
+  const followButtonLabel = isMutual
+    ? "Friends"
+    : isFollowing
+      ? "Following"
+      : followsMe
+        ? "Follow Back"
+        : "Follow";
+
+  const showUnfollowButton = isFollowing || canUnfollow;
+  const showFollowButton = !isFollowing && (canFollow || followsMe);
 
   return (
     <View style={styles.profileActionRow}>
-  {canUnfollow || isFollowing ? (
-    <Button
-      size="sm"
-      variant="secondary"
-      isDisabled={isLoading}
-      onPress={onUnfollow}
-      style={styles.profileActionButton}
-    >
-      <IconButtonContent
-        icon="checkmark-circle-outline"
-        label="Following"
-        color={colors.accent}
-      />
-    </Button>
-  ) : canFollow ? (
-    <Button
-      size="sm"
-      variant="primary"
-      isDisabled={isLoading}
-      onPress={onFollow}
-      style={styles.profileActionButton}
-    >
-      <IconButtonContent
-        icon="person-add-outline"
-        label={followButtonLabel}
-        color={colors.accentForeground}
-      />
-    </Button>
-  ) : null}
+      {showUnfollowButton ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          isDisabled={isLoading}
+          onPress={onUnfollow}
+          style={styles.profileActionButton}
+        >
+          <IconButtonContent
+            icon={isMutual ? "people-outline" : "checkmark-circle-outline"}
+            label={followButtonLabel}
+            color={colors.accent}
+          />
+        </Button>
+      ) : showFollowButton ? (
+        <Button
+          size="sm"
+          variant="primary"
+          isDisabled={isLoading}
+          onPress={onFollow}
+          style={styles.profileActionButton}
+        >
+          <IconButtonContent
+            icon="person-add-outline"
+            label={followButtonLabel}
+            color={colors.accentForeground}
+          />
+        </Button>
+      ) : null}
 
-  {canMessage ? (
-    <Button
-      size="sm"
-      variant="secondary"
-      isDisabled={isLoading}
-      onPress={onMessage}
-      style={styles.profileActionButton}
-    >
-      <IconButtonContent
-        icon="chatbubble-ellipses-outline"
-        label="Message"
-        color={colors.accent}
-      />
-    </Button>
-  ) : null}
-</View>
+      {canMessage || isMutual ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          isDisabled={isLoading}
+          onPress={onMessage}
+          style={styles.profileActionButton}
+        >
+          <IconButtonContent
+            icon="chatbubble-ellipses-outline"
+            label="Message"
+            color={colors.accent}
+          />
+        </Button>
+      ) : null}
+    </View>
   );
 }
 
@@ -407,188 +320,13 @@ function HeaderStatCard({
         {value}
       </Text>
 
-      <Text numberOfLines={1} style={[styles.headerStatLabel, { color: colors.muted }]}>
+      <Text
+        numberOfLines={1}
+        style={[styles.headerStatLabel, { color: colors.muted }]}
+      >
         {label}
       </Text>
     </View>
-  );
-}
-
-function CommunityListCard({
-  community,
-}: {
-  community: PublicProfileCommunity;
-}) {
-  const { colors } = useAppTheme();
-  const imageUrl = toAbsoluteFileUrl(community.avatarImage);
-
-  return (
-    <Pressable
-      onPress={() => router.push(`/user/community/${community.slug}`)}
-      style={({ pressed }) => [
-        styles.communityCard,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          opacity: pressed ? 0.86 : 1,
-        },
-      ]}
-    >
-      {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.communityAvatar} />
-      ) : (
-        <View
-          style={[
-            styles.communityAvatarFallback,
-            {
-              backgroundColor: colors.segment,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <Text style={[styles.communityInitials, { color: colors.accent }]}>
-            {getInitials(community.name)}
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.communityInfo}>
-        <View style={styles.communityTitleRow}>
-          <Text
-            numberOfLines={1}
-            style={[styles.cardTitle, { color: colors.foreground }]}
-          >
-            {community.name}
-          </Text>
-
-          <View
-            style={[
-              styles.smallPill,
-              {
-                backgroundColor: colors.segment,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <Text style={[styles.smallPillText, { color: colors.accent }]}>
-              {community.visibility}
-            </Text>
-          </View>
-        </View>
-
-        {community.description ? (
-          <Text
-            numberOfLines={2}
-            style={[styles.cardMeta, { color: colors.muted }]}
-          >
-            {community.description}
-          </Text>
-        ) : null}
-
-        <View style={styles.communityStatsRow}>
-          <View style={styles.miniStat}>
-            <Ionicons name="people-outline" size={13} color={colors.accent} />
-            <Text style={[styles.miniStatText, { color: colors.muted }]}>
-              {community.memberCount} members
-            </Text>
-          </View>
-
-          <View style={styles.miniStat}>
-            <Ionicons
-              name="document-text-outline"
-              size={13}
-              color={colors.accent}
-            />
-            <Text style={[styles.miniStatText, { color: colors.muted }]}>
-              {community.postCount} posts
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      <View
-        style={[
-          styles.cardArrowWrap,
-        ]}
-      >
-        <Ionicons name="chevron-forward" size={17} color={colors.surface} />
-      </View>
-    </Pressable>
-  );
-}
-
-function FollowUserCard({ item }: { item: FollowItem }) {
-  const { colors } = useAppTheme();
-
-  const user = item.user;
-  const imageUrl = toAbsoluteFileUrl(user.image);
-
-  return (
-    <Pressable
-      onPress={() => router.push(`/user/profile/${user.id}`)}
-      style={({ pressed }) => [
-        styles.userCard,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          opacity: pressed ? 0.86 : 1,
-        },
-      ]}
-    >
-      {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.smallAvatar} />
-      ) : (
-        <View
-          style={[
-            // styles.smallAvatarFallback,
-            // {
-            //   backgroundColor: colors.segment,
-            //   borderColor: colors.border,
-            // },
-          ]}
-        >
-          <Text style={[styles.smallInitials, { color: colors.accent }]}>
-            {getInitials(user.displayName)}
-          </Text>
-        </View>
-      )}
-
-      <View style={{ flex: 1 }}>
-        <Text
-          numberOfLines={1}
-          style={[styles.cardTitle, { color: colors.foreground }]}
-        >
-          {user.displayName}
-        </Text>
-
-        {user.businessName ? (
-          <Text
-            numberOfLines={1}
-            style={[styles.cardMeta, { color: colors.muted }]}
-          >
-            {user.businessName}
-          </Text>
-        ) : (
-          <Text
-            numberOfLines={1}
-            style={[styles.cardMeta, { color: colors.muted }]}
-          >
-            Community member
-          </Text>
-        )}
-      </View>
-
-      <View
-        style={[
-          styles.cardArrowWrap,
-          {
-            backgroundColor: colors.segment,
-          },
-        ]}
-      >
-        <Ionicons name="chevron-forward" size={17} color={colors.muted} />
-      </View>
-    </Pressable>
   );
 }
 
@@ -656,7 +394,7 @@ function AboutSection({ profile }: { profile: PublicProfileWithPermissions }) {
       <InfoRow
         icon="person-add-outline"
         label="Follow Status"
-        value={followLabel(profile)}
+        value={getFollowLabel(profile)}
       />
 
       <InfoRow
@@ -677,6 +415,144 @@ function AboutSection({ profile }: { profile: PublicProfileWithPermissions }) {
         value={formatDate(profile.createdAt)}
       />
     </View>
+  );
+}
+
+function FollowUserCard({
+  item,
+  onFollow,
+  onUnfollow,
+  isActionLoading,
+}: {
+  item: FollowItem;
+  onFollow?: (item: FollowItem) => void;
+  onUnfollow?: (item: FollowItem) => void;
+  isActionLoading?: boolean;
+}) {
+  const { colors } = useAppTheme();
+
+  const user = item.user;
+  const imageUrl = toAbsoluteFileUrl(user.image);
+
+  const relationship = item.relationship;
+
+  const isFollowing = Boolean(relationship?.isFollowing);
+  const followsMe = Boolean(relationship?.followsMe);
+  const isMutual = Boolean(relationship?.isMutual || (isFollowing && followsMe));
+
+  const buttonText = isMutual
+    ? "Friends"
+    : isFollowing
+      ? "Following"
+      : followsMe
+        ? "Follow Back"
+        : relationship?.buttonText ?? "Follow";
+
+  const showFollowBackButton =
+    buttonText === "Follow Back" || (!isFollowing && followsMe);
+
+  const showFriendsButton = buttonText === "Friends" || isMutual;
+
+  const showFollowingButton =
+    buttonText === "Following" && isFollowing && !isMutual;
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/user/profile/${user.id}`)}
+      style={({ pressed }) => [
+        styles.userCard,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          opacity: pressed ? 0.86 : 1,
+        },
+      ]}
+    >
+      {imageUrl ? (
+        <Image source={{ uri: imageUrl }} style={styles.smallAvatar} />
+      ) : (
+        <View
+          style={[
+            styles.smallAvatar,
+            {
+              backgroundColor: colors.segment,
+              borderColor: colors.border,
+              alignItems: "center",
+              justifyContent: "center",
+            },
+          ]}
+        >
+          <Text style={[styles.smallInitials, { color: colors.accent }]}>
+            {getInitials(user.displayName)}
+          </Text>
+        </View>
+      )}
+
+      <View style={{ flex: 1 }}>
+        <Text
+          numberOfLines={1}
+          style={[styles.cardTitle, { color: colors.foreground }]}
+        >
+          {user.displayName}
+        </Text>
+
+        {user.businessName ? (
+          <Text
+            numberOfLines={1}
+            style={[styles.cardMeta, { color: colors.muted }]}
+          >
+            {user.businessName}
+          </Text>
+        ) : (
+          <Text
+            numberOfLines={1}
+            style={[styles.cardMeta, { color: colors.muted }]}
+          >
+            Community member
+          </Text>
+        )}
+      </View>
+
+      {showFollowBackButton ? (
+        <Button
+          size="sm"
+          variant="primary"
+          isDisabled={isActionLoading}
+          onPress={() => onFollow?.(item)}
+        >
+          <Button.Label>Follow Back</Button.Label>
+        </Button>
+      ) : showFriendsButton ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          isDisabled={isActionLoading}
+          onPress={() => onUnfollow?.(item)}
+        >
+          <Button.Label>Friends</Button.Label>
+        </Button>
+      ) : showFollowingButton ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          isDisabled={isActionLoading}
+          onPress={() => onUnfollow?.(item)}
+        >
+          <Button.Label>Following</Button.Label>
+        </Button>
+      ) : (
+        <View
+          style={[
+            styles.cardArrowWrap,
+            {
+              backgroundColor: colors.segment,
+            },
+          ]}
+        >
+          <Ionicons name="chevron-forward" size={17} color={colors.muted} />
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -735,9 +611,7 @@ export default function PublicProfileScreen() {
   }>();
 
   const [activeTab, setActiveTab] = useState<TabKey>("about");
-  const [postItems, setPostItems] = useState<CommunityPost[]>([]);
-
-  const { viewer, openViewer, closeViewer } = usePostMediaViewer();
+  const [actionUserId, setActionUserId] = useState<string | null>(null);
 
   const safeUserId = String(userId ?? "");
   const safeSourceCommunityId = sourceCommunityId
@@ -749,56 +623,96 @@ export default function PublicProfileScreen() {
   );
 
   const {
-    data: profile,
+    data: followStatusData,
     isLoading: profileLoading,
     isFetching: profileFetching,
     isError: profileError,
     refetch: refetchProfile,
-  } = useGetPublicProfileQuery(safeUserId, {
-    skip: !safeUserId,
+  } = useGetFollowStatusQuery(safeUserId, {
+    skip: !safeUserId || isOwnProfile,
   });
 
-  const typedProfile = profile as PublicProfileWithPermissions | undefined;
+  const baseProfile = useMemo<PublicProfileWithPermissions | undefined>(() => {
+    if (isOwnProfile && session?.user?.id) {
+      const displayName =
+        session.user.name?.trim() ||
+        `${session.user.firstName ?? ""} ${session.user.lastName ?? ""}`.trim() ||
+        "You";
 
-  const canViewAbout = Boolean(typedProfile?.permissions?.canViewAbout);
-  const canViewPosts = Boolean(typedProfile?.permissions?.canViewPosts);
-  const canViewCommunities = Boolean(
-    typedProfile?.permissions?.canViewCommunities,
-  );
-  const canViewFollowers = Boolean(typedProfile?.permissions?.canViewFollowers);
-  const canViewFollowing = Boolean(typedProfile?.permissions?.canViewFollowing);
+      return {
+        id: session.user.id,
+        name: session.user.name ?? null,
+        firstName: session.user.firstName ?? null,
+        lastName: session.user.lastName ?? null,
+        image: session.user.image ?? null,
+        businessName: null,
+        businessType: null,
+        displayName,
+        createdAt: new Date().toISOString(),
+        follow: {
+          isFollowing: false,
+          followsMe: false,
+          isMutual: false,
+          canMessage: false,
+          buttonText: "Follow",
+          followedAt: null,
+        },
+        permissions: {
+          canViewProfile: true,
+          canViewAbout: true,
+          canViewFollowers: true,
+          canViewFollowing: true,
+          canMessage: false,
+          canFollow: false,
+          canUnfollow: false,
+          canEditProfile: true,
+          canViewFriends: true,
+        },
+        stats: {
+          followersCount: 0,
+          followingCount: 0,
+        },
+      };
+    }
 
-  const {
-    data: postsData,
-    isLoading: postsLoading,
-    isFetching: postsFetching,
-    refetch: refetchPosts,
-  } = useGetPublicProfilePostsQuery(
-    {
-      userId: safeUserId,
-      page: 1,
-      limit: 20,
-    },
-    {
-      skip: !safeUserId || !canViewPosts,
-    },
-  );
+    if (!followStatusData?.user || !followStatusData.relationship) {
+      return undefined;
+    }
 
-  const {
-    data: communitiesData,
-    isLoading: communitiesLoading,
-    isFetching: communitiesFetching,
-    refetch: refetchCommunities,
-  } = useGetPublicProfileCommunitiesQuery(
-    {
-      userId: safeUserId,
-      page: 1,
-      limit: 20,
-    },
-    {
-      skip: !safeUserId || !canViewCommunities,
-    },
-  );
+    const user = followStatusData.user;
+    const relationship = followStatusData.relationship;
+
+    return {
+      ...user,
+      follow: {
+        isFollowing: relationship.isFollowing,
+        followsMe: relationship.followsMe,
+        isMutual: relationship.isMutual,
+        canMessage: relationship.canMessage,
+        buttonText: relationship.buttonText,
+        followedAt: null,
+      },
+      permissions: {
+        canViewProfile: true,
+        canViewAbout: true,
+        canViewFollowers: relationship.isFollowing || relationship.isMutual,
+        canViewFollowing: relationship.isFollowing || relationship.isMutual,
+        canMessage: relationship.canMessage,
+        canFollow: !relationship.isFollowing,
+        canUnfollow: relationship.isFollowing,
+        canEditProfile: false,
+        canViewFriends: true,
+      },
+      stats: {
+        followersCount: 0,
+        followingCount: 0,
+      },
+    };
+  }, [followStatusData, isOwnProfile, session?.user]);
+
+  const canViewAbout = Boolean(baseProfile?.permissions?.canViewAbout);
+  const canViewFollowers = Boolean(baseProfile?.permissions?.canViewFollowers);
+  const canViewFollowing = Boolean(baseProfile?.permissions?.canViewFollowing);
 
   const {
     data: followersData,
@@ -832,6 +746,28 @@ export default function PublicProfileScreen() {
     },
   );
 
+  const typedProfile = useMemo<PublicProfileWithPermissions | undefined>(() => {
+    if (!baseProfile) return undefined;
+
+    return {
+      ...baseProfile,
+      stats: {
+        followersCount:
+          followersData?.meta?.total ?? baseProfile.stats?.followersCount ?? 0,
+        followingCount:
+          followingData?.meta?.total ?? baseProfile.stats?.followingCount ?? 0,
+      },
+    };
+  }, [baseProfile, followersData?.meta?.total, followingData?.meta?.total]);
+
+  console.log("PUBLIC PROFILE FOLLOW API DEBUG:", {
+    profileUserId: safeUserId,
+    currentUserId: session?.user?.id,
+    relationship: followStatusData?.relationship,
+    profileFollow: typedProfile?.follow,
+    permissions: typedProfile?.permissions,
+  });
+
   const [followUser, { isLoading: isFollowingUser }] = useFollowUserMutation();
 
   const [unfollowUser, { isLoading: isUnfollowingUser }] =
@@ -839,43 +775,6 @@ export default function PublicProfileScreen() {
 
   const [createDirectChat, { isLoading: isCreatingChat }] =
     useCreateDirectChatMutation();
-
-  const {
-    commentPost,
-    activeCommentPost,
-    comments,
-    commentInput,
-    setCommentInput,
-
-    isLoadingComments,
-    isFetchingComments,
-    isCreatingComment,
-    isCreatingReply,
-
-    openComments,
-    closeComments,
-    handleLikePost,
-    handleSharePost,
-    handleCreateComment,
-    refetchComments,
-  } = usePostInteractions({
-    posts: postItems,
-    setPosts: setPostItems,
-    sessionUser: session?.user,
-  });
-
-  useEffect(() => {
-    if (!typedProfile || !postsData?.data || !canViewPosts) {
-      setPostItems([]);
-      return;
-    }
-
-    const mappedPosts = postsData.data.map((post) =>
-      mapPublicPostToCommunityPost(post, typedProfile, safeUserId),
-    );
-
-    setPostItems(mappedPosts);
-  }, [typedProfile, postsData?.data, safeUserId, canViewPosts]);
 
   const isFollowActionLoading =
     isFollowingUser || isUnfollowingUser || isCreatingChat;
@@ -887,66 +786,17 @@ export default function PublicProfileScreen() {
         label: "About",
       },
       {
-        key: "posts" as const,
-        label: `Posts ${canViewPosts ? postsData?.meta?.total ?? 0 : ""}`,
-      },
-      {
-        key: "communities" as const,
-        label: `Communities ${
-          canViewCommunities ? communitiesData?.meta?.total ?? 0 : ""
-        }`,
-      },
-      {
         key: "followers" as const,
-        label: `Followers ${
-          canViewFollowers
-            ? followersData?.meta?.total ??
-              typedProfile?.stats?.followersCount ??
-              0
-            : typedProfile?.stats?.followersCount ?? 0
-        }`,
+        label: `Followers ${typedProfile?.stats?.followersCount ?? 0}`,
       },
       {
         key: "following" as const,
-        label: `Following ${
-          canViewFollowing
-            ? followingData?.meta?.total ??
-              typedProfile?.stats?.followingCount ??
-              0
-            : typedProfile?.stats?.followingCount ?? 0
-        }`,
+        label: `Following ${typedProfile?.stats?.followingCount ?? 0}`,
       },
     ];
-  }, [
-    canViewPosts,
-    canViewCommunities,
-    canViewFollowers,
-    canViewFollowing,
-    postsData?.meta?.total,
-    communitiesData?.meta?.total,
-    followersData?.meta?.total,
-    followingData?.meta?.total,
-    typedProfile?.stats?.followersCount,
-    typedProfile?.stats?.followingCount,
-  ]);
-
-  useEffect(() => {
-    const activeTabExists = tabs.some((tab) => tab.key === activeTab);
-
-    if (!activeTabExists) {
-      setActiveTab("about");
-    }
-  }, [activeTab, tabs]);
+  }, [typedProfile?.stats?.followersCount, typedProfile?.stats?.followingCount]);
 
   const activeData = useMemo<ActiveItem[]>(() => {
-    if (activeTab === "posts" && canViewPosts) {
-      return postItems;
-    }
-
-    if (activeTab === "communities" && canViewCommunities) {
-      return communitiesData?.data ?? [];
-    }
-
     if (activeTab === "followers" && canViewFollowers) {
       return followersData?.data ?? [];
     }
@@ -958,58 +808,52 @@ export default function PublicProfileScreen() {
     return [];
   }, [
     activeTab,
-    canViewPosts,
-    canViewCommunities,
     canViewFollowers,
     canViewFollowing,
-    postItems,
-    communitiesData?.data,
     followersData?.data,
     followingData?.data,
   ]);
 
   const activeLoading =
-    activeTab === "posts"
-      ? postsLoading
-      : activeTab === "communities"
-        ? communitiesLoading
-        : activeTab === "followers"
-          ? followersLoading
-          : activeTab === "following"
-            ? followingLoading
-            : false;
+    activeTab === "followers"
+      ? followersLoading
+      : activeTab === "following"
+        ? followingLoading
+        : false;
 
   const activeFetching =
-    activeTab === "posts"
-      ? postsFetching
-      : activeTab === "communities"
-        ? communitiesFetching
-        : activeTab === "followers"
-          ? followersFetching
-          : activeTab === "following"
-            ? followingFetching
-            : false;
+    activeTab === "followers"
+      ? followersFetching
+      : activeTab === "following"
+        ? followingFetching
+        : false;
 
-  const handleRefresh = async () => {
-    const tasks: Promise<unknown>[] = [refetchProfile()];
+  const refetchSafeProfile = async () => {
+    if (!isOwnProfile && safeUserId) {
+      await refetchProfile();
+    }
+  };
 
-    if (activeTab === "posts" && canViewPosts) {
-      tasks.push(refetchPosts());
+  const refetchAvailableFollowData = async () => {
+    const tasks: Promise<unknown>[] = [];
+
+    if (!isOwnProfile && safeUserId) {
+      tasks.push(refetchProfile());
     }
 
-    if (activeTab === "communities" && canViewCommunities) {
-      tasks.push(refetchCommunities());
-    }
-
-    if (activeTab === "followers" && canViewFollowers) {
+    if (canViewFollowers) {
       tasks.push(refetchFollowers());
     }
 
-    if (activeTab === "following" && canViewFollowing) {
+    if (canViewFollowing) {
       tasks.push(refetchFollowing());
     }
 
     await Promise.all(tasks);
+  };
+
+  const handleRefresh = async () => {
+    await refetchAvailableFollowData();
   };
 
   const handleFollowUser = async () => {
@@ -1018,7 +862,7 @@ export default function PublicProfileScreen() {
     try {
       await followUser(safeUserId).unwrap();
 
-      await refetchProfile();
+      await refetchSafeProfile();
 
       Alert.alert("Success", "You are now following this user.");
     } catch (error: any) {
@@ -1035,7 +879,7 @@ export default function PublicProfileScreen() {
     try {
       await unfollowUser(safeUserId).unwrap();
 
-      await refetchProfile();
+      await refetchSafeProfile();
 
       Alert.alert("Updated", "You unfollowed this user.");
     } catch (error: any) {
@@ -1043,6 +887,52 @@ export default function PublicProfileScreen() {
         "Failed",
         error?.data?.message ?? "Could not unfollow this user.",
       );
+    }
+  };
+
+  const handleFollowListUser = async (item: FollowItem) => {
+    const targetUser = item.user;
+
+    if (!targetUser.id || isFollowActionLoading) return;
+
+    try {
+      setActionUserId(targetUser.id);
+
+      await followUser(targetUser.id).unwrap();
+
+      await refetchAvailableFollowData();
+
+      Alert.alert("Success", `You followed back ${targetUser.displayName}.`);
+    } catch (error: any) {
+      Alert.alert(
+        "Failed",
+        error?.data?.message ?? "Could not follow this user.",
+      );
+    } finally {
+      setActionUserId(null);
+    }
+  };
+
+  const handleUnfollowListUser = async (item: FollowItem) => {
+    const targetUser = item.user;
+
+    if (!targetUser.id || isFollowActionLoading) return;
+
+    try {
+      setActionUserId(targetUser.id);
+
+      await unfollowUser(targetUser.id).unwrap();
+
+      await refetchAvailableFollowData();
+
+      Alert.alert("Updated", `You unfollowed ${targetUser.displayName}.`);
+    } catch (error: any) {
+      Alert.alert(
+        "Failed",
+        error?.data?.message ?? "Could not unfollow this user.",
+      );
+    } finally {
+      setActionUserId(null);
     }
   };
 
@@ -1137,35 +1027,16 @@ export default function PublicProfileScreen() {
   }
 
   const renderItem = ({ item }: { item: ActiveItem }) => {
-    if (activeTab === "posts") {
-      const post = item as CommunityPost;
+    const followItem = item as FollowItem;
 
-      return (
-        <CommunityPostCard
-          post={post}
-          disableMediaPlayback={viewer.visible || !!commentPost}
-          onPressMedia={openViewer}
-          onPressAuthor={(authorId) => {
-            if (!authorId || authorId === safeUserId) return;
-
-            router.push(`/user/profile/${authorId}`);
-          }}
-          onPressLike={handleLikePost}
-          onPressComment={openComments}
-          onPressShare={handleSharePost}
-        />
-      );
-    }
-
-    if (activeTab === "communities") {
-      return <CommunityListCard community={item as PublicProfileCommunity} />;
-    }
-
-    if (activeTab === "followers" || activeTab === "following") {
-      return <FollowUserCard item={item as FollowItem} />;
-    }
-
-    return null;
+    return (
+      <FollowUserCard
+        item={followItem}
+        isActionLoading={actionUserId === followItem.user.id}
+        onFollow={handleFollowListUser}
+        onUnfollow={handleUnfollowListUser}
+      />
+    );
   };
 
   const renderEmpty = () => {
@@ -1188,44 +1059,6 @@ export default function PublicProfileScreen() {
       }
 
       return <AboutSection profile={typedProfile} />;
-    }
-
-    if (activeTab === "posts") {
-      if (!canViewPosts) {
-        return (
-          <LockedState
-            title="Posts are private"
-            text="Follow this user or share a community with them to see visible posts."
-          />
-        );
-      }
-
-      return (
-        <EmptyState
-          icon="document-text-outline"
-          title="No visible posts"
-          text="This user has no posts that are visible to you."
-        />
-      );
-    }
-
-    if (activeTab === "communities") {
-      if (!canViewCommunities) {
-        return (
-          <LockedState
-            title="Follow to see communities"
-            text="This user's communities are private. Follow this user to unlock this tab."
-          />
-        );
-      }
-
-      return (
-        <EmptyState
-          icon="people-circle-outline"
-          title="No visible communities"
-          text="This user has no communities visible to you."
-        />
-      );
     }
 
     if (activeTab === "followers") {
@@ -1414,66 +1247,36 @@ export default function PublicProfileScreen() {
   );
 
   return (
-    <>
-      <SafeAreaView
-        edges={["top"]}
-        style={[
-          styles.root,
-          {
-            backgroundColor: colors.background,
-          },
-        ]}
-      >
-        <FlatList
-          style={styles.scroll}
-          data={activeData}
-          keyExtractor={(item, index) =>
-            "id" in item ? item.id : `${activeTab}-${index}`
-          }
-          renderItem={renderItem}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={renderEmpty}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={(activeFetching || profileFetching) && !activeLoading}
-              onRefresh={handleRefresh}
-              tintColor={colors.accent}
-              colors={[colors.accent]}
-              progressBackgroundColor={colors.surface}
-            />
-          }
-        />
-      </SafeAreaView>
-
-      <CommentPostModal
-        visible={!!commentPost}
-        post={activeCommentPost}
-        comments={comments}
-        isLoading={
-          (isLoadingComments || isFetchingComments) && comments.length === 0
+    <SafeAreaView
+      edges={["top"]}
+      style={[
+        styles.root,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
+      <FlatList
+        style={styles.scroll}
+        data={activeData}
+        keyExtractor={(item, index) =>
+          "id" in item ? item.id : `${activeTab}-${index}`
         }
-        isCreating={isCreatingComment || isCreatingReply}
-        inputValue={commentInput}
-        onChangeInput={setCommentInput}
-        onClose={closeComments}
-        onSubmit={handleCreateComment}
-        onPressMedia={openViewer}
-        onPressPostLike={handleLikePost}
-        onPressPostShare={handleSharePost}
-        onRefreshComments={() => {
-          void refetchComments();
-        }}
-        colors={colors}
+        renderItem={renderItem}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={renderEmpty}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={(activeFetching || profileFetching) && !activeLoading}
+            onRefresh={handleRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+            progressBackgroundColor={colors.surface}
+          />
+        }
       />
-
-      <PostMediaViewer
-        visible={viewer.visible}
-        media={viewer.media}
-        initialIndex={viewer.index}
-        onClose={closeViewer}
-      />
-    </>
+    </SafeAreaView>
   );
 }
