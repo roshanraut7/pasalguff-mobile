@@ -22,7 +22,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/logo-second.png",
-        "monochromeImage": "./assets/images/logo-monochrome.png"
+        "monochromeImage": "./assets/images/logo-second.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
