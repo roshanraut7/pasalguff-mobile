@@ -28,6 +28,7 @@ import FollowCommunityModal from "@/components/common/FollowCommunityModal";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { usePostInteractions } from "@/hooks/media/usePostInteractions";
+import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
 import {
   useGetHomeFeedPostsQuery,
   useVotePostPollMutation,
@@ -73,6 +74,7 @@ type HomePostItemProps = {
   onPressMedia: (media: PostMedia[], startIndex: number) => void;
   onPressPollOption: (post: CommunityPost, optionId: string) => void;
     onPressJoin: (post: CommunityPost) => void; 
+      ownedCommunityIds: Set<string>; 
 };
 
 const OPTIONS_HEADER_HEIGHT = 54;
@@ -104,7 +106,8 @@ function isHomeFeedTab(value: string): value is HomeFeedTab {
 const HomePostItem = memo(function HomePostItem({
   item,
   disableMediaPlayback,
-   showCommunityHeader, 
+   showCommunityHeader,
+   ownedCommunityIds,  
   onPressLike,
   onPressDislike,
   onPressComment,
@@ -118,6 +121,7 @@ const HomePostItem = memo(function HomePostItem({
     <CommunityPostCard
       post={item}
             showCommunityHeader={showCommunityHeader}
+             ownedCommunityIds={ownedCommunityIds}
       disableMediaPlayback={disableMediaPlayback}
       onPressLike={onPressLike}
       onPressDislike={onPressDislike}
@@ -204,6 +208,20 @@ export default function HomeScreen() {
   setPosts,
   sessionUser: session?.user,
 });
+const { data: myCommunitiesResponse } = useGetMyCommunitiesQuery(
+  { limit: 100 }, // adjust if your API needs different params
+  { skip: !session?.user }
+);
+const ownedCommunityIds = useMemo(() => {
+  const ids = new Set<string>();
+  (myCommunitiesResponse?.data ?? []).forEach((community) => {
+    // ✅ adjust field name once you confirm CommunityItem's actual shape
+    if (community.isOwner || community.myRole === "ADMIN") {
+      ids.add(community.id);
+    }
+  });
+  return ids;
+}, [myCommunitiesResponse]);
 
   const {
     data: feedResponse,
@@ -404,7 +422,15 @@ export default function HomeScreen() {
   },
   [isPostCommunityFollowed],
 );
-
+const getPostVisibility = useCallback((post: CommunityPost) => {
+  const normalizedPost = post as CommunityFollowState;
+  return String(
+    normalizedPost.community?.visibility ??
+      normalizedPost.communityVisibility ??
+      normalizedPost.visibility ??
+      "",
+  ).toUpperCase();
+}, []);
   const openFollowRequiredModal = useCallback(
     (post: CommunityPost, action: PendingFollowAction) => {
       setFollowModalPost(post);
@@ -696,7 +722,8 @@ const handleProtectedOpenComments = useCallback(
     ({ item }: { item: CommunityPost }) => (
       <HomePostItem
         item={item}
-        showCommunityHeader={activeTab === "FOR_YOU"}  //
+        showCommunityHeader={activeTab === "FOR_YOU"} 
+          ownedCommunityIds={ownedCommunityIds}
         disableMediaPlayback={disableMediaPlayback}
         onPressLike={handleLikePost}
         onPressDislike={handleDislikePost}
@@ -714,6 +741,7 @@ const handleProtectedOpenComments = useCallback(
       handleDislikePost,
       handleProtectedOpenComments,
       handleSharePost,
+          ownedCommunityIds,
       handleAuthorPress,
       openViewer,
       handleProtectedVotePostPoll,
@@ -997,6 +1025,8 @@ const handleProtectedOpenComments = useCallback(
 <CommentPostModal
   visible={!!commentPost}
   post={activeCommentPost}
+    showCommunityHeader={activeTab === "FOR_YOU"}
+  ownedCommunityIds={ownedCommunityIds}
   comments={comments}
   isLoading={
     (isLoadingComments || isFetchingComments) &&
@@ -1043,12 +1073,13 @@ const handleProtectedOpenComments = useCallback(
         }}
       />
 
-      <FollowCommunityModal
-        visible={!!followModalPost}
-        communityName={followModalCommunityName}
-        onClose={closeFollowRequiredModal}
-        onFollow={handleFollowCommunityFromModal}
-      />
+    <FollowCommunityModal
+  visible={!!followModalPost}
+  communityName={followModalCommunityName}
+  isRestricted={followModalPost ? getPostVisibility(followModalPost) === "RESTRICTED" : false}
+  onClose={closeFollowRequiredModal}
+  onFollow={handleFollowCommunityFromModal}
+/>
     </>
   );
 }

@@ -15,12 +15,13 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { KeyboardAvoidingView, Platform } from "react-native";
+import { Platform } from "react-native";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { PaperProvider } from "react-native-paper";
 import { buildPaperTheme } from "@/constants/paper-theme";
 import NotificationBootstrap from "@/components/NotificationBootstrap";
-
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import {
   Poppins_400Regular,
   Poppins_500Medium,
@@ -96,6 +97,7 @@ export default function RootLayout() {
 
   if (!fontsLoaded) return null;
   return (
+        <KeyboardProvider>
     <SafeAreaProvider>
       <Provider store={store}>
         <GestureHandlerRootView style={{ flex: 1 }}>
@@ -107,5 +109,6 @@ export default function RootLayout() {
         </GestureHandlerRootView>
       </Provider>
     </SafeAreaProvider>
+    </KeyboardProvider>
   );
 }

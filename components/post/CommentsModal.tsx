@@ -30,6 +30,8 @@ type Colors = ReturnType<typeof useAppTheme>["colors"];
 
 type CommentPostModalProps = {
   visible: boolean;
+   showCommunityHeader?: boolean;
+  ownedCommunityIds?: Set<string>;
   post: CommunityPost | null;
   comments: FeedComment[];
   isLoading: boolean;
@@ -249,6 +251,8 @@ const CommentItem = memo(function CommentItem({
 
 function CommentPostModal({
   visible,
+    showCommunityHeader = true,
+  ownedCommunityIds,
   post,
   comments,
   isLoading,
@@ -390,6 +394,8 @@ function CommentPostModal({
       {post ? (
         <CommunityPostCard
           post={post}
+            showCommunityHeader={showCommunityHeader}
+    ownedCommunityIds={ownedCommunityIds}
           disableMediaPlayback={false}
           onPressLike={onPressPostLike}
           onPressComment={handlePostCardCommentPress}

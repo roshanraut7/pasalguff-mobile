@@ -28,7 +28,6 @@ import YouTubeEmbedPlayer from "./YouTubeEmbedPlayer";
 import type { CommunityPost, PostMedia, PostPoll } from "@/types/post";
 import { useJoinCommunityMutation, useLeaveCommunityMutation } from "@/store/api/communityApi";
 import { router } from "expo-router";
-
 const systemFonts = [
   ...defaultSystemFonts,
   "Poppins_400Regular",
@@ -44,6 +43,7 @@ type AppColors = ReturnType<typeof useAppTheme>["colors"];
 
 type CommunityPostCardProps = {
   post: CommunityPost;
+    ownedCommunityIds?: Set<string>; 
 
   /**
    * Stops YouTube playback when feed is scrolling
@@ -451,6 +451,7 @@ export default function CommunityPostCard({
   post,
   disableMediaPlayback = false,
   onPressLike,
+   ownedCommunityIds,
   onPressDislike,
   onPressComment,
   onPressShare,
@@ -473,11 +474,17 @@ export default function CommunityPostCard({
   const authorImage = toAbsoluteFileUrl(post.author.image) ?? undefined;
   const hasMedia = Boolean(post.media?.length);
   const tagLabel = getPostTagLabel(post.tag);
-
+   const isOwnerOfCommunity = Boolean(
+    post.community?.id && ownedCommunityIds?.has(post.community.id)
+   );
   /**
    * Only YouTube is embedded now.
    * TikTok and every other URL will appear as a normal shared link card.
    */
+    // const isOwnerOfCommunity =
+    // Boolean(post.community?.isOwner) ||
+    // post.community?.myRole === "ADMIN" ||
+    // (post as any).isOwner === true;
   const hasYouTubeEmbed =
     !hasMedia &&
     post.linkType === "VIDEO" &&
@@ -588,7 +595,7 @@ export default function CommunityPostCard({
     );
   };
 
-  useEffect(() => {
+ useEffect(() => {
   const joined = 
     post.isJoinedByMe ??
     post.isCommunityFollowedByMe ??
@@ -598,7 +605,7 @@ export default function CommunityPostCard({
     false;
 
   setIsJoined(joined);
-}, [post]);
+}, [post.id]); // ← was [post], change to [post.id]
 
  
   const performJoin = useCallback(async () => {
@@ -746,7 +753,7 @@ export default function CommunityPostCard({
   )}
 
   {/* ─── RIGHT SIDE: Join button OR menu ─────────────────── */}
-  {showCommunityHeader ? (
+  {showCommunityHeader && !isOwnerOfCommunity? (
    <Pressable
     onPress={handleJoinToggle}
     style={[
@@ -763,7 +770,11 @@ export default function CommunityPostCard({
           : "Join"
       }
     </Text>
-  </Pressable>
+  </Pressable>): showCommunityHeader && isOwnerOfCommunity ? (
+  <View style={styles.ownerBadge}>
+    <Ionicons name="shield-checkmark-outline" size={12} color={colors.accent} />
+    <Text style={styles.ownerBadgeText}>Owner</Text>
+  </View>
   ) : canDelete || canEdit ? (
     <View style={styles.moreWrap}>
       <Menu>
@@ -1093,16 +1104,17 @@ function createStyles(colors: AppColors) {
       paddingHorizontal: 12,
     },
 
-    authorRow: {
-      width: "86%",
-      flexDirection: "row",
-      alignItems: "center",
-    },
+ authorRow: {
+  flex: 1,
+  flexDirection: "row",
+  alignItems: "center",
+  marginRight: 10,
+},
 
-    authorMeta: {
-      width: "78%",
-      marginLeft: 8,
-    },
+   authorMeta: {
+  flexShrink: 1,
+  marginLeft: 8,
+},
 
     authorName: {
       fontSize: 15,
@@ -1734,9 +1746,25 @@ joinedButtonText: {  // you can merge or use conditional
   color: colors.muted,
 },
 joinedButton: {
-  backgroundColor: colors.surfaceSecondary,
+  backgroundColor: colors.accent,
   borderWidth: StyleSheet.hairlineWidth,
   borderColor: colors.border,
+},
+ownerBadge: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 4,
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 999,
+  backgroundColor: colors.surfaceSecondary,
+  borderWidth: StyleSheet.hairlineWidth,
+  borderColor: colors.accent,
+},
+ownerBadgeText: {
+  color: colors.accent,
+  fontSize: 11,
+  fontFamily: "Poppins_600SemiBold",
 },
 
   });

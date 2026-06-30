@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { router } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -8,7 +15,6 @@ import * as ImagePicker from "expo-image-picker";
 import {
   Button,
   FieldError,
-  Input,
   Label,
   Menu,
   Tabs,
@@ -33,8 +39,29 @@ import {
 
 type ImageTarget = "avatar" | "cover";
 
+// Shared style for raw TextInput fields, matching the previous heroui-native
+// Input look. Using a plain TextInput here (instead of heroui-native's Input)
+// because the wrapped Input was not reliably forwarding focus to the
+// page-level KeyboardAwareScrollView, causing fields to stay hidden behind
+// the keyboard.
+function useFieldInputStyle() {
+  const { colors } = useAppTheme();
+
+  return {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    color: colors.foreground,
+    padding: 14,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular" as const,
+  };
+}
+
 export default function EditProfileForm() {
   const { colors } = useAppTheme();
+  const fieldInputStyle = useFieldInputStyle();
 
   const [serverError, setServerError] = useState("");
   const [tab, setTab] = useState("edit");
@@ -402,11 +429,12 @@ export default function EditProfileForm() {
                 render={({ field: { onChange, value } }) => (
                   <TextField isInvalid={!!errors.firstName}>
                     <Label>First Name</Label>
-                    <Input
+                    <TextInput
                       value={value}
                       onChangeText={onChange}
                       placeholder="Enter first name"
-                      className="border-field-border bg-field-background"
+                      placeholderTextColor={colors.placeholder}
+                      style={fieldInputStyle}
                     />
                     {errors.firstName?.message ? (
                       <FieldError>{errors.firstName.message}</FieldError>
@@ -421,11 +449,12 @@ export default function EditProfileForm() {
                 render={({ field: { onChange, value } }) => (
                   <TextField isInvalid={!!errors.lastName}>
                     <Label>Last Name</Label>
-                    <Input
+                    <TextInput
                       value={value}
                       onChangeText={onChange}
                       placeholder="Enter last name"
-                      className="border-field-border bg-field-background"
+                      placeholderTextColor={colors.placeholder}
+                      style={fieldInputStyle}
                     />
                     {errors.lastName?.message ? (
                       <FieldError>{errors.lastName.message}</FieldError>
@@ -440,11 +469,12 @@ export default function EditProfileForm() {
                 render={({ field: { onChange, value } }) => (
                   <TextField isInvalid={!!errors.businessName}>
                     <Label>Business Name</Label>
-                    <Input
+                    <TextInput
                       value={value}
                       onChangeText={onChange}
                       placeholder="Enter business name"
-                      className="border-field-border bg-field-background"
+                      placeholderTextColor={colors.placeholder}
+                      style={fieldInputStyle}
                     />
                     {errors.businessName?.message ? (
                       <FieldError>{errors.businessName.message}</FieldError>
@@ -459,11 +489,12 @@ export default function EditProfileForm() {
                 render={({ field: { onChange, value } }) => (
                   <TextField isInvalid={!!errors.businessType}>
                     <Label>Business Type</Label>
-                    <Input
+                    <TextInput
                       value={value}
                       onChangeText={onChange}
                       placeholder="Enter business type"
-                      className="border-field-border bg-field-background"
+                      placeholderTextColor={colors.placeholder}
+                      style={fieldInputStyle}
                     />
                     {errors.businessType?.message ? (
                       <FieldError>{errors.businessType.message}</FieldError>
@@ -478,11 +509,12 @@ export default function EditProfileForm() {
                 render={({ field: { onChange, value } }) => (
                   <TextField isInvalid={!!errors.address}>
                     <Label>Address</Label>
-                    <Input
+                    <TextInput
                       value={value}
                       onChangeText={onChange}
                       placeholder="Enter address"
-                      className="border-field-border bg-field-background"
+                      placeholderTextColor={colors.placeholder}
+                      style={fieldInputStyle}
                     />
                     {errors.address?.message ? (
                       <FieldError>{errors.address.message}</FieldError>
@@ -536,28 +568,31 @@ export default function EditProfileForm() {
 
             <TextField>
               <Label>Current Password</Label>
-              <Input
+              <TextInput
                 placeholder="Enter current password"
+                placeholderTextColor={colors.placeholder}
                 secureTextEntry
-                className="border-field-border bg-field-background"
+                style={fieldInputStyle}
               />
             </TextField>
 
             <TextField>
               <Label>New Password</Label>
-              <Input
+              <TextInput
                 placeholder="Enter new password"
+                placeholderTextColor={colors.placeholder}
                 secureTextEntry
-                className="border-field-border bg-field-background"
+                style={fieldInputStyle}
               />
             </TextField>
 
             <TextField>
               <Label>Confirm New Password</Label>
-              <Input
+              <TextInput
                 placeholder="Confirm new password"
+                placeholderTextColor={colors.placeholder}
                 secureTextEntry
-                className="border-field-border bg-field-background"
+                style={fieldInputStyle}
               />
             </TextField>
 

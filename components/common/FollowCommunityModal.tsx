@@ -14,6 +14,7 @@ type FollowCommunityModalProps = {
   isSubmitting?: boolean;
   onClose: () => void;
   onFollow: () => void;
+   isRestricted?: boolean;      
 };
 
 export default function FollowCommunityModal({
@@ -22,6 +23,7 @@ export default function FollowCommunityModal({
   isSubmitting = false,
   onClose,
   onFollow,
+  isRestricted = false,  
 }: FollowCommunityModalProps) {
   return (
     <Modal
@@ -47,6 +49,15 @@ export default function FollowCommunityModal({
             <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-accent/10">
               <Ionicons name="people-outline" size={28} color="#2563eb" />
             </View>
+              <Text
+    className="text-center text-foreground"
+    style={{
+      fontSize: 18,
+      fontFamily: "Poppins_700Bold",
+    }}
+  >
+    {isRestricted ? "Request Required" : "Follow community first"}
+  </Text>
 
             <Text
               className="text-center text-foreground"
@@ -55,7 +66,11 @@ export default function FollowCommunityModal({
                 fontFamily: "Poppins_700Bold",
               }}
             >
-              Follow community first
+             {isRestricted
+      ? "You are not allowed to add comments here. Please send a request to the admin for post and comment access."
+      : `To comment, reply, or vote in ${
+          communityName ? `"${communityName}"` : "this community"
+        }, you need to follow the community first.`}
             </Text>
 
             <Text
@@ -90,7 +105,7 @@ export default function FollowCommunityModal({
                   fontFamily: "Poppins_700Bold",
                 }}
               >
-                Follow Community
+                  {isRestricted ? "Go to Community" : "Follow Community"}
               </Text>
             )}
           </Pressable>

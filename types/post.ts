@@ -146,6 +146,8 @@ export type PostCommunity = {
   isJoinedByMe?: boolean;
   isMember?: boolean;
   isCommunityFollowedByMe?: boolean;
+   isOwner?: boolean;
+  myRole?: "ADMIN" | "MODERATOR" | "MEMBER" | null;
 };
 
 export type PostAuthor = {
@@ -191,6 +193,7 @@ approvalRate: number | null;
   community: PostCommunity;
   author: PostAuthor;
   media: PostMedia[];
+  
 
   poll: PostPoll | null;
 

@@ -555,7 +555,10 @@ export  function ActionModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
+      <Pressable style={[
+          styles.modalOverlay,
+          { paddingBottom: Math.max(insets.bottom, 18) + 16 }, // <-- push the whole sheet up
+        ]} onPress={onClose}>
         <Pressable
           onPress={(event) => event.stopPropagation()}
           style={[
@@ -563,7 +566,7 @@ export  function ActionModal({
             {
               backgroundColor: colors.surface,
               borderColor: colors.border,
-              paddingBottom: Math.max(insets.bottom, 16),
+                    paddingBottom: 16, 
             },
           ]}
         >

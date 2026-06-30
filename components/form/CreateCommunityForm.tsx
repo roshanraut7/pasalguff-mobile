@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Image,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -13,14 +16,9 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import {
-  Button,
-  FieldError,
-  Input,
-  Label,
-  Menu,
-  TextField,
-} from "heroui-native";
+import { Button, FieldError, Input, Label, Menu, TextField } from "heroui-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
@@ -57,6 +55,7 @@ export default function CreateCommunityForm({
     null,
   );
 
+  const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [debouncedCategorySearch, setDebouncedCategorySearch] = useState("");
   const [selectedCategorySnapshot, setSelectedCategorySnapshot] =
@@ -143,6 +142,7 @@ export default function CreateCommunityForm({
     setSelectedCategorySnapshot(category);
     setCategorySearch("");
     setDebouncedCategorySearch("");
+    setCategoryModalOpen(false);
   };
 
   const uploadPickedAsset = async (
@@ -438,6 +438,12 @@ export default function CreateCommunityForm({
           )}
         />
 
+        {/*
+          Description: using a plain TextInput instead of heroui-native's Input.
+          The wrapped Input was not reliably forwarding focus to the page-level
+          KeyboardAwareScrollView, which caused it to stay hidden behind the
+          keyboard. A raw TextInput's focus is tracked correctly.
+        */}
         <Controller
           control={control}
           name="description"
@@ -445,14 +451,25 @@ export default function CreateCommunityForm({
             <TextField isInvalid={!!errors.description}>
               <Label>Description</Label>
 
-              <Input
+              <TextInput
                 value={value ?? ""}
                 onChangeText={onChange}
                 placeholder="Enter community description"
+                placeholderTextColor={colors.placeholder}
                 multiline
                 numberOfLines={4}
-                className="border-field-border bg-field-background"
-                style={{ minHeight: 110, textAlignVertical: "top" }}
+                style={{
+                  minHeight: 110,
+                  textAlignVertical: "top",
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 16,
+                  backgroundColor: colors.surface,
+                  color: colors.foreground,
+                  padding: 14,
+                  fontSize: 14,
+                  fontFamily: "Poppins_400Regular",
+                }}
               />
 
               {errors.description?.message ? (
@@ -462,6 +479,12 @@ export default function CreateCommunityForm({
           )}
         />
 
+        {/*
+          Category: replaced the Menu/popover (and the broken bottom-sheet
+          presentation attempt) with a plain full-screen Modal. This avoids
+          heroui-native's Menu portal/bottom-sheet machinery entirely and
+          gives full, predictable control over keyboard avoidance.
+        */}
         <Controller
           control={control}
           name="categoryId"
@@ -469,48 +492,76 @@ export default function CreateCommunityForm({
             <View>
               <Label>Category</Label>
 
-              <Menu>
-                <Menu.Trigger asChild>
-                  <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
-                    <Text
-                      style={{
-                        color: selectedCategory
-                          ? colors.foreground
-                          : colors.placeholder,
-                        fontSize: 15,
-                        fontFamily: "Poppins_400Regular",
-                      }}
-                    >
-                      {categoriesLoading && categories.length === 0
-                        ? "Loading categories..."
-                        : selectedCategory?.name || "Select a category"}
-                    </Text>
+              <Pressable
+                onPress={() => setCategoryModalOpen(true)}
+                className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4"
+              >
+                <Text
+                  style={{
+                    color: selectedCategory
+                      ? colors.foreground
+                      : colors.placeholder,
+                    fontSize: 15,
+                    fontFamily: "Poppins_400Regular",
+                  }}
+                >
+                  {categoriesLoading && categories.length === 0
+                    ? "Loading categories..."
+                    : selectedCategory?.name || "Select a category"}
+                </Text>
 
-                    <Ionicons
-                      name="chevron-down-outline"
-                      size={18}
-                      color={colors.muted}
-                    />
-                  </Pressable>
-                </Menu.Trigger>
+                <Ionicons
+                  name="chevron-down-outline"
+                  size={18}
+                  color={colors.muted}
+                />
+              </Pressable>
 
-                <Menu.Portal>
-                  <Menu.Overlay />
-
-                  <Menu.Content
-                    presentation="popover"
-                    placement="bottom"
-                    align="center"
-                    width={300}
-                    className="rounded-3xl border border-border bg-surface p-3"
+              <Modal
+                visible={isCategoryModalOpen}
+                animationType="slide"
+                presentationStyle="pageSheet"
+                onRequestClose={() => setCategoryModalOpen(false)}
+              >
+                <SafeAreaView
+                  edges={["top", "bottom"]}
+                  style={{ flex: 1, backgroundColor: colors.background }}
+                >
+                  <KeyboardAvoidingView
+                    style={{ flex: 1 }}
+                    behavior={Platform.OS === "ios" ? "padding" : undefined}
                   >
+                    <View className="flex-row items-center justify-between px-5 py-3">
+                      <Text
+                        style={{
+                          fontSize: 18,
+                          fontFamily: "Poppins_700Bold",
+                          color: colors.foreground,
+                        }}
+                      >
+                        Select Category
+                      </Text>
+
+                      <Pressable
+                        onPress={() => setCategoryModalOpen(false)}
+                        hitSlop={10}
+                      >
+                        <Ionicons
+                          name="close"
+                          size={24}
+                          color={colors.foreground}
+                        />
+                      </Pressable>
+                    </View>
+
                     <View
                       style={{
+                        marginHorizontal: 20,
                         marginBottom: 8,
                         borderWidth: 1,
                         borderColor: colors.border,
                         borderRadius: 14,
-                        backgroundColor: colors.background,
+                        backgroundColor: colors.surface,
                         paddingHorizontal: 12,
                         flexDirection: "row",
                         alignItems: "center",
@@ -530,9 +581,10 @@ export default function CreateCommunityForm({
                         placeholderTextColor={colors.placeholder}
                         autoCorrect={false}
                         autoCapitalize="none"
+                        autoFocus
                         style={{
                           flex: 1,
-                          minHeight: 42,
+                          minHeight: 46,
                           color: colors.foreground,
                           fontSize: 14,
                           fontFamily: "Poppins_400Regular",
@@ -562,6 +614,7 @@ export default function CreateCommunityForm({
                           color: colors.muted,
                           fontSize: 12,
                           fontFamily: "Poppins_400Regular",
+                          marginHorizontal: 20,
                           marginBottom: 8,
                         }}
                       >
@@ -570,101 +623,93 @@ export default function CreateCommunityForm({
                     ) : null}
 
                     {categoriesLoading && categories.length === 0 ? (
-                      <Menu.Item isDisabled>
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <ActivityIndicator
-                            size="small"
-                            color={colors.accent}
-                          />
-
-                          <Menu.ItemTitle
-                            style={{
-                              color: colors.muted,
-                              fontFamily: "Poppins_500Medium",
-                            }}
-                          >
-                            Loading categories...
-                          </Menu.ItemTitle>
-                        </View>
-                      </Menu.Item>
-                    ) : categoriesError ? (
-                      <Menu.Item isDisabled>
-                        <Menu.ItemTitle
-                          style={{
-                            color: colors.danger,
-                            fontFamily: "Poppins_500Medium",
-                          }}
-                        >
-                          Failed to load categories
-                        </Menu.ItemTitle>
-                      </Menu.Item>
-                    ) : categories.length === 0 ? (
-                      <Menu.Item isDisabled>
-                        <Menu.ItemTitle
+                      <View
+                        style={{
+                          paddingHorizontal: 20,
+                          paddingVertical: 16,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <ActivityIndicator size="small" color={colors.accent} />
+                        <Text
                           style={{
                             color: colors.muted,
                             fontFamily: "Poppins_500Medium",
                           }}
                         >
-                          No categories found
-                        </Menu.ItemTitle>
-                      </Menu.Item>
-                    ) : (
-                      <ScrollView
-                        style={{ maxHeight: 320 }}
-                        nestedScrollEnabled
-                        keyboardShouldPersistTaps="handled"
-                        showsVerticalScrollIndicator={false}
+                          Loading categories...
+                        </Text>
+                      </View>
+                    ) : categoriesError ? (
+                      <Text
+                        style={{
+                          color: colors.danger,
+                          fontFamily: "Poppins_500Medium",
+                          marginHorizontal: 20,
+                        }}
                       >
-                        {categories.map((category) => {
-                          const isSelected =
-                            selectedCategoryId === category.id;
+                        Failed to load categories
+                      </Text>
+                    ) : categories.length === 0 ? (
+                      <Text
+                        style={{
+                          color: colors.muted,
+                          fontFamily: "Poppins_500Medium",
+                          marginHorizontal: 20,
+                        }}
+                      >
+                        No categories found
+                      </Text>
+                    ) : (
+                      <FlatList
+                        data={categories}
+                        keyExtractor={(item) => item.id}
+                        keyboardShouldPersistTaps="handled"
+                        contentContainerStyle={{
+                          paddingHorizontal: 20,
+                          paddingBottom: 24,
+                        }}
+                        renderItem={({ item: category }) => {
+                          const isSelected = selectedCategoryId === category.id;
 
                           return (
-                            <Menu.Item
-                              key={category.id}
+                            <Pressable
                               onPress={() => handleSelectCategory(category)}
-                              className={isSelected ? "bg-segment" : ""}
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                paddingVertical: 14,
+                                borderBottomWidth: 1,
+                                borderBottomColor: colors.border,
+                              }}
                             >
-                              <View
+                              <Text
                                 style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  width: "100%",
+                                  color: colors.foreground,
+                                  fontFamily: "Poppins_600SemiBold",
                                 }}
                               >
-                                <Menu.ItemTitle
-                                  style={{
-                                    color: colors.foreground,
-                                    fontFamily: "Poppins_600SemiBold",
-                                  }}
-                                >
-                                  {category.name}
-                                </Menu.ItemTitle>
+                                {category.name}
+                              </Text>
 
-                                {isSelected ? (
-                                  <Ionicons
-                                    name="checkmark"
-                                    size={16}
-                                    color={colors.accent}
-                                  />
-                                ) : null}
-                              </View>
-                            </Menu.Item>
+                              {isSelected ? (
+                                <Ionicons
+                                  name="checkmark"
+                                  size={16}
+                                  color={colors.accent}
+                                />
+                              ) : null}
+                            </Pressable>
                           );
-                        })}
-                      </ScrollView>
+                        }}
+                      />
                     )}
-                  </Menu.Content>
-                </Menu.Portal>
-              </Menu>
+                  </KeyboardAvoidingView>
+                </SafeAreaView>
+              </Modal>
 
               {errors.categoryId?.message ? (
                 <FieldError>{errors.categoryId.message}</FieldError>
@@ -693,90 +738,90 @@ export default function CreateCommunityForm({
             <View>
               <Label>Visibility</Label>
 
-            <Menu>
-  <Menu.Trigger asChild>
-    <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
-      <View className="flex-row items-center gap-2">
-        <Ionicons
-          name={
-            selectedVisibility === "PRIVATE"
-              ? "lock-closed-outline"
-              : selectedVisibility === "RESTRICTED"
-                ? "eye-outline"
-                : "globe-outline"
-          }
-          size={18}
-          color={colors.accent}
-        />
+              <Menu>
+                <Menu.Trigger asChild>
+                  <Pressable className="mt-2 flex-row items-center justify-between rounded-2xl border border-field-border bg-field-background px-4 py-4">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons
+                        name={
+                          selectedVisibility === "PRIVATE"
+                            ? "lock-closed-outline"
+                            : selectedVisibility === "RESTRICTED"
+                              ? "eye-outline"
+                              : "globe-outline"
+                        }
+                        size={18}
+                        color={colors.accent}
+                      />
 
-        <Text
-          style={{
-            color: colors.foreground,
-            fontSize: 15,
-            fontFamily: "Poppins_500Medium",
-          }}
-        >
-          {selectedVisibility === "PRIVATE"
-            ? "Private"
-            : selectedVisibility === "RESTRICTED"
-              ? "Restricted"
-              : "Public"}
-        </Text>
-      </View>
+                      <Text
+                        style={{
+                          color: colors.foreground,
+                          fontSize: 15,
+                          fontFamily: "Poppins_500Medium",
+                        }}
+                      >
+                        {selectedVisibility === "PRIVATE"
+                          ? "Private"
+                          : selectedVisibility === "RESTRICTED"
+                            ? "Restricted"
+                            : "Public"}
+                      </Text>
+                    </View>
 
-      <Ionicons
-        name="chevron-down-outline"
-        size={18}
-        color={colors.muted}
-      />
-    </Pressable>
-  </Menu.Trigger>
+                    <Ionicons
+                      name="chevron-down-outline"
+                      size={18}
+                      color={colors.muted}
+                    />
+                  </Pressable>
+                </Menu.Trigger>
 
-  <Menu.Portal>
-    <Menu.Overlay />
+                <Menu.Portal>
+                  <Menu.Overlay />
 
-    <Menu.Content
-      presentation="popover"
-      placement="bottom"
-      align="start"
-      width={260}
-      className="rounded-2xl border border-border bg-surface"
-    >
-      <Menu.Item
-        onPress={() =>
-          setValue("visibility", "PUBLIC", {
-            shouldValidate: true,
-            shouldDirty: true,
-          })
-        }
-      >
-        <Menu.ItemTitle>Public</Menu.ItemTitle>
-      </Menu.Item>
+                  <Menu.Content
+                    presentation="popover"
+                    placement="bottom"
+                    align="start"
+                    width={260}
+                    className="rounded-2xl border border-border bg-surface"
+                  >
+                    <Menu.Item
+                      onPress={() =>
+                        setValue("visibility", "PUBLIC", {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                    >
+                      <Menu.ItemTitle>Public</Menu.ItemTitle>
+                    </Menu.Item>
 
-      <Menu.Item
-        onPress={() =>
-          setValue("visibility", "PRIVATE", {
-            shouldValidate: true,
-            shouldDirty: true,
-          })
-        }
-      >
-        <Menu.ItemTitle>Private</Menu.ItemTitle>
-      </Menu.Item>
+                    <Menu.Item
+                      onPress={() =>
+                        setValue("visibility", "PRIVATE", {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                    >
+                      <Menu.ItemTitle>Private</Menu.ItemTitle>
+                    </Menu.Item>
 
-      <Menu.Item
-        onPress={() =>
-          setValue("visibility", "RESTRICTED", {
-            shouldValidate: true,
-            shouldDirty: true,
-          })
-        }
-      >
-        <Menu.ItemTitle>Restricted</Menu.ItemTitle>
-      </Menu.Item>
-    </Menu.Content>
-  </Menu.Portal>
-</Menu>
+                    <Menu.Item
+                      onPress={() =>
+                        setValue("visibility", "RESTRICTED", {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
+                    >
+                      <Menu.ItemTitle>Restricted</Menu.ItemTitle>
+                    </Menu.Item>
+                  </Menu.Content>
+                </Menu.Portal>
+              </Menu>
             </View>
           )}
         />

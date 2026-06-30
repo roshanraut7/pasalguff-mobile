@@ -11,7 +11,6 @@ import {
   Animated,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -25,6 +24,8 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import { useSession } from "@/api/better-auth-client";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -1061,7 +1062,7 @@ export default function LiveDiscussionPage() {
 
 <KeyboardAvoidingView
   style={styles.screen}
-  behavior={Platform.OS === "ios" ? "padding" : undefined}
+  behavior="padding"
   keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
   enabled={activeTab === "chat"}
 >

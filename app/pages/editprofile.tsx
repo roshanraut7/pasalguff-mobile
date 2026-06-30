@@ -1,15 +1,9 @@
 import React from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 import EditProfileForm from "@/components/form/EditProfileForm";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -22,60 +16,49 @@ export default function EditProfilePage() {
       edges={["top", "left", "right"]}
       style={{ flex: 1, backgroundColor: colors.background }}
     >
-      <KeyboardAvoidingView
+      <KeyboardAwareScrollView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        contentContainerStyle={{ paddingBottom: 60 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        bottomOffset={80}
       >
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="always"
-          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-          nestedScrollEnabled
-        >
-          <View className="px-5 pt-3">
-            <View className="mb-5 flex-row items-center gap-3">
-              <Pressable
-                onPress={() => router.back()}
-                className="h-[42px] w-[42px] items-center justify-center rounded-full border border-border bg-surface"
+        <View className="px-5 pt-3">
+          <View className="mb-5 flex-row items-center gap-3">
+            <Pressable
+              onPress={() => router.back()}
+              className="h-[42px] w-[42px] items-center justify-center rounded-full border border-border bg-surface"
+            >
+              <Ionicons
+                name="arrow-back-outline"
+                size={20}
+                color={colors.accent}
+              />
+            </Pressable>
+
+            <View className="flex-1">
+              <Text
+                className="text-foreground"
+                style={{ fontSize: 22, fontFamily: "Poppins_700Bold" }}
               >
-                <Ionicons
-                  name="arrow-back-outline"
-                  size={20}
-                  color={colors.accent}
-                />
-              </Pressable>
+                Edit Profile
+              </Text>
 
-              <View className="flex-1">
-                <Text
-                  className="text-foreground"
-                  style={{
-                    fontSize: 22,
-                    fontFamily: "Poppins_700Bold",
-                  }}
-                >
-                  Edit Profile
-                </Text>
-
-                <Text
-                  className="text-muted"
-                  style={{
-                    fontSize: 13,
-                    fontFamily: "Poppins_400Regular",
-                  }}
-                >
-                  View and change your profile details
-                </Text>
-              </View>
-            </View>
-
-            <View className="rounded-[30px] border border-border bg-surface px-5 py-6">
-              <EditProfileForm />
+              <Text
+                className="text-muted"
+                style={{ fontSize: 13, fontFamily: "Poppins_400Regular" }}
+              >
+                View and change your profile details
+              </Text>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+
+          <View className="rounded-[30px] border border-border bg-surface px-5 py-6">
+            <EditProfileForm />
+          </View>
+        </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

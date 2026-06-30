@@ -733,7 +733,7 @@ const handleStartDiscussion = useCallback(() => {
       mediaTypes: ["images"],
       allowsMultipleSelection: true,
       selectionLimit: MAX_ATTACHMENTS - attachments.length,
-      quality: 1,
+      quality: 0.85,
     });
 
     if (result.canceled || !result.assets?.length) return;
@@ -791,26 +791,24 @@ const handleStartDiscussion = useCallback(() => {
      Upload helper
   ────────────────────────────────────────────────────────────── */
 
-  const buildUploadedMediaPayload = async (): Promise<CommunityPostMedia[]> => {
-    const remoteMedia: CommunityPostMedia[] = attachments
-      .filter((attachment) => attachment.source === "remote")
-      .map((attachment, index) => ({
-        type: "IMAGE",
-        url: attachment.uri,
-        sortOrder: index,
-      }));
+ const buildUploadedMediaPayload = async (): Promise<CommunityPostMedia[]> => {
+  const remoteMedia: CommunityPostMedia[] = attachments
+    .filter((attachment) => attachment.source === "remote")
+    .map((attachment, index) => ({
+      type: "IMAGE",
+      url: attachment.uri,
+      sortOrder: index,
+    }));
 
-    const localMedia = attachments.filter(
-      (attachment) => attachment.source === "local",
-    );
+  const localMedia = attachments.filter(
+    (attachment) => attachment.source === "local"
+  );
 
-    if (!localMedia.length) {
-      return remoteMedia.map((media, index) => ({
-        ...media,
-        sortOrder: index,
-      }));
-    }
+  if (!localMedia.length) {
+    return remoteMedia.map((media, index) => ({ ...media, sortOrder: index }));
+  }
 
+  try {
     const uploadPromise = uploadPostMedia({
       files: localMedia.map((attachment) => ({
         uri: attachment.uri,
@@ -821,8 +819,7 @@ const handleStartDiscussion = useCallback(() => {
 
     uploadAbortRef.current = () => uploadPromise.abort();
 
-    const uploadResponse =
-      (await uploadPromise.unwrap()) as UploadPostMediaResponse;
+    const uploadResponse = (await uploadPromise.unwrap()) as UploadPostMediaResponse;
 
     if (!isMountedRef.current) {
       throw new Error("UNMOUNTED");
@@ -835,14 +832,23 @@ const handleStartDiscussion = useCallback(() => {
         type: "IMAGE",
         url: item.url,
         sortOrder: remoteMedia.length + index,
-      }),
+      })
     );
 
     return [...remoteMedia, ...uploaded].map((media, index) => ({
       ...media,
       sortOrder: index,
     }));
-  };
+  } catch (error: any) {
+    // IMPORTANT: Clear upload abort
+    uploadAbortRef.current = null;
+
+    // Optional: Remove failed local attachments so user can re-pick
+    // setAttachments(prev => prev.filter(a => a.source === "remote"));
+
+    throw error; // re-throw so publish() can catch it
+  }
+};
 
   /* ──────────────────────────────────────────────────────────────
      Poll helper
