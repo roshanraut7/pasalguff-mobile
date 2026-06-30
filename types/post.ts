@@ -25,7 +25,7 @@ export type CommunityPostStatus = "DRAFT" | "PUBLISHED" | "DELETED";
 
 export type CommunityCommentStatus = "ACTIVE" | "DELETED";
 
-export type CommunityVisibility = "PUBLIC" | "PRIVATE";
+export type CommunityVisibility = "PUBLIC" | "PRIVATE" | "RESTRICTED";
 export type CommunityPostLinkType =
   | "VIDEO"
   | "IMAGE"
@@ -143,6 +143,9 @@ export type PostCommunity = {
   slug: string;
   visibility: CommunityVisibility;
   avatarImage?: string | null;
+  isJoinedByMe?: boolean;
+  isMember?: boolean;
+  isCommunityFollowedByMe?: boolean;
 };
 
 export type PostAuthor = {
@@ -195,6 +198,11 @@ approvalRate: number | null;
   commentCount: number;
   shareCount: number;
   isLikedByMe: boolean;
+     // ✅ ADD THESE OPTIONAL FIELDS
+  isJoinedByMe?: boolean;
+  isMember?: boolean;
+  isCommunityFollowedByMe?: boolean;
+  
 };
 
 export type PostCommentAuthor = {

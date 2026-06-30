@@ -1,8 +1,7 @@
-import React, { memo, useCallback } from "react";
+import React, { memo, useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -13,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 
@@ -38,10 +38,45 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
   onSubmit,
 }: DislikeReasonModalProps) {
   const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+
+  // Manually track keyboard height.
+  // KeyboardAvoidingView breaks on Android edgeToEdgeEnabled:true because
+  // the system reports keyboard height INCLUDING the nav bar inset,
+  // causing double-offset. We subtract insets.bottom to correct it.
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardOffset(0);
+      return;
+    }
+
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = (e: any) => {
+      const kbHeight = e.endCoordinates.height;
+      // On Android edge-to-edge, subtract insets.bottom to avoid double-counting nav bar
+      const corrected = Platform.OS === "android"
+        ? Math.max(0, kbHeight - insets.bottom)
+        : kbHeight;
+      setKeyboardOffset(corrected);
+    };
+
+    const onHide = () => setKeyboardOffset(0);
+
+    const showSub = Keyboard.addListener(showEvent, onShow);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [visible, insets.bottom]);
 
   const handleClose = useCallback(() => {
     if (isSubmitting) return;
-
     Keyboard.dismiss();
     onClose();
   }, [isSubmitting, onClose]);
@@ -60,18 +95,17 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
       navigationBarTranslucent
       onRequestClose={handleClose}
     >
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={0}
-      >
+      {/* Full screen container */}
+      <View style={styles.flex}>
+        {/* Backdrop tap to close */}
         <Pressable
           style={styles.backdrop}
           onPress={handleClose}
           disabled={isSubmitting}
         />
 
-        <View style={styles.sheetArea}>
+        {/* Card pushed up by keyboard manually */}
+        <View style={[styles.sheetArea, { marginBottom: keyboardOffset }]}>
           <ScrollView
             bounces={false}
             showsVerticalScrollIndicator={false}
@@ -84,9 +118,15 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
                 {
                   backgroundColor: colors.surface,
                   borderColor: colors.border,
+                  // When keyboard is hidden, respect nav bar inset.
+                  // When keyboard is shown, we already pushed up via marginBottom.
+                  paddingBottom: keyboardOffset > 0
+                    ? 20
+                    : Math.max(insets.bottom, Platform.OS === "ios" ? 28 : 20),
                 },
               ]}
             >
+              {/* Header */}
               <View style={styles.header}>
                 <View style={styles.titleRow}>
                   <View
@@ -106,10 +146,7 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
                     <Text style={[styles.title, { color: colors.foreground }]}>
                       Dislike this post?
                     </Text>
-
-                    <Text
-                      style={[styles.subtitle, { color: colors.muted }]}
-                    >
+                    <Text style={[styles.subtitle, { color: colors.muted }]}>
                       Please explain why this post was not useful.
                     </Text>
                   </View>
@@ -125,6 +162,7 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
                 </Pressable>
               </View>
 
+              {/* Text input */}
               <TextInput
                 value={reason}
                 onChangeText={(value) =>
@@ -147,6 +185,7 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
                 ]}
               />
 
+              {/* Helper row */}
               <View style={styles.helperRow}>
                 <Text
                   numberOfLines={2}
@@ -157,12 +196,12 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
                 >
                   {errorText ?? "Your feedback helps improve post quality."}
                 </Text>
-
                 <Text style={[styles.counter, { color: colors.muted }]}>
                   {reason.length}/{MAX_REASON_LENGTH}
                 </Text>
               </View>
 
+              {/* Actions */}
               <View style={styles.actions}>
                 <Pressable
                   disabled={isSubmitting}
@@ -175,9 +214,7 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
                     },
                   ]}
                 >
-                  <Text
-                    style={[styles.cancelText, { color: colors.foreground }]}
-                  >
+                  <Text style={[styles.cancelText, { color: colors.foreground }]}>
                     Cancel
                   </Text>
                 </Pressable>
@@ -202,7 +239,6 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
                         size={17}
                         color="#ffffff"
                       />
-
                       <Text style={styles.submitText}>Submit dislike</Text>
                     </>
                   )}
@@ -211,7 +247,7 @@ const DislikeReasonModal = memo(function DislikeReasonModal({
             </View>
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 });
@@ -243,7 +279,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 18,
     paddingTop: 16,
-    paddingBottom: Platform.OS === "ios" ? 28 : 20,
+    // paddingBottom set dynamically above based on keyboard/insets
   },
 
   header: {

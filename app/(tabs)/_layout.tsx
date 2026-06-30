@@ -181,7 +181,7 @@ export default function TabLayout() {
       position: "absolute" as const,
       left: 20,
       right: 20,
-      bottom: Math.max(insets.bottom - 16, 8),
+bottom: insets.bottom + (insets.bottom > 40 ? 6 : 10),
       height: 72,
       backgroundColor: colors.surface,
       borderRadius: 999,

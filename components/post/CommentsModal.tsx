@@ -1,18 +1,21 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Keyboard,
-  KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
-  useWindowDimensions,
 } from "react-native";
+import {
+  BottomSheetModal,
+  BottomSheetFlatList,
+  BottomSheetTextInput,
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -21,6 +24,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import type { CommunityPost, PostMedia } from "@/types/post";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Colors = ReturnType<typeof useAppTheme>["colors"];
 
@@ -47,17 +51,15 @@ type CommentPostModalProps = {
 const MIN_INPUT_HEIGHT = 42;
 const MAX_INPUT_HEIGHT = 126;
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
 function getCommentAuthorName(comment: FeedComment) {
   const author = comment.author;
-
   if (!author) return "Unknown user";
-
   const fullName = `${author.firstName ?? ""} ${author.lastName ?? ""}`.trim();
-
   if (fullName) return fullName;
   if (author.name?.trim()) return author.name.trim();
   if (author.businessName?.trim()) return author.businessName.trim();
-
   return "Unknown user";
 }
 
@@ -71,43 +73,33 @@ function getInitial(name: string) {
 
 function formatCommentTime(dateValue?: string) {
   if (!dateValue) return "now";
-
   const date = new Date(dateValue);
   const time = date.getTime();
-
   if (Number.isNaN(time)) return "now";
-
   const diffSeconds = Math.max(1, Math.floor((Date.now() - time) / 1000));
-
   if (diffSeconds < 60) return "now";
-
   const diffMinutes = Math.floor(diffSeconds / 60);
   if (diffMinutes < 60) return `${diffMinutes}m`;
-
   const diffHours = Math.floor(diffMinutes / 60);
   if (diffHours < 24) return `${diffHours}h`;
-
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d`;
-
   return `${Math.floor(diffDays / 7)}w`;
 }
 
 function formatCount(value?: number | null) {
   const count = value ?? 0;
-
   if (count <= 0) return "";
   if (count < 1000) return `${count}`;
-  if (count < 1_000_000) {
-    return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
-  }
-
+  if (count < 1_000_000) return `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}K`;
   return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
 }
 
 function isCommentLiked(comment: FeedComment) {
   return Boolean((comment as any).liked || (comment as any).isLiked);
 }
+
+// ─── Sub-components ─────────────────────────────────────────────────────────
 
 const CommentAvatar = memo(function CommentAvatar({
   comment,
@@ -120,7 +112,6 @@ const CommentAvatar = memo(function CommentAvatar({
 }) {
   const name = getCommentAuthorName(comment);
   const imageUrl = getAuthorImage(comment);
-
   return (
     <View style={[styles.avatar, { width: size, height: size }]}>
       {imageUrl ? (
@@ -151,40 +142,25 @@ const ReplyItem = memo(function ReplyItem({
   const replyAuthorName = getCommentAuthorName(item);
   const likeLabel = formatCount((item as any).likeCount);
   const liked = isCommentLiked(item);
-
   return (
     <View style={styles.replyRow}>
       <CommentAvatar comment={item} size={26} styles={styles} />
-
       <View style={styles.replyBody}>
         <View style={styles.replyBubble}>
           <Text style={styles.replyAuthor}>{replyAuthorName}</Text>
           <Text style={styles.replyText}>{item.content}</Text>
         </View>
-
         <View style={styles.replyActions}>
           <Pressable hitSlop={8} onPress={() => onPressLike?.(item)}>
-            <Text
-              style={[
-                styles.replyActionText,
-                liked && styles.likedActionText,
-              ]}
-            >
+            <Text style={[styles.replyActionText, liked && styles.likedActionText]}>
               {liked ? "Liked" : "Like"}
             </Text>
           </Pressable>
-
           <Pressable hitSlop={8} onPress={() => onReply(item)}>
             <Text style={styles.replyActionText}>Reply</Text>
           </Pressable>
-
-          <Text style={styles.replyTime}>
-            {formatCommentTime(item.createdAt)}
-          </Text>
-
-          {likeLabel ? (
-            <Text style={styles.replyReactionCount}>{likeLabel} ♥</Text>
-          ) : null}
+          <Text style={styles.replyTime}>{formatCommentTime(item.createdAt)}</Text>
+          {likeLabel ? <Text style={styles.replyReactionCount}>{likeLabel} ♥</Text> : null}
         </View>
       </View>
     </View>
@@ -217,36 +193,22 @@ const CommentItem = memo(function CommentItem({
     <View style={styles.commentBlock}>
       <View style={styles.commentRow}>
         <CommentAvatar comment={item} styles={styles} />
-
         <View style={styles.commentBody}>
           <View style={styles.commentBubble}>
             <Text style={styles.commentAuthor}>{authorName}</Text>
             <Text style={styles.commentText}>{item.content}</Text>
           </View>
-
           <View style={styles.commentActions}>
             <Pressable hitSlop={8} onPress={() => onPressLike?.(item)}>
-              <Text
-                style={[
-                  styles.commentActionText,
-                  liked && styles.likedActionText,
-                ]}
-              >
+              <Text style={[styles.commentActionText, liked && styles.likedActionText]}>
                 {liked ? "Liked" : "Like"}
               </Text>
             </Pressable>
-
             <Pressable hitSlop={8} onPress={() => onReply(item)}>
               <Text style={styles.commentActionText}>Reply</Text>
             </Pressable>
-
-            <Text style={styles.commentTime}>
-              {formatCommentTime(item.createdAt)}
-            </Text>
-
-            {likeLabel ? (
-              <Text style={styles.commentReactionCount}>{likeLabel} ♥</Text>
-            ) : null}
+            <Text style={styles.commentTime}>{formatCommentTime(item.createdAt)}</Text>
+            {likeLabel ? <Text style={styles.commentReactionCount}>{likeLabel} ♥</Text> : null}
           </View>
         </View>
       </View>
@@ -256,20 +218,13 @@ const CommentItem = memo(function CommentItem({
           {isRepliesExpanded && visibleReplies.length > 0 ? (
             <View style={styles.replyThreadLine} />
           ) : null}
-
           {!isRepliesExpanded ? (
-            <Pressable
-              hitSlop={8}
-              onPress={() => onViewReplies(item)}
-              style={styles.viewRepliesButton}
-            >
+            <Pressable hitSlop={8} onPress={() => onViewReplies(item)} style={styles.viewRepliesButton}>
               <Text style={styles.viewMoreReplies}>
-                View {totalReplyCount}{" "}
-                {totalReplyCount === 1 ? "reply" : "replies"}
+                View {totalReplyCount} {totalReplyCount === 1 ? "reply" : "replies"}
               </Text>
             </Pressable>
           ) : null}
-
           {visibleReplies.map((reply) => (
             <ReplyItem
               key={reply.id}
@@ -279,13 +234,8 @@ const CommentItem = memo(function CommentItem({
               onPressLike={onPressLike}
             />
           ))}
-
           {isRepliesExpanded && replies.length > 0 ? (
-            <Pressable
-              hitSlop={8}
-              onPress={() => onViewReplies(item)}
-              style={styles.viewRepliesButton}
-            >
+            <Pressable hitSlop={8} onPress={() => onViewReplies(item)} style={styles.viewRepliesButton}>
               <Text style={styles.hideReplies}>Hide replies</Text>
             </Pressable>
           ) : null}
@@ -294,6 +244,8 @@ const CommentItem = memo(function CommentItem({
     </View>
   );
 });
+
+// ─── Main Modal ─────────────────────────────────────────────────────────────
 
 function CommentPostModal({
   visible,
@@ -314,48 +266,29 @@ function CommentPostModal({
   onRequestFollow,
   colors,
 }: CommentPostModalProps) {
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => createStyles(colors, insets), [colors, insets]);
+
   const inputRef = useRef<TextInput>(null);
-  const listRef = useRef<FlatList<FeedComment>>(null);
-  const { height: windowHeight } = useWindowDimensions();
+  const listRef = useRef<any>(null);
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
 
   const [replyingTo, setReplyingTo] = useState<FeedComment | null>(null);
-  const [expandedReplyIds, setExpandedReplyIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [isInputFocused, setIsInputFocused] = useState(false);
-  const [composerHeight, setComposerHeight] = useState(76);
+  const [expandedReplyIds, setExpandedReplyIds] = useState<Set<string>>(() => new Set());
   const [textInputHeight, setTextInputHeight] = useState(MIN_INPUT_HEIGHT);
 
+  // ── THE KEY FIX ──
+  // With edgeToEdgeEnabled:true + softwareKeyboardLayoutMode:"pan" in app.json,
+  // the system pans the whole screen up when keyboard opens — but the bottom sheet
+  // sits in a Portal ABOVE the pan layer, so it doesn't move.
+  // We manually track keyboard height and push the inputContainer up ourselves.
+
   useEffect(() => {
-    if (!visible) {
-      setKeyboardHeight(0);
-      setIsInputFocused(false);
-      setTextInputHeight(MIN_INPUT_HEIGHT);
-      setExpandedReplyIds(new Set());
-      setReplyingTo(null);
-      return;
+    if (visible) {
+      bottomSheetRef.current?.present();
+    } else {
+      bottomSheetRef.current?.dismiss();
     }
-
-    const showEvent =
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent =
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
-    const showSub = Keyboard.addListener(showEvent, (event) => {
-      setKeyboardHeight(event.endCoordinates?.height ?? 0);
-    });
-
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-      setIsInputFocused(false);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
   }, [visible]);
 
   useEffect(() => {
@@ -366,67 +299,25 @@ function CommentPostModal({
 
   const totalComments = post?.commentCount ?? comments.length;
 
-  const fallbackKeyboardHeight =
-    Platform.OS === "android" && isInputFocused
-      ? Math.round(windowHeight * 0.42)
-      : 0;
-
-  const keyboardLift =
-    Platform.OS === "android"
-      ? Math.max(keyboardHeight, fallbackKeyboardHeight)
-      : 0;
-
-  const androidExtraGap = Platform.OS === "android" && keyboardLift > 0 ? 14 : 0;
-
-  const sheetHeight =
-    Platform.OS === "android" && keyboardLift > 0
-      ? Math.max(320, windowHeight - keyboardLift - androidExtraGap)
-      : windowHeight * 0.94;
-
-  const sheetBottomGap =
-    Platform.OS === "android" && keyboardLift > 0
-      ? keyboardLift + androidExtraGap
-      : 0;
-
-  const handleReply = (comment: FeedComment) => {
-    if (!canWriteComment) {
-      onRequestFollow?.();
-      return;
-    }
-
+  const handleReply = useCallback((comment: FeedComment) => {
+    if (!canWriteComment) { onRequestFollow?.(); return; }
     setReplyingTo(comment);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [canWriteComment, onRequestFollow]);
 
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-    });
-  };
-
-  const handleViewReplies = (comment: FeedComment) => {
+  const handleViewReplies = useCallback((comment: FeedComment) => {
     setExpandedReplyIds((prev) => {
       const next = new Set(prev);
-
-      if (next.has(comment.id)) {
-        next.delete(comment.id);
-      } else {
-        next.add(comment.id);
-      }
-
+      next.has(comment.id) ? next.delete(comment.id) : next.add(comment.id);
       return next;
     });
-
     onRefreshComments?.();
-  };
+  }, [onRefreshComments]);
 
-  const handleSubmitPress = () => {
-    if (!canWriteComment) {
-      onRequestFollow?.();
-      return;
-    }
-
+  const handleSubmitPress = useCallback(() => {
+    if (!canWriteComment) { onRequestFollow?.(); return; }
     if (!inputValue.trim() || isCreating) return;
-
     const selectedReply = replyingTo;
-
     if (selectedReply?.id) {
       setExpandedReplyIds((prev) => {
         const next = new Set(prev);
@@ -434,303 +325,240 @@ function CommentPostModal({
         return next;
       });
     }
-
     setReplyingTo(null);
     setTextInputHeight(MIN_INPUT_HEIGHT);
     onSubmit(selectedReply);
-  };
+  }, [canWriteComment, onRequestFollow, inputValue, isCreating, replyingTo, onSubmit]);
 
-  const handleInputFocus = () => {
+  const handleInputFocus = useCallback(() => {
     if (!canWriteComment) {
       inputRef.current?.blur();
       Keyboard.dismiss();
       onRequestFollow?.();
       return;
     }
+    setTimeout(() => listRef.current?.scrollToEnd?.({ animated: true }), 300);
+  }, [canWriteComment, onRequestFollow]);
 
-    setIsInputFocused(true);
-
-    setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    }, 120);
-  };
-
-  const handleInputBlur = () => {
-    setIsInputFocused(false);
-  };
-
-  const handleInputContentSizeChange = (event: {
+  const handleInputContentSizeChange = useCallback((event: {
     nativeEvent: { contentSize: { height: number } };
   }) => {
-    const contentHeight = event.nativeEvent.contentSize.height;
-    const nextHeight = Math.min(
-      MAX_INPUT_HEIGHT,
-      Math.max(MIN_INPUT_HEIGHT, Math.ceil(contentHeight) + 12),
-    );
+    const h = event.nativeEvent.contentSize.height;
+    setTextInputHeight(Math.min(MAX_INPUT_HEIGHT, Math.max(MIN_INPUT_HEIGHT, Math.ceil(h) + 12)));
+  }, []);
 
-    setTextInputHeight(nextHeight);
-  };
-
-  const handlePostCardCommentPress = () => {
-    if (!canWriteComment) {
-      onRequestFollow?.();
-      return;
-    }
-
+  const handlePostCardCommentPress = useCallback(() => {
+    if (!canWriteComment) { onRequestFollow?.(); return; }
     inputRef.current?.focus();
-  };
+  }, [canWriteComment, onRequestFollow]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     Keyboard.dismiss();
-    setKeyboardHeight(0);
-    setIsInputFocused(false);
     setReplyingTo(null);
     setExpandedReplyIds(new Set());
     setTextInputHeight(MIN_INPUT_HEIGHT);
     onClose();
-  };
+  }, [onClose]);
+
+  const handleSheetChange = useCallback((index: number) => {
+    if (index === -1) onClose();
+  }, [onClose]);
+
+  const renderBackdrop = useCallback((props: BottomSheetBackdropProps) => (
+    <BottomSheetBackdrop
+      {...props}
+      disappearsOnIndex={-1}
+      appearsOnIndex={0}
+      opacity={0.5}
+      pressBehavior="close"
+    />
+  ), []);
+
+  const renderItem = useCallback(({ item }: { item: FeedComment }) => (
+    <CommentItem
+      item={item}
+      styles={styles}
+      onReply={handleReply}
+      onPressLike={onPressCommentLike}
+      isRepliesExpanded={expandedReplyIds.has(item.id)}
+      onViewReplies={handleViewReplies}
+    />
+  ), [styles, handleReply, onPressCommentLike, expandedReplyIds, handleViewReplies]);
+
+  const ListHeader = useMemo(() => (
+    <View style={styles.postHeaderWrap}>
+      {post ? (
+        <CommunityPostCard
+          post={post}
+          disableMediaPlayback={false}
+          onPressLike={onPressPostLike}
+          onPressComment={handlePostCardCommentPress}
+          onPressShare={onPressPostShare}
+          onPressMedia={onPressMedia}
+        />
+      ) : null}
+      <View style={styles.commentSectionHeader}>
+        <Text style={styles.commentSectionTitle}>Comments</Text>
+      </View>
+    </View>
+  ), [post, onPressPostLike, handlePostCardCommentPress, onPressPostShare, onPressMedia, styles]);
+
+  const ListEmpty = useMemo(() => (
+    isLoading ? (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="small" color={colors.accent} />
+      </View>
+    ) : (
+      <View style={styles.emptyContainer}>
+        <Ionicons name="chatbubble-ellipses-outline" size={34} color={colors.muted} />
+        <Text style={styles.emptyTitle}>No comments yet</Text>
+        <Text style={styles.emptyText}>Be the first to write a comment.</Text>
+      </View>
+    )
+  ), [isLoading, colors, styles]);
+
+  const ListFooter = useMemo(() => <View style={{ height: 16 }} />, []);
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
-      onRequestClose={handleClose}
+    <BottomSheetModal
+      ref={bottomSheetRef}
+      index={0}
+      snapPoints={["95%"]}
+      topInset={insets.top}
+      onDismiss={handleClose}
+      onChange={handleSheetChange}
+      backdropComponent={renderBackdrop}
+      keyboardBehavior="extend"
+      keyboardBlurBehavior="restore"
+      android_keyboardInputMode="adjustPan"
+      enablePanDownToClose
+      enableDynamicSizing={false}
+      handleIndicatorStyle={styles.dragHandle}
+      handleStyle={styles.dragHandleWrapper}
+      backgroundStyle={{ backgroundColor: colors.surface }}
     >
-      <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={handleClose} />
+      {/* Root: plain View with flex:1 — NOT BottomSheetView */}
+      <View style={styles.sheetRoot}>
 
-        <KeyboardAvoidingView
-          style={styles.keyboardContainer}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={0}
-        >
-          <View
-            style={[
-              styles.sheet,
-              {
-                height: sheetHeight,
-                marginBottom: sheetBottomGap,
-              },
-            ]}
-          >
-            <View style={styles.dragHandleWrapper}>
-              <View style={styles.dragHandle} />
+        {/* Header — fixed */}
+        <View style={styles.header}>
+          <Pressable onPress={handleClose} style={styles.headerIconButton}>
+            <Ionicons name="chevron-down" size={24} color={colors.foreground} />
+          </Pressable>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Post</Text>
+            <Text style={styles.headerSubtitle}>
+              {totalComments > 0
+                ? `${totalComments} ${totalComments === 1 ? "comment" : "comments"}`
+                : "Be the first to comment"}
+            </Text>
+          </View>
+          <Pressable onPress={handleClose} style={styles.closeButton}>
+            <Ionicons name="close" size={22} color={colors.foreground} />
+          </Pressable>
+        </View>
+
+        {/* List — flex:1 fills space between header and input */}
+        <View style={styles.listWrapper}>
+          <BottomSheetFlatList
+            ref={listRef}
+            data={isLoading ? [] : comments}
+            keyExtractor={(item: FeedComment) => item.id}
+            renderItem={renderItem}
+            keyboardShouldPersistTaps="always"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            ListHeaderComponent={ListHeader}
+            ListEmptyComponent={ListEmpty}
+            ListFooterComponent={ListFooter}
+          />
+        </View>
+
+        {/* Input — always visible above keyboard */}
+        <View style={styles.inputContainer}>
+          {replyingTo ? (
+            <View style={styles.replyingBar}>
+              <Text style={styles.replyingText} numberOfLines={1}>
+                Replying to {getCommentAuthorName(replyingTo)}
+              </Text>
+              <Pressable hitSlop={8} onPress={() => setReplyingTo(null)}>
+                <Ionicons name="close" size={16} color={colors.muted} />
+              </Pressable>
             </View>
+          ) : null}
 
-            <View style={styles.header}>
-              <Pressable onPress={handleClose} style={styles.headerIconButton}>
+          <View style={styles.inputBar}>
+            <View style={[styles.inputWrapper, { height: textInputHeight }]}>
+              <BottomSheetTextInput
+                ref={inputRef as any}
+                value={inputValue}
+                onChangeText={onChangeInput}
+                onFocus={handleInputFocus}
+                onContentSizeChange={handleInputContentSizeChange}
+                placeholder={
+                  !canWriteComment
+                    ? "Follow community to comment..."
+                    : replyingTo
+                    ? `Reply to ${getCommentAuthorName(replyingTo)}...`
+                    : "Write a comment..."
+                }
+                placeholderTextColor={colors.muted}
+                editable={!isCreating}
+                multiline
+                scrollEnabled={textInputHeight >= MAX_INPUT_HEIGHT - 2}
+                textAlignVertical="top"
+                blurOnSubmit={false}
+                returnKeyType="default"
+                style={[styles.input, { height: textInputHeight }]}
+              />
+            </View>
+            <Pressable
+              onPress={handleSubmitPress}
+              disabled={!inputValue.trim() || isCreating}
+              style={[styles.sendButton, !inputValue.trim() && styles.sendButtonDisabled]}
+            >
+              {isCreating ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
                 <Ionicons
-                  name="chevron-down"
-                  size={24}
-                  color={colors.foreground}
-                />
-              </Pressable>
-
-              <View style={styles.headerCenter}>
-                <Text style={styles.headerTitle}>Post</Text>
-                <Text style={styles.headerSubtitle}>
-                  {totalComments > 0
-                    ? `${totalComments} ${
-                        totalComments === 1 ? "comment" : "comments"
-                      }`
-                    : "Be the first to comment"}
-                </Text>
-              </View>
-
-              <Pressable onPress={handleClose} style={styles.closeButton}>
-                <Ionicons name="close" size={22} color={colors.foreground} />
-              </Pressable>
-            </View>
-
-            <FlatList
-              ref={listRef}
-              data={isLoading ? [] : comments}
-              keyExtractor={(item) => item.id}
-              keyboardShouldPersistTaps="always"
-              keyboardDismissMode={
-                Platform.OS === "ios" ? "interactive" : "none"
-              }
-              showsVerticalScrollIndicator={false}
-              style={styles.list}
-              contentContainerStyle={[
-                styles.listContent,
-                {
-                  paddingBottom: composerHeight + 18,
-                },
-              ]}
-              ListHeaderComponent={
-                <View style={styles.postHeaderWrap}>
-                  {post ? (
-                    <CommunityPostCard
-                      post={post}
-                      disableMediaPlayback={false}
-                      onPressLike={onPressPostLike}
-                      onPressComment={handlePostCardCommentPress}
-                      onPressShare={onPressPostShare}
-                      onPressMedia={onPressMedia}
-                    />
-                  ) : null}
-
-                  <View style={styles.commentSectionHeader}>
-                    <Text style={styles.commentSectionTitle}>Comments</Text>
-                  </View>
-                </View>
-              }
-              ListEmptyComponent={
-                isLoading ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  </View>
-                ) : (
-                  <View style={styles.emptyContainer}>
-                    <Ionicons
-                      name="chatbubble-ellipses-outline"
-                      size={34}
-                      color={colors.muted}
-                    />
-
-                    <Text style={styles.emptyTitle}>No comments yet</Text>
-
-                    <Text style={styles.emptyText}>
-                      Be the first to write a comment.
-                    </Text>
-                  </View>
-                )
-              }
-              renderItem={({ item }) => (
-                <CommentItem
-                  item={item}
-                  styles={styles}
-                  onReply={handleReply}
-                  onPressLike={onPressCommentLike}
-                  isRepliesExpanded={expandedReplyIds.has(item.id)}
-                  onViewReplies={handleViewReplies}
+                  name="send"
+                  size={19}
+                  color={inputValue.trim() ? "#FFFFFF" : colors.muted}
                 />
               )}
-            />
-
-            <View
-              style={styles.inputOuter}
-              onLayout={(event) => {
-                setComposerHeight(event.nativeEvent.layout.height);
-              }}
-            >
-              {replyingTo ? (
-                <View style={styles.replyingBar}>
-                  <Text style={styles.replyingText} numberOfLines={1}>
-                    Replying to {getCommentAuthorName(replyingTo)}
-                  </Text>
-
-                  <Pressable hitSlop={8} onPress={() => setReplyingTo(null)}>
-                    <Ionicons name="close" size={16} color={colors.muted} />
-                  </Pressable>
-                </View>
-              ) : null}
-
-              <View style={styles.inputBar}>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    {
-                      height: textInputHeight,
-                    },
-                  ]}
-                >
-                  <TextInput
-                    ref={inputRef}
-                    value={inputValue}
-                    onChangeText={onChangeInput}
-                    onFocus={handleInputFocus}
-                    onBlur={handleInputBlur}
-                    onContentSizeChange={handleInputContentSizeChange}
-                    placeholder={
-                      !canWriteComment
-                        ? "Follow community to comment..."
-                        : replyingTo
-                          ? `Reply to ${getCommentAuthorName(replyingTo)}...`
-                          : "Write a comment..."
-                    }
-                    placeholderTextColor={colors.muted}
-                    editable={!isCreating}
-                    multiline
-                    scrollEnabled={textInputHeight >= MAX_INPUT_HEIGHT - 2}
-                    textAlignVertical="top"
-                    blurOnSubmit={false}
-                    returnKeyType="default"
-                    style={[
-                      styles.input,
-                      {
-                        height: textInputHeight,
-                      },
-                    ]}
-                  />
-                </View>
-
-                <Pressable
-                  onPress={handleSubmitPress}
-                  disabled={!inputValue.trim() || isCreating}
-                  style={[
-                    styles.sendButton,
-                    !inputValue.trim() && styles.sendButtonDisabled,
-                  ]}
-                >
-                  {isCreating ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Ionicons
-                      name="send"
-                      size={19}
-                      color={inputValue.trim() ? "#FFFFFF" : colors.muted}
-                    />
-                  )}
-                </Pressable>
-              </View>
-            </View>
+            </Pressable>
           </View>
-        </KeyboardAvoidingView>
+        </View>
+
       </View>
-    </Modal>
+    </BottomSheetModal>
   );
 }
 
 export default memo(CommentPostModal);
 
-function createStyles(colors: Colors) {
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+function createStyles(
+  colors: Colors,
+  insets: { top: number; bottom: number; left: number; right: number },
+) {
   return StyleSheet.create({
-    overlay: {
+    sheetRoot: {
       flex: 1,
-      justifyContent: "flex-end",
-      backgroundColor: colors.backdrop,
-    },
-
-    backdrop: {
-      ...StyleSheet.absoluteFillObject,
-    },
-
-    keyboardContainer: {
-      flex: 1,
-      justifyContent: "flex-end",
-    },
-
-    sheet: {
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
       backgroundColor: colors.surface,
       overflow: "hidden",
     },
 
     dragHandleWrapper: {
-      alignItems: "center",
-      paddingTop: 8,
-      paddingBottom: 4,
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
     },
 
     dragHandle: {
       width: 42,
       height: 4,
-      borderRadius: 999,
       backgroundColor: colors.border,
     },
 
@@ -780,13 +608,12 @@ function createStyles(colors: Colors) {
       backgroundColor: colors.surfaceSecondary,
     },
 
-    list: {
+    listWrapper: {
       flex: 1,
-      backgroundColor: colors.surface,
     },
 
     listContent: {
-      paddingBottom: 110,
+      paddingBottom: 8,
     },
 
     postHeaderWrap: {
@@ -810,6 +637,7 @@ function createStyles(colors: Colors) {
 
     loadingContainer: {
       paddingVertical: 30,
+      alignItems: "center",
     },
 
     emptyContainer: {
@@ -1020,17 +848,6 @@ function createStyles(colors: Colors) {
       fontFamily: "Poppins_600SemiBold",
     },
 
-    inputOuter: {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: 0,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-      backgroundColor: colors.surface,
-      paddingBottom: Platform.OS === "ios" ? 22 : 18,
-    },
-
     replyingBar: {
       paddingHorizontal: 14,
       paddingTop: 8,
@@ -1049,9 +866,17 @@ function createStyles(colors: Colors) {
       fontFamily: "Poppins_500Medium",
     },
 
+    inputContainer: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingTop: 6,
+      paddingBottom: Math.max(insets.bottom, 12),
+    },
+
     inputBar: {
       paddingHorizontal: 10,
-      paddingTop: 8,
+      paddingTop: 6,
       flexDirection: "row",
       alignItems: "flex-end",
       gap: 8,
@@ -1087,7 +912,6 @@ function createStyles(colors: Colors) {
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.accent,
-      marginBottom: 0,
     },
 
     sendButtonDisabled: {

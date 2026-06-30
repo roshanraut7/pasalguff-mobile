@@ -17,7 +17,6 @@ import {
   Pressable,
   Text,
   TextInput,
-  UIManager,
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -49,7 +48,7 @@ import {
 } from "@/store/api/communityDiscussionLiveApi";
 
 import { styles } from "@/constants/styles/livechat.styles";
-import {
+import getRequestDiscussionId, {
   ActionModal,
   JoinLeaveCard,
   MemberRow,
@@ -60,7 +59,6 @@ import {
   getErrorMessage,
   getLiveStatusMeta,
   getParamValue,
-  getRequestDiscussionId,
   getToneColor,
   makeClientMessageId,
   type ActionTarget,
@@ -1060,12 +1058,13 @@ export default function LiveDiscussionPage() {
       style={[styles.screen, { backgroundColor: colors.background }]}
       edges={["top"]}
     >
-      <KeyboardAvoidingView
-        style={styles.screen}
-        behavior={Platform.OS === "ios" || Platform.OS === "android" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
-        enabled={activeTab === "chat"}
-      >
+
+<KeyboardAvoidingView
+  style={styles.screen}
+  behavior={Platform.OS === "ios" ? "padding" : undefined}
+  keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
+  enabled={activeTab === "chat"}
+>
         <View
           style={[
             styles.header,

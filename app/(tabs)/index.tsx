@@ -64,6 +64,7 @@ type CommunityFollowState = CommunityPost & {
 type HomePostItemProps = {
   item: CommunityPost;
   disableMediaPlayback: boolean;
+  showCommunityHeader: boolean;  
   onPressLike: (post: CommunityPost) => void;
   onPressDislike: (post: CommunityPost) => void;
   onPressComment: (post: CommunityPost) => void;
@@ -71,6 +72,7 @@ type HomePostItemProps = {
   onPressAuthor: (authorId: string) => void;
   onPressMedia: (media: PostMedia[], startIndex: number) => void;
   onPressPollOption: (post: CommunityPost, optionId: string) => void;
+    onPressJoin: (post: CommunityPost) => void; 
 };
 
 const OPTIONS_HEADER_HEIGHT = 54;
@@ -102,6 +104,7 @@ function isHomeFeedTab(value: string): value is HomeFeedTab {
 const HomePostItem = memo(function HomePostItem({
   item,
   disableMediaPlayback,
+   showCommunityHeader, 
   onPressLike,
   onPressDislike,
   onPressComment,
@@ -109,10 +112,12 @@ const HomePostItem = memo(function HomePostItem({
   onPressAuthor,
   onPressMedia,
   onPressPollOption,
+    onPressJoin, 
 }: HomePostItemProps) {
   return (
     <CommunityPostCard
       post={item}
+            showCommunityHeader={showCommunityHeader}
       disableMediaPlayback={disableMediaPlayback}
       onPressLike={onPressLike}
       onPressDislike={onPressDislike}
@@ -121,6 +126,7 @@ const HomePostItem = memo(function HomePostItem({
       onPressAuthor={onPressAuthor}
       onPressMedia={onPressMedia}
       onPressPollOption={onPressPollOption}
+            onPressJoin={onPressJoin} 
     />
   );
 });
@@ -668,6 +674,16 @@ const handleProtectedOpenComments = useCallback(
 
     router.push(`/user/profile/${authorId}`);
   }, []);
+  const handleJoinCommunity = useCallback((post: CommunityPost) => {
+  const normalizedPost = post as CommunityFollowState;
+  const communitySlug =
+    normalizedPost.community?.slug || post.communityId;
+
+  router.push({
+    pathname: "/user/community/[slug]",
+    params: { slug: communitySlug },
+  });
+}, []);
 
   const disableMediaPlayback =
     viewer.visible ||
@@ -680,6 +696,7 @@ const handleProtectedOpenComments = useCallback(
     ({ item }: { item: CommunityPost }) => (
       <HomePostItem
         item={item}
+        showCommunityHeader={activeTab === "FOR_YOU"}  //
         disableMediaPlayback={disableMediaPlayback}
         onPressLike={handleLikePost}
         onPressDislike={handleDislikePost}
@@ -688,6 +705,7 @@ const handleProtectedOpenComments = useCallback(
         onPressAuthor={handleAuthorPress}
         onPressMedia={openViewer}
         onPressPollOption={handleProtectedVotePostPoll}
+          onPressJoin={handleJoinCommunity}     
       />
     ),
     [
@@ -699,6 +717,7 @@ const handleProtectedOpenComments = useCallback(
       handleAuthorPress,
       openViewer,
       handleProtectedVotePostPoll,
+         handleJoinCommunity,     
     ],
   );
 

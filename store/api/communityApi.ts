@@ -197,29 +197,31 @@ export const communityApi = baseApi.injectEndpoints({
       { type: "CommunityAccess" as const, id: communityId },
       { type: "CommunityMembers" as const, id: communityId },
       { type: "CommunityJoinRequests" as const, id: communityId },
-
-      /*
-       * Required so the current user's pending request refreshes.
-       */
       { type: "CommunityJoinRequests" as const, id: `${communityId}-ME` },
+      { type: "Post" as const, id: "HOME-FEED" },           // ✅ ADD
+      { type: "Post" as const, id: "HOME-FEED-FOR_YOU" },   // ✅ ADD
+      { type: "Post" as const, id: "HOME-FEED-COMMUNITY" }, // ✅ ADD
     ];
   },
 }),
 
-    leaveCommunity: builder.mutation<unknown, string>({
-      query: (communityId) => ({
-        url: `/communities/${communityId}/leave`,
-        method: "POST",
-      }),
-      invalidatesTags: (_result, _error, communityId) => [
-        { type: "Community" as const, id: "LIST" },
-        { type: "Community" as const, id: communityId },
-        { type: "MyCommunity" as const, id: "LIST" },
-        { type: "CommunityAccess" as const, id: communityId },
-        { type: "CommunityMembers" as const, id: communityId },
-        { type: "CommunityJoinRequests" as const, id: communityId },
-      ],
-    }),
+leaveCommunity: builder.mutation<unknown, string>({
+  query: (communityId) => ({
+    url: `/communities/${communityId}/leave`,
+    method: "POST",
+  }),
+  invalidatesTags: (_result, _error, communityId) => [
+    { type: "Community" as const, id: "LIST" },
+    { type: "Community" as const, id: communityId },
+    { type: "MyCommunity" as const, id: "LIST" },
+    { type: "CommunityAccess" as const, id: communityId },
+    { type: "CommunityMembers" as const, id: communityId },
+    { type: "CommunityJoinRequests" as const, id: communityId },
+    { type: "Post" as const, id: "HOME-FEED" },           // ✅ ADD
+    { type: "Post" as const, id: "HOME-FEED-FOR_YOU" },   // ✅ ADD
+    { type: "Post" as const, id: "HOME-FEED-COMMUNITY" }, // ✅ ADD
+  ],
+}),
 
     /* =========================================================
    MEMBERS VISIBLE TO NORMAL JOINED USERS

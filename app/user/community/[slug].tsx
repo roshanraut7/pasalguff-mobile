@@ -30,6 +30,7 @@ import {
   useGetCommunityBySlugQuery,
   useGetVisibleCommunityMembersQuery,
   useJoinCommunityMutation,
+  useLeaveCommunityMutation
 } from "@/store/api/communityApi";
 
 import {
@@ -66,7 +67,8 @@ export default function CommunityDetailScreen() {
 
   const [isJoining, setIsJoining] = useState(false);
   const [isCancellingRequest, setIsCancellingRequest] = useState(false);
-
+  const [isLeaving, setIsLeaving] = useState(false);
+const [localJoined, setLocalJoined] = useState(false);
   /**
    * Local instant state for private community request.
    * It prevents the UI from looking unchanged while the API refreshes.
@@ -107,7 +109,6 @@ export default function CommunityDetailScreen() {
     setPosts: setPostItems,
     sessionUser: session?.user,
   });
-
   const {
     data: community,
     isLoading: communityLoading,
@@ -134,13 +135,12 @@ export default function CommunityDetailScreen() {
 
   const isModerator =
     access?.role === "MODERATOR" || community?.myRole === "MODERATOR";
+    
 
-  const isJoined =
-    Boolean(access?.isMember) ||
-    Boolean(community?.isJoined) ||
-    community?.myRole === "ADMIN" ||
-    community?.myRole === "MODERATOR" ||
-    community?.myRole === "MEMBER";
+const isJoined =
+  localJoined ||
+  Boolean(access?.isMember) ||
+  Boolean(community?.isJoined);
 
   const isJoinRequestPending =
     !isJoined &&
@@ -163,6 +163,7 @@ export default function CommunityDetailScreen() {
    * Admin/moderator actions are handled in the dedicated manage pages.
    */
   const canOpenManagePage = isOwner || isModerator;
+  
 
   const canLoadMembers =
     !!session?.user &&
@@ -201,7 +202,7 @@ export default function CommunityDetailScreen() {
     {
       skip: !session?.user || !community?.id || !canViewContent,
       refetchOnMountOrArgChange: true,
-    },
+    }, 
   );
 
   const canLoadGuidelines =
@@ -231,27 +232,24 @@ export default function CommunityDetailScreen() {
 
   const showCancelRequestButton =
     !!community && !isOwner && !isJoined && isJoinRequestPending;
+    // Add this new line
+const showLeaveButton = 
+  !!community && 
+  isJoined && 
+  !isOwner && 
+  !isModerator;
+
 
   const memberCount =
     community?.memberCount ?? membersResponse?.meta?.total ?? memberItems.length;
 
   const totalPostCount = community?.postCount ?? postItems.length;
-
-  const roleLabel = useMemo(() => {
-    if (isOwner) {
-      return "Owner";
-    }
-
-    if (isModerator) {
-      return "Moderator";
-    }
-
-    if (isJoined) {
-      return "Joined";
-    }
-
-    return null;
-  }, [isOwner, isModerator, isJoined]);
+const roleLabel = useMemo(() => {
+  if (isOwner) return "Owner";
+  if (isModerator) return "Moderator";
+  if (isJoined) return "Joined";
+  return null;
+}, [isOwner, isModerator, isJoined]);
 
   const aboutRoleLabel = isJoinRequestPending
     ? "Pending"
@@ -329,6 +327,13 @@ export default function CommunityDetailScreen() {
       return [...previousItems, ...newItems];
     });
   }, [membersResponse, memberPage]);
+ useEffect(() => {
+  if (community || access) {
+    setLocalJoined(
+      Boolean(access?.isMember) || Boolean(community?.isJoined)
+    );
+  }
+}, [community, access]);
 
   const handleManageCommunity = useCallback(() => {
     if (!slug) {
@@ -395,6 +400,45 @@ export default function CommunityDetailScreen() {
     refetchCommunity,
     refetchAccess,
   ]);
+const [leaveCommunity] = useLeaveCommunityMutation();   // Make sure this is declared
+
+const handleLeaveCommunity = useCallback(async () => {
+  if (!community?.id) return;
+
+  Alert.alert(
+    "Leave Community",
+    "Are you sure you want to leave this community? You will lose access to its posts and content.",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setIsLeaving(true);
+
+            await leaveCommunity(community.id).unwrap();
+
+            await Promise.allSettled([
+              refetchCommunity(),
+              refetchAccess()
+            ]);
+
+            Alert.alert("Success", "You have successfully left the community.");
+          } catch (error: any) {
+            console.log("Leave community failed:", error);
+            Alert.alert(
+              "Could not leave community",
+              error?.data?.message || "Something went wrong. Please try again."
+            );
+          } finally {
+            setIsLeaving(false);
+          }
+        },
+      },
+    ]
+  );
+}, [community?.id, leaveCommunity, refetchCommunity, refetchAccess]);
 
   const handleCancelJoinRequest = useCallback(() => {
     if (!community?.id) {
@@ -789,32 +833,35 @@ export default function CommunityDetailScreen() {
                     alignItems: "flex-end",
                   }}
                 >
-                  {roleLabel ? (
-                    <RoleStatusChip
-                      icon="shield-checkmark-outline"
-                      label={roleLabel}
-                      colors={colors}
-                    />
-                  ) : null}
+  {roleLabel && !showLeaveButton ? (
+  <RoleStatusChip
+    icon="shield-checkmark-outline"
+    label={roleLabel}
+    colors={colors}
+  />
+) : null}
 
                   {canOpenManagePage ? (
-                    <View style={{ marginTop: roleLabel ? 8 : 0 }}>
-                      <ManageCommunityButton
-                        colors={colors}
-                        onPress={handleManageCommunity}
-                      />
-                    </View>
-                  ) : (
-                    <HeaderAction
-                      showJoinButton={showJoinButton}
-                      showCancelRequestButton={showCancelRequestButton}
-                      isJoining={isJoining}
-                      isCancellingRequest={isCancellingRequest}
-                      colors={colors}
-                      onJoin={handleJoin}
-                      onCancelRequest={handleCancelJoinRequest}
-                    />
-                  )}
+  <View style={{ marginTop: roleLabel ? 8 : 0 }}>
+    <ManageCommunityButton
+      colors={colors}
+      onPress={handleManageCommunity}
+    />
+  </View>
+) : (
+  <HeaderAction
+    showJoinButton={showJoinButton}
+    showCancelRequestButton={showCancelRequestButton}
+    showLeaveButton={showLeaveButton}        // ← New prop
+    isJoining={isJoining}
+    isCancellingRequest={isCancellingRequest}
+    isLeaving={isLeaving}
+    colors={colors}
+    onJoin={handleJoin}
+    onCancelRequest={handleCancelJoinRequest}
+    onLeave={handleLeaveCommunity}           // ← You need to create this function
+  />
+)}
                 </View>
               </View>
 
@@ -937,6 +984,7 @@ export default function CommunityDetailScreen() {
                                 onPressShare={handleSharePost}
                                 onPressAuthor={handleAuthorPress}
                                 onPressMedia={openViewer}
+                                onPressJoin={handleJoin}
                                 canDelete={isOwnPost}
                                 isDeleting={deletingPostId === post.id}
                                 onDelete={handleDeletePost}
@@ -1267,20 +1315,64 @@ function InlineStat({
 function HeaderAction({
   showJoinButton,
   showCancelRequestButton,
+  showLeaveButton,        // ← New
   isJoining,
   isCancellingRequest,
+  isLeaving,              // ← New
   colors,
   onJoin,
   onCancelRequest,
+  onLeave,                // ← New
 }: {
   showJoinButton: boolean;
   showCancelRequestButton: boolean;
+  showLeaveButton: boolean;           // ← New
   isJoining: boolean;
   isCancellingRequest: boolean;
+  isLeaving: boolean;                 // ← New
   colors: ReturnType<typeof useAppTheme>["colors"];
   onJoin: () => void;
   onCancelRequest: () => void;
+  onLeave: () => void;                // ← New
 }) {
+  // Leave Button (highest priority for joined users)
+  // Joined Button (tap to leave)
+  if (showLeaveButton) {
+    return (
+      <Pressable
+        onPress={onLeave}
+        disabled={isLeaving}
+        style={{
+          minHeight: 34,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: colors.accent,
+          backgroundColor: colors.segment,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: 12,
+          paddingVertical: 7,
+        }}
+      >
+        {isLeaving ? (
+          <ActivityIndicator size="small" color={colors.accent} />
+        ) : (
+          <Text
+            numberOfLines={1}
+            style={{
+              color: colors.accent,
+              fontSize: 11,
+              fontFamily: "Poppins_700Bold",
+            }}
+          >
+            Joined
+          </Text>
+        )}
+      </Pressable>
+    );
+  }
+
+  // Cancel Pending Request
   if (showCancelRequestButton) {
     return (
       <Pressable
@@ -1316,6 +1408,7 @@ function HeaderAction({
     );
   }
 
+  // Join Button
   if (showJoinButton) {
     return (
       <Pressable

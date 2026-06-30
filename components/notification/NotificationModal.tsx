@@ -39,12 +39,9 @@ function getNotificationIcon(type?: string) {
     case "COMMENT_REPLY":
     case "POST_REPLY":
       return "return-down-forward-outline";
-       case "POST_COMMENT":
-      return "chatbubble-ellipses-outline";
 
-    case "COMMENT_REPLY":
-    case "POST_REPLY":
-      return "return-down-forward-outline";
+    case "POST_DISLIKE":
+      return "thumbs-down-outline";
 
     case "COMMUNITY_MEMBER_BANNED":
       return "ban-outline";

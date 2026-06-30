@@ -1,10 +1,12 @@
 import React, {
   memo,
   useCallback,
+  useEffect,
   useMemo,
   useState,
 } from "react";
 import {
+  Alert,
   Linking,
   Pressable,
   StyleSheet,
@@ -24,6 +26,8 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import YouTubeEmbedPlayer from "./YouTubeEmbedPlayer";
 import type { CommunityPost, PostMedia, PostPoll } from "@/types/post";
+import { useJoinCommunityMutation, useLeaveCommunityMutation } from "@/store/api/communityApi";
+import { router } from "expo-router";
 
 const systemFonts = [
   ...defaultSystemFonts,
@@ -53,6 +57,8 @@ type CommunityPostCardProps = {
    * - Already liked: parent calls Unlike API.
    */
   onPressLike?: (post: CommunityPost) => void;
+showCommunityHeader?:boolean // ✅ ADD THIS
+  onPressJoin?: (post: CommunityPost) => void; // ✅ ADD THIS
 
   /**
    * Down arrow action:
@@ -456,6 +462,8 @@ export default function CommunityPostCard({
   canEdit=false,
   onEdit,
   onDelete,
+    showCommunityHeader = false,  // ✅ ADD
+  onPressJoin,   
 }: CommunityPostCardProps) {
   const { width } = useWindowDimensions();
   const { colors } = useAppTheme();
@@ -478,6 +486,10 @@ export default function CommunityPostCard({
 
   const [expanded, setExpanded] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+   const [joinCommunity, { isLoading: isJoining }] = useJoinCommunityMutation();
+  const [leaveCommunity, { isLoading: isLeaving }] = useLeaveCommunityMutation();
+   const [isJoined, setIsJoined] = useState(false);
+
 
   const liked = Boolean(post.isLikedByMe);
   const disliked = Boolean(post.isDislikedByMe);
@@ -576,98 +588,186 @@ export default function CommunityPostCard({
     );
   };
 
+  useEffect(() => {
+  const joined = 
+    post.isJoinedByMe ??
+    post.isCommunityFollowedByMe ??
+    post.community?.isJoinedByMe ??
+    post.community?.isMember ??
+    post.community?.isCommunityFollowedByMe ??
+    false;
+
+  setIsJoined(joined);
+}, [post]);
+
+ 
+  const performJoin = useCallback(async () => {
+    const communityId = post.community?.id || post.communityId;
+    if (!communityId) return;
+
+    try {
+      setIsJoined(true); // optimistic update
+
+      await joinCommunity({ communityId }).unwrap();
+    } catch (error) {
+      setIsJoined(false); // revert
+      console.log("Join community failed:", error);
+
+      Alert.alert(
+        "Could not join",
+        "Something went wrong while joining this community.",
+      );
+    }
+  }, [post, joinCommunity]);
+
+  const performLeave = useCallback(async () => {
+    const communityId = post.community?.id || post.communityId;
+    if (!communityId) return;
+
+    try {
+      setIsJoined(false); // optimistic update
+
+      await leaveCommunity(communityId).unwrap();
+    } catch (error) {
+      setIsJoined(true); // revert
+      console.log("Leave community failed:", error);
+
+      Alert.alert(
+        "Could not leave",
+        "Something went wrong while leaving this community.",
+      );
+    }
+  }, [post, leaveCommunity]);
+
+  // ✅ HANDLE JOIN/LEAVE TOGGLE WITH CONFIRMATION ALERTS
+ // ✅ HANDLE JOIN/LEAVE TOGGLE WITH CONFIRMATION ALERTS
+  const handleJoinToggle = useCallback(() => {
+    const communityName = post.community?.name ?? "this community";
+
+    if (isJoined) {
+      Alert.alert(
+        "Leave community",
+        `Are you sure you want to leave ${communityName}? You will lose access to its posts and content.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Leave",
+            style: "destructive",
+            onPress: () => {
+              void performLeave();
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Join community",
+      `Do you want to join ${communityName}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Join",
+          onPress: () => {
+            void performJoin();
+          },
+        },
+      ],
+    );
+  }, [isJoined, post, performJoin, performLeave]);
   return (
     <Surface variant="default" style={styles.card}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => onPressAuthor?.(post.author.id)}
-          style={styles.authorRow}
-        >
-          <Avatar alt="" size="md" variant="soft" color="accent">
-            {authorImage ? <Avatar.Image source={{ uri: authorImage }} /> : null}
+    <View style={styles.header}>
+  {showCommunityHeader ? (
+    // ─── COMMUNITY HEADER (For You tab) ───────────────────────
+     <Pressable
+    onPress={() => {
+      const slug = post.community?.slug || post.communityId;
+      router.push({
+        pathname: "/user/community/[slug]",
+        params: { slug },
+      });
+    }}
+    style={styles.authorRow}
+  >
+      <Avatar alt="" size="md" variant="soft" color="accent">
+        {post.community?.avatarImage ? (
+          <Avatar.Image
+            source={{ uri: toAbsoluteFileUrl(post.community.avatarImage) ?? undefined }}
+          />
+        ) : null}
+        <Avatar.Fallback>
+          {getInitials(post.community?.name ?? "C")}
+        </Avatar.Fallback>
+      </Avatar>
 
-            <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
-          </Avatar>
+      <View style={styles.authorMeta}>
+        <Text numberOfLines={1} style={styles.authorName}>
+          {post.community?.name ?? "Community"}
+        </Text>
 
-          <View style={styles.authorMeta}>
-            <Text numberOfLines={1} style={styles.authorName}>
-              {authorName}
-            </Text>
-
-            <View style={styles.subMetaRow}>
-              {!!post.community?.name && (
-                <>
-                  <Text numberOfLines={1} style={styles.communityName}>
-                    {post.community.name}
-                  </Text>
-
-                  <Text style={styles.subMetaDot}>•</Text>
-                </>
-              )}
-
-              <Text style={styles.timeText}>{getPostTime(post)}</Text>
-            </View>
-          </View>
-        </Pressable>
-
-        {canDelete || canEdit ? (
-          <View style={styles.moreWrap}>
-            <Menu>
-              <Menu.Trigger asChild>
-                <Pressable style={styles.moreButton}>
-                  <Ionicons
-                    name="ellipsis-horizontal"
-                    size={20}
-                    color={colors.muted}
-                  />
-                </Pressable>
-              </Menu.Trigger>
-
-              <Menu.Portal>
-                <Menu.Overlay />
-
-               <Menu.Content
-  presentation="popover"
-  placement="bottom"
-  align="end"
-  width={190}
-  className="rounded-2xl border border-border bg-surface"
->
-  {canEdit ? (
-    <Menu.Item
-      onPress={() => onEdit?.(post)}
-      className="flex-row items-center gap-3"
+        <View style={styles.subMetaRow}>
+          <Text style={styles.timeText}>{getPostTime(post)}</Text>
+        </View>
+      </View>
+    </Pressable>
+  ) : (
+    // ─── AUTHOR HEADER (Community tab) ────────────────────────
+    <Pressable
+      onPress={() => onPressAuthor?.(post.author.id)}
+      style={styles.authorRow}
     >
-      <Ionicons
-        name="create-outline"
-        size={18}
-        color={colors.accent}
-      />
+      <Avatar alt="" size="md" variant="soft" color="accent">
+        {authorImage ? (
+          <Avatar.Image source={{ uri: authorImage }} />
+        ) : null}
+        <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
+      </Avatar>
 
-      <Menu.ItemTitle>Edit post</Menu.ItemTitle>
-    </Menu.Item>
-  ) : null}
+      <View style={styles.authorMeta}>
+        <Text numberOfLines={1} style={styles.authorName}>
+          {authorName}
+        </Text>
 
-  {canDelete ? (
-    <Menu.Item
-      onPress={() => setIsDeleteDialogOpen(true)}
-      variant="danger"
-      className="flex-row items-center gap-3"
-    >
-      <Ionicons
-        name="trash-outline"
-        size={18}
-        color={colors.danger}
-      />
+        <View style={styles.subMetaRow}>
+          {!!post.community?.name && (
+            <>
+              <Text numberOfLines={1} style={styles.communityName}>
+                {post.community.name}
+              </Text>
+              <Text style={styles.subMetaDot}>•</Text>
+            </>
+          )}
+          <Text style={styles.timeText}>{getPostTime(post)}</Text>
+        </View>
+      </View>
+    </Pressable>
+  )}
 
-      <Menu.ItemTitle>Delete post</Menu.ItemTitle>
-    </Menu.Item>
-  ) : null}
-</Menu.Content>
-              </Menu.Portal>
-            </Menu>
-          </View>
-        ) : (
+  {/* ─── RIGHT SIDE: Join button OR menu ─────────────────── */}
+  {showCommunityHeader ? (
+   <Pressable
+    onPress={handleJoinToggle}
+    style={[
+      styles.joinButton,
+      isJoined && styles.joinedButton,
+    ]}
+    disabled={isJoining || isLeaving}
+  >
+    <Text style={styles.joinButtonText}>
+      {isJoining || isLeaving 
+        ? "..." 
+        : isJoined 
+          ? "Joined" 
+          : "Join"
+      }
+    </Text>
+  </Pressable>
+  ) : canDelete || canEdit ? (
+    <View style={styles.moreWrap}>
+      <Menu>
+        <Menu.Trigger asChild>
           <Pressable style={styles.moreButton}>
             <Ionicons
               name="ellipsis-horizontal"
@@ -675,8 +775,83 @@ export default function CommunityPostCard({
               color={colors.muted}
             />
           </Pressable>
-        )}
+        </Menu.Trigger>
+
+        <Menu.Portal>
+          <Menu.Overlay />
+          <Menu.Content
+            presentation="popover"
+            placement="bottom"
+            align="end"
+            width={190}
+            className="rounded-2xl border border-border bg-surface"
+          >
+            {canEdit ? (
+              <Menu.Item
+                onPress={() => onEdit?.(post)}
+                className="flex-row items-center gap-3"
+              >
+                <Ionicons name="create-outline" size={18} color={colors.accent} />
+                <Menu.ItemTitle>Edit post</Menu.ItemTitle>
+              </Menu.Item>
+            ) : null}
+
+            {canDelete ? (
+              <Menu.Item
+                onPress={() => setIsDeleteDialogOpen(true)}
+                variant="danger"
+                className="flex-row items-center gap-3"
+              >
+                <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                <Menu.ItemTitle>Delete post</Menu.ItemTitle>
+              </Menu.Item>
+            ) : null}
+          </Menu.Content>
+        </Menu.Portal>
+      </Menu>
+    </View>
+  ) : (
+    <Pressable style={styles.moreButton}>
+      <Ionicons
+        name="ellipsis-horizontal"
+        size={20}
+        color={colors.muted}
+      />
+    </Pressable>
+  )}
+</View>
+{showCommunityHeader && post.community?.name ? (
+  <View style={styles.communityTagRow}>
+    <Ionicons name="people-outline" size={12} color={colors.muted} />
+    <Text style={styles.communityTagText}>
+      {post.community.name}
+    </Text>
+
+    {post.community.visibility === "PUBLIC" && (
+      <View style={[styles.restrictedBadge, { borderColor: colors.success }]}>
+        <Ionicons name="globe-outline" size={10} color={colors.success} />
+        <Text style={[styles.restrictedBadgeText, { color: colors.success }]}>
+          Public
+        </Text>
       </View>
+    )}
+
+    {post.community.visibility === "RESTRICTED" && (
+      <View style={styles.restrictedBadge}>
+        <Ionicons name="lock-closed-outline" size={10} color={colors.accent} />
+        <Text style={styles.restrictedBadgeText}>Restricted</Text>
+      </View>
+    )}
+
+    {/* ✅ JOINED BADGE - Put it here */}
+    {isJoined && (
+      <View style={styles.joinedBadge}>
+        <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+        <Text style={styles.joinedBadgeText}>Joined</Text>
+      </View>
+    )}
+  </View>
+) : null}
 
       {!!tagLabel && (
         <View style={styles.tagWrap}>
@@ -805,7 +980,8 @@ export default function CommunityPostCard({
 
   <ReactionButton
     icon="chatbubble-outline"
-    label={formatCount(post.commentCount) || "Comment"}
+    label={post.commentCount > 0 ? `${formatCount(post.commentCount)} reviews` : "reviews"}
+
     accessibilityLabel="Comment on post"
     onPress={() => onPressComment?.(post)}
     colors={colors}
@@ -1489,5 +1665,80 @@ function createStyles(colors: AppColors) {
       fontSize: 14,
       fontFamily: "Poppins_600SemiBold",
     },
+    joinButton: {
+  paddingHorizontal: 14,
+  paddingVertical: 7,
+  borderRadius: 999,
+  backgroundColor: colors.accent,
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+joinButtonText: {
+  color: colors.accentForeground,
+  fontSize: 13,
+  fontFamily: "Poppins_600SemiBold",
+},
+
+communityTagRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 5,
+  paddingHorizontal: 12,
+  paddingTop: 2,
+},
+
+communityTagText: {
+  color: colors.muted,
+  fontSize: 12,
+  fontFamily: "Poppins_500Medium",
+},
+
+restrictedBadge: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 3,
+  paddingHorizontal: 7,
+  paddingVertical: 2,
+  borderRadius: 999,
+  backgroundColor: colors.surfaceSecondary,
+  borderWidth: StyleSheet.hairlineWidth,
+  borderColor: colors.border,
+},
+
+restrictedBadgeText: {
+  color: colors.accent,
+  fontSize: 10,
+  fontFamily: "Poppins_600SemiBold",
+},
+joinedBadge: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 4,
+  paddingHorizontal: 8,
+  paddingVertical: 3,
+  borderRadius: 999,
+  backgroundColor: colors.surfaceSecondary,
+  borderWidth: StyleSheet.hairlineWidth,
+  borderColor: colors.success,
+  alignSelf: "flex-start",
+  marginLeft: 12,
+},
+
+joinedBadgeText: {
+  color: colors.success,
+  fontSize: 11,
+  fontFamily: "Poppins_600SemiBold",
+},
+joinedButtonText: {  // you can merge or use conditional
+  color: colors.muted,
+},
+joinedButton: {
+  backgroundColor: colors.surfaceSecondary,
+  borderWidth: StyleSheet.hairlineWidth,
+  borderColor: colors.border,
+},
+
   });
+  
 }

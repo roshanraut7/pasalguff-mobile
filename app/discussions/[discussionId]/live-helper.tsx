@@ -1,6 +1,7 @@
 import React from "react";
 import { Image, Modal, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { AppColors } from "@/constants/theme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
@@ -191,7 +192,7 @@ export function getToneColor(
   return colors.accent;
 }
 
-export function getRequestDiscussionId(request: CommunityContributorRequest) {
+export default function getRequestDiscussionId(request: CommunityContributorRequest) {
   const safeRequest = request as CommunityContributorRequest & {
     discussionId?: string | null;
     requestedFromDiscussion?: { id?: string | null } | null;
@@ -521,7 +522,7 @@ export function MemberRow({
   );
 }
 
-export function ActionModal({
+export  function ActionModal({
   visible,
   target,
   colors,
@@ -546,6 +547,7 @@ export function ActionModal({
   onAllowAgain: () => void;
   onRemoveFromLive: () => void;
 }) {
+    const insets = useSafeAreaInsets();
   return (
     <Modal
       visible={visible}
@@ -561,6 +563,7 @@ export function ActionModal({
             {
               backgroundColor: colors.surface,
               borderColor: colors.border,
+              paddingBottom: Math.max(insets.bottom, 16),
             },
           ]}
         >

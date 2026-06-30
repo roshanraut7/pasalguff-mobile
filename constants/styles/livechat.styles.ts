@@ -499,15 +499,11 @@ export const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  composerWrap: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-  },
+ composerWrap: {
+  borderTopWidth: StyleSheet.hairlineWidth,
+  paddingHorizontal: 10,
+  paddingTop: 8,
+},
 
   composerBox: {
     minHeight: 48,
