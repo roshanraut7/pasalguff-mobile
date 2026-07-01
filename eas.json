@@ -23,8 +23,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://a2zpasal.com",
-        "EXPO_PUBLIC_AUTH_URL": "https://a2zpasal.com",
+        "EXPO_PUBLIC_API_URL": "https://kamkuro.com",
+        "EXPO_PUBLIC_AUTH_URL": "https://kamkuro.com",
         "EXPO_PUBLIC_APP_SCHEME": "pasalguff"
       }
     },
@@ -32,12 +32,13 @@
       "autoIncrement": true,
       "environment": "production",
       "channel": "production",
+      
       "android": {
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://a2zpasal.com",
-        "EXPO_PUBLIC_AUTH_URL": "https://a2zpasal.com",
+        "EXPO_PUBLIC_API_URL": "https://kamkuro.com",
+        "EXPO_PUBLIC_AUTH_URL": "https://kamkuro.com",
         "EXPO_PUBLIC_APP_SCHEME": "pasalguff"
       }
     }

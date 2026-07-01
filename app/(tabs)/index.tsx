@@ -1,22 +1,23 @@
 import React, {
   memo,
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
+  useTransition,
+  useEffect,
 } from "react";
-import {
-  ActivityIndicator,
-  Animated,
-  FlatList,
-  RefreshControl,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, RefreshControl, Text, View } from "react-native";
+import Animated, {
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Tabs } from "heroui-native";
+import { FlashList,type FlashListRef } from "@shopify/flash-list";
 
 import { useSession } from "@/api/better-auth-client";
 import CommentPostModal from "@/components/post/CommentsModal";
@@ -39,10 +40,14 @@ import {
 } from "@/store/api/communityDiscussionApi";
 import type { CommunityPost, PostMedia } from "@/types/post";
 
+// ============================================================
+// A version of react-native-reanimated's Animated.FlatList, but
+// typed against RN's FlatList so scrollToOffset / etc keep types.
+// ============================================================
+// const AnimatedFlatList = Animated.FlatList as unknown as typeof FlatList;
+
 type HomeFeedTab = "FOR_YOU" | "COMMUNITY" | "DISCUSSION";
-
 type HomeListItem = CommunityPost | CommunityDiscussion;
-
 type PendingFollowAction = "COMMENT" | "POLL";
 
 type CommunityFollowState = CommunityPost & {
@@ -65,7 +70,8 @@ type CommunityFollowState = CommunityPost & {
 type HomePostItemProps = {
   item: CommunityPost;
   disableMediaPlayback: boolean;
-  showCommunityHeader: boolean;  
+  showCommunityHeader: boolean;
+  ownedCommunityIds: Set<string>;
   onPressLike: (post: CommunityPost) => void;
   onPressDislike: (post: CommunityPost) => void;
   onPressComment: (post: CommunityPost) => void;
@@ -73,30 +79,15 @@ type HomePostItemProps = {
   onPressAuthor: (authorId: string) => void;
   onPressMedia: (media: PostMedia[], startIndex: number) => void;
   onPressPollOption: (post: CommunityPost, optionId: string) => void;
-    onPressJoin: (post: CommunityPost) => void; 
-      ownedCommunityIds: Set<string>; 
+  onPressJoin: (post: CommunityPost) => void;
 };
 
 const OPTIONS_HEADER_HEIGHT = 54;
-const OPTIONS_ANIMATION_DURATION = 170;
-const SHOW_OPTIONS_DELAY = 100;
 
-const HOME_TABS: {
-  label: string;
-  value: HomeFeedTab;
-}[] = [
-  {
-    label: "For You",
-    value: "FOR_YOU",
-  },
-  {
-    label: "Community",
-    value: "COMMUNITY",
-  },
-  {
-    label: "Discussions",
-    value: "DISCUSSION",
-  },
+const HOME_TABS: { label: string; value: HomeFeedTab }[] = [
+  { label: "For You", value: "FOR_YOU" },
+  { label: "Community", value: "COMMUNITY" },
+  { label: "Discussions", value: "DISCUSSION" },
 ];
 
 function isHomeFeedTab(value: string): value is HomeFeedTab {
@@ -106,8 +97,8 @@ function isHomeFeedTab(value: string): value is HomeFeedTab {
 const HomePostItem = memo(function HomePostItem({
   item,
   disableMediaPlayback,
-   showCommunityHeader,
-   ownedCommunityIds,  
+  showCommunityHeader,
+  ownedCommunityIds,
   onPressLike,
   onPressDislike,
   onPressComment,
@@ -115,13 +106,13 @@ const HomePostItem = memo(function HomePostItem({
   onPressAuthor,
   onPressMedia,
   onPressPollOption,
-    onPressJoin, 
+  onPressJoin,
 }: HomePostItemProps) {
   return (
     <CommunityPostCard
       post={item}
-            showCommunityHeader={showCommunityHeader}
-             ownedCommunityIds={ownedCommunityIds}
+      showCommunityHeader={showCommunityHeader}
+      ownedCommunityIds={ownedCommunityIds}
       disableMediaPlayback={disableMediaPlayback}
       onPressLike={onPressLike}
       onPressDislike={onPressDislike}
@@ -130,7 +121,7 @@ const HomePostItem = memo(function HomePostItem({
       onPressAuthor={onPressAuthor}
       onPressMedia={onPressMedia}
       onPressPollOption={onPressPollOption}
-            onPressJoin={onPressJoin} 
+      onPressJoin={onPressJoin}
     />
   );
 });
@@ -139,107 +130,138 @@ export default function HomeScreen() {
   const { colors } = useAppTheme();
   const { data: session, isPending } = useSession();
 
-  const listRef = useRef<FlatList<HomeListItem>>(null);
+const listRef = useRef<FlashListRef<HomeListItem>>(null);
 
-  const optionsTranslateY = useRef(new Animated.Value(0)).current;
-  const optionsOpacity = useRef(new Animated.Value(1)).current;
 
-  const showOptionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  // React 19 concurrent transition — tab switch stays responsive
+  // even while the new tab's list is being rendered/re-committed.
+  const [isTabPending, startTabTransition] = useTransition();
 
   const [activeTab, setActiveTab] = useState<HomeFeedTab>("FOR_YOU");
+  const isDiscussionTab = activeTab === "DISCUSSION";
 
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [posts, setPosts] = useState<CommunityPost[]>([]);
+  // ------------------------------------------------------------
+  // FIX: each feed keeps its own cursor + its own local list.
+  // Previously a single `cursor`/`posts` pair was shared between
+  // FOR_YOU and COMMUNITY, so paging on one tab silently corrupted
+  // pagination on the other, and switching tabs required wiping
+  // the shared array (the source of the "stuck" unmount/remount).
+  // ------------------------------------------------------------
+  const [forYouCursor, setForYouCursor] = useState<string | undefined>(undefined);
+  const [forYouPosts, setForYouPosts] = useState<CommunityPost[]>([]);
 
-  const [discussionCursor, setDiscussionCursor] = useState<string | undefined>(
-    undefined,
-  );
+  const [communityCursor, setCommunityCursor] = useState<string | undefined>(undefined);
+  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
+
+  const [discussionCursor, setDiscussionCursor] = useState<string | undefined>(undefined);
   const [discussions, setDiscussions] = useState<CommunityDiscussion[]>([]);
 
   const [refreshing, setRefreshing] = useState(false);
-  const [isFeedScrolling, setIsFeedScrolling] = useState(false);
 
-  const [followModalPost, setFollowModalPost] =
-    useState<CommunityPost | null>(null);
-
-  const [pendingFollowAction, setPendingFollowAction] =
-    useState<PendingFollowAction | null>(null);
-
-  const isDiscussionTab = activeTab === "DISCUSSION";
-
-  const postFeedType: "FOR_YOU" | "COMMUNITY" =
-    activeTab === "COMMUNITY" ? "COMMUNITY" : "FOR_YOU";
+  const [followModalPost, setFollowModalPost] = useState<CommunityPost | null>(null);
+  const [pendingFollowAction, setPendingFollowAction] = useState<PendingFollowAction | null>(null);
 
   const { viewer, openViewer, closeViewer } = usePostMediaViewer();
   const [votePostPoll] = useVotePostPollMutation();
 
- const {
-  commentPost,
-  activeCommentPost,
-  comments,
-  commentInput,
-  setCommentInput,
-
-  isLoadingComments,
-  isFetchingComments,
-  isCreatingComment,
-  isCreatingReply,
-
-  dislikePostTarget,
-  dislikeReason,
-  setDislikeReason,
-  dislikeError,
-  isSubmittingDislike,
-
-  openComments,
-  closeComments,
-  handleLikePost,
-  handleDislikePost,
-  handleSubmitDislike,
-  closeDislikeModal,
-  handleSharePost,
-  handleCreateComment,
-  handleCommentLike,
-  refetchComments,
-} = usePostInteractions({
-  posts,
-  setPosts,
-  sessionUser: session?.user,
-});
-const { data: myCommunitiesResponse } = useGetMyCommunitiesQuery(
-  { limit: 100 }, // adjust if your API needs different params
-  { skip: !session?.user }
+  // Which array is "live" right now, based on the active tab.
+  const activePosts = activeTab === "COMMUNITY" ? communityPosts : forYouPosts;
+  const setActivePosts = activeTab === "COMMUNITY" ? setCommunityPosts : setForYouPosts;
+  const getItemType = useCallback(
+  (item: HomeListItem) => {
+    if (isDiscussionTab) return "discussion";
+    const post = item as CommunityPost;
+    if (post.poll) return "poll";
+    const mediaCount = post.media?.length ?? 0;
+    if (mediaCount > 1) return "carousel";
+    if (mediaCount === 1) return "single-image";
+    return "text";
+  },
+  [isDiscussionTab],
 );
-const ownedCommunityIds = useMemo(() => {
-  const ids = new Set<string>();
-  (myCommunitiesResponse?.data ?? []).forEach((community) => {
-    // ✅ adjust field name once you confirm CommunityItem's actual shape
-    if (community.isOwner || community.myRole === "ADMIN") {
-      ids.add(community.id);
-    }
-  });
-  return ids;
-}, [myCommunitiesResponse]);
 
   const {
-    data: feedResponse,
-    isLoading,
-    isFetching,
-    error,
-    refetch,
+    commentPost,
+    activeCommentPost,
+    comments,
+    commentInput,
+    setCommentInput,
+    isLoadingComments,
+    isFetchingComments,
+    isCreatingComment,
+    isCreatingReply,
+    dislikePostTarget,
+    dislikeReason,
+    setDislikeReason,
+    dislikeError,
+    isSubmittingDislike,
+    openComments,
+    closeComments,
+    handleLikePost,
+    handleDislikePost,
+    handleSubmitDislike,
+    closeDislikeModal,
+    handleSharePost,
+    handleCreateComment,
+    handleCommentLike,
+    refetchComments,
+  } = usePostInteractions({
+    posts: activePosts,
+    setPosts: setActivePosts,
+    sessionUser: session?.user,
+  });
+
+  const { data: myCommunitiesResponse } = useGetMyCommunitiesQuery(
+    { limit: 100 },
+    { skip: !session?.user },
+  );
+
+  const ownedCommunityIds = useMemo(() => {
+    const ids = new Set<string>();
+    (myCommunitiesResponse?.data ?? []).forEach((community) => {
+      if (community.isOwner || community.myRole === "ADMIN") {
+        ids.add(community.id);
+      }
+    });
+    return ids;
+  }, [myCommunitiesResponse]);
+
+  // ------------------------------------------------------------
+  // FIX: two independent query subscriptions instead of one query
+  // that gets re-args'd on every tab switch. RTK Query already
+  // caches each { feedType, cursor } combination by its tags, so
+  // switching back to a tab you've already visited is instant —
+  // no network call, no loading flash — as long as tags haven't
+  // been invalidated.
+  //
+  // FIX: refetchOnMountOrArgChange is false. Your invalidatesTags
+  // setup (on like/comment/vote/join) is already the source of
+  // truth for freshness. Forcing a refetch on every mount throws
+  // that away and turns every tab switch into a network round trip
+  // — bad for perceived speed and bad for server load at scale.
+  // Prefer refetchOnFocus / refetchOnReconnect (set globally in
+  // your baseApi) if you want freshness on app resume instead.
+  // ------------------------------------------------------------
+  const {
+    data: forYouResponse,
+    isLoading: isForYouLoading,
+    isFetching: isForYouFetching,
+    error: forYouError,
+    refetch: refetchForYou,
   } = useGetHomeFeedPostsQuery(
-    {
-      feedType: postFeedType,
-      limit: 8,
-      cursor,
-      sortBy: "newest",
-    },
-    {
-      skip: !session?.user || isDiscussionTab,
-      refetchOnMountOrArgChange: true,
-    },
+    { feedType: "FOR_YOU", limit: 8, cursor: forYouCursor, sortBy: "newest" },
+    { skip: !session?.user || activeTab !== "FOR_YOU", refetchOnMountOrArgChange: false },
+  );
+
+  const {
+    data: communityResponse,
+    isLoading: isCommunityLoading,
+    isFetching: isCommunityFetching,
+    error: communityError,
+    refetch: refetchCommunity,
+  } = useGetHomeFeedPostsQuery(
+    { feedType: "COMMUNITY", limit: 8, cursor: communityCursor, sortBy: "newest" },
+    { skip: !session?.user || activeTab !== "COMMUNITY", refetchOnMountOrArgChange: false },
   );
 
   const {
@@ -249,195 +271,122 @@ const ownedCommunityIds = useMemo(() => {
     error: discussionError,
     refetch: refetchDiscussions,
   } = useGetHomeFeedDiscussionsQuery(
-    {
-      limit: 8,
-      cursor: discussionCursor,
-      sortBy: "newest",
-    },
-    {
-      skip: !session?.user || !isDiscussionTab,
-      refetchOnMountOrArgChange: true,
-    },
+    { limit: 8, cursor: discussionCursor, sortBy: "newest" },
+    { skip: !session?.user || !isDiscussionTab, refetchOnMountOrArgChange: false },
   );
 
   useEffect(() => {
-    if (!feedResponse) return;
-
-    const incomingPosts = feedResponse.data ?? [];
-
-    setPosts((previousPosts) => {
-      if (!cursor) {
-        return incomingPosts;
-      }
-
-      const existingIds = new Set(previousPosts.map((post) => post.id));
-
-      const newPosts = incomingPosts.filter(
-        (post) => !existingIds.has(post.id),
-      );
-
-      return [...previousPosts, ...newPosts];
+    if (!forYouResponse) return;
+    const incoming = forYouResponse.data ?? [];
+    setForYouPosts((prev) => {
+      if (!forYouCursor) return incoming;
+      const existing = new Set(prev.map((p) => p.id));
+      return [...prev, ...incoming.filter((p) => !existing.has(p.id))];
     });
-  }, [feedResponse, cursor]);
+  }, [forYouResponse, forYouCursor]);
+
+  useEffect(() => {
+    if (!communityResponse) return;
+    const incoming = communityResponse.data ?? [];
+    setCommunityPosts((prev) => {
+      if (!communityCursor) return incoming;
+      const existing = new Set(prev.map((p) => p.id));
+      return [...prev, ...incoming.filter((p) => !existing.has(p.id))];
+    });
+  }, [communityResponse, communityCursor]);
 
   useEffect(() => {
     if (!discussionResponse) return;
-
-    const incomingDiscussions = discussionResponse.data ?? [];
-
-    setDiscussions((previousDiscussions) => {
-      if (!discussionCursor) {
-        return incomingDiscussions;
-      }
-
-      const existingIds = new Set(
-        previousDiscussions.map((discussion) => discussion.id),
-      );
-
-      const newDiscussions = incomingDiscussions.filter(
-        (discussion) => !existingIds.has(discussion.id),
-      );
-
-      return [...previousDiscussions, ...newDiscussions];
+    const incoming = discussionResponse.data ?? [];
+    setDiscussions((prev) => {
+      if (!discussionCursor) return incoming;
+      const existing = new Set(prev.map((d) => d.id));
+      return [...prev, ...incoming.filter((d) => !existing.has(d.id))];
     });
   }, [discussionResponse, discussionCursor]);
 
-  const clearShowOptionsTimer = useCallback(() => {
-    if (!showOptionsTimerRef.current) return;
+  // ------------------------------------------------------------
+  // FIX: header hide/show fully on the UI thread via reanimated.
+  // No JS-thread scroll listeners, no setTimeout to "guess" when
+  // scrolling stopped. This alone removes a lot of the jank that
+  // was competing with the tab-switch work on the JS thread.
+  // ------------------------------------------------------------
+  const lastOffset = useSharedValue(0);
+  const headerTranslateY = useSharedValue(0);
 
-    clearTimeout(showOptionsTimerRef.current);
-    showOptionsTimerRef.current = null;
-  }, []);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      "worklet";
+      const currentOffset = event.contentOffset.y;
+      const diff = currentOffset - lastOffset.value;
 
-  const hideOptions = useCallback(() => {
-    clearShowOptionsTimer();
+      if (currentOffset <= 0) {
+        headerTranslateY.value = withTiming(0, { duration: 150 });
+      } else if (diff > 4) {
+        headerTranslateY.value = withTiming(-OPTIONS_HEADER_HEIGHT, { duration: 150 });
+      } else if (diff < -4) {
+        headerTranslateY.value = withTiming(0, { duration: 150 });
+      }
+      lastOffset.value = currentOffset;
+    },
+  });
 
-    Animated.parallel([
-      Animated.timing(optionsTranslateY, {
-        toValue: -OPTIONS_HEADER_HEIGHT,
-        duration: OPTIONS_ANIMATION_DURATION,
-        useNativeDriver: true,
-      }),
-      Animated.timing(optionsOpacity, {
-        toValue: 0,
-        duration: OPTIONS_ANIMATION_DURATION,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [clearShowOptionsTimer, optionsOpacity, optionsTranslateY]);
-
-  const showOptions = useCallback(() => {
-    clearShowOptionsTimer();
-
-    Animated.parallel([
-      Animated.timing(optionsTranslateY, {
-        toValue: 0,
-        duration: OPTIONS_ANIMATION_DURATION,
-        useNativeDriver: true,
-      }),
-      Animated.timing(optionsOpacity, {
-        toValue: 1,
-        duration: OPTIONS_ANIMATION_DURATION,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [clearShowOptionsTimer, optionsOpacity, optionsTranslateY]);
-
-  const showOptionsAfterScrollStops = useCallback(() => {
-    clearShowOptionsTimer();
-
-    showOptionsTimerRef.current = setTimeout(() => {
-      showOptions();
-    }, SHOW_OPTIONS_DELAY);
-  }, [clearShowOptionsTimer, showOptions]);
-
-  useEffect(() => {
-    return () => {
-      clearShowOptionsTimer();
-      optionsTranslateY.stopAnimation();
-      optionsOpacity.stopAnimation();
-    };
-  }, [clearShowOptionsTimer, optionsOpacity, optionsTranslateY]);
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
 
   const isPostCommunityFollowed = useCallback(
     (post: CommunityPost) => {
       const normalizedPost = post as CommunityFollowState;
-
       if (typeof normalizedPost.isCommunityFollowedByMe === "boolean") {
         return normalizedPost.isCommunityFollowedByMe;
       }
-
       if (typeof normalizedPost.isJoinedByMe === "boolean") {
         return normalizedPost.isJoinedByMe;
       }
-
-      if (
-        typeof normalizedPost.community?.isCommunityFollowedByMe === "boolean"
-      ) {
+      if (typeof normalizedPost.community?.isCommunityFollowedByMe === "boolean") {
         return normalizedPost.community.isCommunityFollowedByMe;
       }
-
       if (typeof normalizedPost.community?.isJoinedByMe === "boolean") {
         return normalizedPost.community.isJoinedByMe;
       }
-
       if (typeof normalizedPost.community?.isMember === "boolean") {
         return normalizedPost.community.isMember;
       }
-
-      /*
-       * Fallback:
-       * COMMUNITY tab normally contains joined community posts.
-       * FOR_YOU tab normally contains discovery posts from communities
-       * the user has not joined yet.
-       */
       return activeTab === "COMMUNITY";
     },
     [activeTab],
   );
-  const canCommentOnPost = useCallback(
-  (post: CommunityPost) => {
-    const normalizedPost = post as CommunityFollowState;
 
-    const visibility = String(
+  const canCommentOnPost = useCallback(
+    (post: CommunityPost) => {
+      const normalizedPost = post as CommunityFollowState;
+      const visibility = String(
+        normalizedPost.community?.visibility ??
+          normalizedPost.communityVisibility ??
+          normalizedPost.visibility ??
+          "",
+      ).toUpperCase();
+      if (visibility === "PUBLIC") return true;
+      return isPostCommunityFollowed(post);
+    },
+    [isPostCommunityFollowed],
+  );
+
+  const getPostVisibility = useCallback((post: CommunityPost) => {
+    const normalizedPost = post as CommunityFollowState;
+    return String(
       normalizedPost.community?.visibility ??
         normalizedPost.communityVisibility ??
         normalizedPost.visibility ??
         "",
     ).toUpperCase();
+  }, []);
 
-    /**
-     * Public community:
-     * Anyone who can view the post can comment.
-     */
-    if (visibility === "PUBLIC") {
-      return true;
-    }
-
-    /**
-     * Restricted/private community:
-     * Only joined/followed members can comment.
-     */
-    return isPostCommunityFollowed(post);
-  },
-  [isPostCommunityFollowed],
-);
-const getPostVisibility = useCallback((post: CommunityPost) => {
-  const normalizedPost = post as CommunityFollowState;
-  return String(
-    normalizedPost.community?.visibility ??
-      normalizedPost.communityVisibility ??
-      normalizedPost.visibility ??
-      "",
-  ).toUpperCase();
-}, []);
-  const openFollowRequiredModal = useCallback(
-    (post: CommunityPost, action: PendingFollowAction) => {
-      setFollowModalPost(post);
-      setPendingFollowAction(action);
-    },
-    [],
-  );
+  const openFollowRequiredModal = useCallback((post: CommunityPost, action: PendingFollowAction) => {
+    setFollowModalPost(post);
+    setPendingFollowAction(action);
+  }, []);
 
   const closeFollowRequiredModal = useCallback(() => {
     setFollowModalPost(null);
@@ -446,26 +395,19 @@ const getPostVisibility = useCallback((post: CommunityPost) => {
 
   const handleFollowCommunityFromModal = useCallback(() => {
     if (!followModalPost) return;
-
     const normalizedPost = followModalPost as CommunityFollowState;
-
-    /*
-     * This button sends the user to the community page, where they can follow.
-     * If your route is different, only change this router.push line.
-     */
-    const communityRouteId =
-      normalizedPost.community?.slug || followModalPost.communityId;
-
+    const communityRouteId = normalizedPost.community?.slug || followModalPost.communityId;
     closeFollowRequiredModal();
-
-    router.push({
-  pathname: "/user/community/[slug]",
-  params: {
-    slug: communityRouteId,
-  },
-});
+    router.push({ pathname: "/user/community/[slug]", params: { slug: communityRouteId } });
   }, [followModalPost, closeFollowRequiredModal]);
 
+  // ------------------------------------------------------------
+  // FIX: no requestAnimationFrame, no array clearing. Each tab now
+  // owns its own posts/cursor, so switching tabs is just a state
+  // update — wrapped in startTransition so React can keep the tab
+  // indicator and touch feedback responsive while the new tab's
+  // list (if not cached) streams in behind it.
+  // ------------------------------------------------------------
   const handleChangeTab = useCallback(
     (tab: HomeFeedTab) => {
       if (tab === activeTab) return;
@@ -474,64 +416,24 @@ const getPostVisibility = useCallback((post: CommunityPost) => {
       closeDislikeModal();
       closeViewer();
       closeFollowRequiredModal();
-      showOptions();
 
-      setIsFeedScrolling(false);
-      setActiveTab(tab);
-
-      setCursor(undefined);
-      setPosts([]);
-
-      setDiscussionCursor(undefined);
-      setDiscussions([]);
-
-      setRefreshing(false);
-
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToOffset({
-          offset: 0,
-          animated: false,
-        });
+      startTabTransition(() => {
+        setActiveTab(tab);
       });
+
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      headerTranslateY.value = withTiming(0, { duration: 150 });
     },
-    [
-      activeTab,
-      closeComments,
-      closeDislikeModal,
-      closeViewer,
-      closeFollowRequiredModal,
-      showOptions,
-    ],
+    [activeTab, closeComments, closeDislikeModal, closeViewer, closeFollowRequiredModal, headerTranslateY],
   );
 
   const handleTabValueChange = useCallback(
     (value: string) => {
       if (!isHomeFeedTab(value)) return;
-
       handleChangeTab(value);
     },
     [handleChangeTab],
   );
-
-  const handleScrollBeginDrag = useCallback(() => {
-    setIsFeedScrolling(true);
-    hideOptions();
-  }, [hideOptions]);
-
-  const handleScrollEndDrag = useCallback(() => {
-    setIsFeedScrolling(false);
-    showOptionsAfterScrollStops();
-  }, [showOptionsAfterScrollStops]);
-
-  const handleMomentumScrollBegin = useCallback(() => {
-    setIsFeedScrolling(true);
-    hideOptions();
-  }, [hideOptions]);
-
-  const handleMomentumScrollEnd = useCallback(() => {
-    setIsFeedScrolling(false);
-    showOptionsAfterScrollStops();
-  }, [showOptionsAfterScrollStops]);
 
   const handleVotePostPoll = useCallback(
     async (post: CommunityPost, optionId: string) => {
@@ -539,34 +441,27 @@ const getPostVisibility = useCallback((post: CommunityPost) => {
         const response = await votePostPoll({
           communityId: post.communityId,
           postId: post.id,
-          body: {
-            optionId,
-          },
+          body: { optionId },
         }).unwrap();
 
-        setPosts((previousPosts) =>
-          previousPosts.map((item) =>
-            item.id === post.id ? response.post : item,
-          ),
-        );
+        setActivePosts((prev) => prev.map((item) => (item.id === post.id ? response.post : item)));
       } catch (voteError) {
         console.log("Poll vote failed:", voteError);
       }
     },
-    [votePostPoll],
+    [votePostPoll, setActivePosts],
   );
 
-const handleProtectedOpenComments = useCallback(
-  (post: CommunityPost) => {
-    if (!canCommentOnPost(post)) {
-      openFollowRequiredModal(post, "COMMENT");
-      return;
-    }
-
-    openComments(post);
-  },
-  [canCommentOnPost, openFollowRequiredModal, openComments],
-);
+  const handleProtectedOpenComments = useCallback(
+    (post: CommunityPost) => {
+      if (!canCommentOnPost(post)) {
+        openFollowRequiredModal(post, "COMMENT");
+        return;
+      }
+      openComments(post);
+    },
+    [canCommentOnPost, openFollowRequiredModal, openComments],
+  );
 
   const handleProtectedVotePostPoll = useCallback(
     async (post: CommunityPost, optionId: string) => {
@@ -574,7 +469,6 @@ const handleProtectedOpenComments = useCallback(
         openFollowRequiredModal(post, "POLL");
         return;
       }
-
       await handleVotePostPoll(post, optionId);
     },
     [isPostCommunityFollowed, openFollowRequiredModal, handleVotePostPoll],
@@ -582,86 +476,84 @@ const handleProtectedOpenComments = useCallback(
 
   const handleRefresh = useCallback(async () => {
     if (refreshing) return;
-
     setRefreshing(true);
-    setIsFeedScrolling(false);
-    showOptions();
 
     try {
       if (isDiscussionTab) {
         if (discussionCursor !== undefined) {
           setDiscussionCursor(undefined);
-
-          requestAnimationFrame(() => {
-            listRef.current?.scrollToOffset({
-              offset: 0,
-              animated: false,
-            });
-          });
-
+          listRef.current?.scrollToOffset({ offset: 0, animated: false });
           return;
         }
-
         await refetchDiscussions();
         return;
       }
 
-      if (cursor !== undefined) {
-        setCursor(undefined);
-
-        requestAnimationFrame(() => {
-          listRef.current?.scrollToOffset({
-            offset: 0,
-            animated: false,
-          });
-        });
-
+      if (activeTab === "COMMUNITY") {
+        if (communityCursor !== undefined) {
+          setCommunityCursor(undefined);
+          listRef.current?.scrollToOffset({ offset: 0, animated: false });
+          return;
+        }
+        await refetchCommunity();
         return;
       }
 
-      await refetch();
-    } finally {
-      if (
-        (!isDiscussionTab && cursor === undefined) ||
-        (isDiscussionTab && discussionCursor === undefined)
-      ) {
-        setRefreshing(false);
+      if (forYouCursor !== undefined) {
+        setForYouCursor(undefined);
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+        return;
       }
+      await refetchForYou();
+    } finally {
+      const settled =
+        (isDiscussionTab && discussionCursor === undefined) ||
+        (activeTab === "COMMUNITY" && communityCursor === undefined) ||
+        (activeTab === "FOR_YOU" && forYouCursor === undefined);
+      if (settled) setRefreshing(false);
     }
   }, [
     refreshing,
     isDiscussionTab,
+    activeTab,
     discussionCursor,
-    cursor,
+    communityCursor,
+    forYouCursor,
     refetchDiscussions,
-    refetch,
-    showOptions,
+    refetchCommunity,
+    refetchForYou,
   ]);
 
   useEffect(() => {
     if (!refreshing) return;
 
     if (isDiscussionTab) {
-      if (discussionCursor !== undefined) return;
-      if (isDiscussionLoading || isDiscussionFetching) return;
-
+      if (discussionCursor !== undefined || isDiscussionLoading || isDiscussionFetching) return;
       setRefreshing(false);
       return;
     }
 
-    if (cursor !== undefined) return;
-    if (isLoading || isFetching) return;
+    if (activeTab === "COMMUNITY") {
+      if (communityCursor !== undefined || isCommunityLoading || isCommunityFetching) return;
+      setRefreshing(false);
+      return;
+    }
 
+    if (forYouCursor !== undefined || isForYouLoading || isForYouFetching) return;
     setRefreshing(false);
   }, [
     refreshing,
     isDiscussionTab,
+    activeTab,
     discussionCursor,
     isDiscussionLoading,
     isDiscussionFetching,
-    cursor,
-    isLoading,
-    isFetching,
+    communityCursor,
+    isCommunityLoading,
+    isCommunityFetching,
+    forYouCursor,
+    isForYouLoading,
+    isForYouFetching,
   ]);
 
   const loadMoreFeed = useCallback(() => {
@@ -670,113 +562,123 @@ const handleProtectedOpenComments = useCallback(
       if (!discussionResponse?.meta?.hasMore) return;
       if (!discussionResponse.meta.nextCursor) return;
       if (discussionCursor === discussionResponse.meta.nextCursor) return;
-
       setDiscussionCursor(discussionResponse.meta.nextCursor);
       return;
     }
 
-    if (isLoading || isFetching) return;
-    if (!feedResponse?.meta?.hasMore) return;
-    if (!feedResponse.meta.nextCursor) return;
-    if (cursor === feedResponse.meta.nextCursor) return;
+    if (activeTab === "COMMUNITY") {
+      if (isCommunityLoading || isCommunityFetching) return;
+      if (!communityResponse?.meta?.hasMore) return;
+      if (!communityResponse.meta.nextCursor) return;
+      if (communityCursor === communityResponse.meta.nextCursor) return;
+      setCommunityCursor(communityResponse.meta.nextCursor);
+      return;
+    }
 
-    setCursor(feedResponse.meta.nextCursor);
+    if (isForYouLoading || isForYouFetching) return;
+    if (!forYouResponse?.meta?.hasMore) return;
+    if (!forYouResponse.meta.nextCursor) return;
+    if (forYouCursor === forYouResponse.meta.nextCursor) return;
+    setForYouCursor(forYouResponse.meta.nextCursor);
   }, [
     isDiscussionTab,
+    activeTab,
     isDiscussionLoading,
     isDiscussionFetching,
-    discussionResponse?.meta?.hasMore,
-    discussionResponse?.meta?.nextCursor,
+    discussionResponse,
     discussionCursor,
-    isLoading,
-    isFetching,
-    feedResponse?.meta?.hasMore,
-    feedResponse?.meta?.nextCursor,
-    cursor,
+    isCommunityLoading,
+    isCommunityFetching,
+    communityResponse,
+    communityCursor,
+    isForYouLoading,
+    isForYouFetching,
+    forYouResponse,
+    forYouCursor,
   ]);
 
   const handleAuthorPress = useCallback((authorId: string) => {
     if (!authorId) return;
-
     router.push(`/user/profile/${authorId}`);
   }, []);
+
   const handleJoinCommunity = useCallback((post: CommunityPost) => {
-  const normalizedPost = post as CommunityFollowState;
-  const communitySlug =
-    normalizedPost.community?.slug || post.communityId;
+    const normalizedPost = post as CommunityFollowState;
+    const communitySlug = normalizedPost.community?.slug || post.communityId;
+    router.push({ pathname: "/user/community/[slug]", params: { slug: communitySlug } });
+  }, []);
 
-  router.push({
-    pathname: "/user/community/[slug]",
-    params: { slug: communitySlug },
-  });
-}, []);
-
-  const disableMediaPlayback =
-    viewer.visible ||
-    isFeedScrolling ||
-    Boolean(commentPost) ||
-    Boolean(dislikePostTarget) ||
-    Boolean(followModalPost);
+  const disableMediaPlayback = useMemo(
+    () => viewer.visible || Boolean(commentPost) || Boolean(dislikePostTarget) || Boolean(followModalPost),
+    [viewer.visible, commentPost, dislikePostTarget, followModalPost],
+  );
 
   const renderPostItem = useCallback(
     ({ item }: { item: CommunityPost }) => (
       <HomePostItem
         item={item}
-        showCommunityHeader={activeTab === "FOR_YOU"} 
-          ownedCommunityIds={ownedCommunityIds}
+        showCommunityHeader={activeTab === "FOR_YOU"}
+        ownedCommunityIds={ownedCommunityIds}
         disableMediaPlayback={disableMediaPlayback}
         onPressLike={handleLikePost}
         onPressDislike={handleDislikePost}
-        onPressComment={openComments}
+        onPressComment={handleProtectedOpenComments}
         onPressShare={handleSharePost}
         onPressAuthor={handleAuthorPress}
         onPressMedia={openViewer}
         onPressPollOption={handleProtectedVotePostPoll}
-          onPressJoin={handleJoinCommunity}     
+        onPressJoin={handleJoinCommunity}
       />
     ),
     [
+      activeTab,
+      ownedCommunityIds,
       disableMediaPlayback,
       handleLikePost,
       handleDislikePost,
       handleProtectedOpenComments,
       handleSharePost,
-          ownedCommunityIds,
       handleAuthorPress,
       openViewer,
       handleProtectedVotePostPoll,
-         handleJoinCommunity,     
+      handleJoinCommunity,
     ],
   );
 
   const renderDiscussionItem = useCallback(
-    ({ item }: { item: CommunityDiscussion }) => (
-      <CommunityDiscussionHomeCard discussion={item} />
-    ),
+    ({ item }: { item: CommunityDiscussion }) => <CommunityDiscussionHomeCard discussion={item} />,
     [],
   );
 
   const listData = useMemo<HomeListItem[]>(
-    () => (isDiscussionTab ? discussions : posts),
-    [isDiscussionTab, discussions, posts],
+    () => (isDiscussionTab ? discussions : activeTab === "COMMUNITY" ? communityPosts : forYouPosts),
+    [isDiscussionTab, discussions, activeTab, communityPosts, forYouPosts],
   );
 
-  const activeLoading = isDiscussionTab ? isDiscussionLoading : isLoading;
-  const activeFetching = isDiscussionTab ? isDiscussionFetching : isFetching;
-  const activeError = isDiscussionTab ? discussionError : error;
-  const activeResponse = isDiscussionTab ? discussionResponse : feedResponse;
+  const activeLoading = isDiscussionTab
+    ? isDiscussionLoading
+    : activeTab === "COMMUNITY"
+      ? isCommunityLoading
+      : isForYouLoading;
+
+  const activeFetching = isDiscussionTab
+    ? isDiscussionFetching
+    : activeTab === "COMMUNITY"
+      ? isCommunityFetching
+      : isForYouFetching;
+
+  const activeError = isDiscussionTab ? discussionError : activeTab === "COMMUNITY" ? communityError : forYouError;
+
+  const activeResponse = isDiscussionTab
+    ? discussionResponse
+    : activeTab === "COMMUNITY"
+      ? communityResponse
+      : forYouResponse;
 
   const renderItem = useCallback(
     ({ item }: { item: HomeListItem }) => {
-      if (isDiscussionTab) {
-        return renderDiscussionItem({
-          item: item as CommunityDiscussion,
-        });
-      }
-
-      return renderPostItem({
-        item: item as CommunityPost,
-      });
+      if (isDiscussionTab) return renderDiscussionItem({ item: item as CommunityDiscussion });
+      return renderPostItem({ item: item as CommunityPost });
     },
     [isDiscussionTab, renderDiscussionItem, renderPostItem],
   );
@@ -799,26 +701,16 @@ const handleProtectedOpenComments = useCallback(
   const optionsHeader = useMemo(
     () => (
       <Animated.View
-        style={{
-          minHeight: OPTIONS_HEADER_HEIGHT,
-          backgroundColor: colors.background,
-          justifyContent: "center",
-          opacity: optionsOpacity,
-          transform: [
-            {
-              translateY: optionsTranslateY,
-            },
-          ],
-        }}
+        style={[
+          {
+            minHeight: OPTIONS_HEADER_HEIGHT,
+            backgroundColor: colors.background,
+            justifyContent: "center",
+          },
+          headerAnimatedStyle,
+        ]}
       >
-        <Tabs
-          value={activeTab}
-          onValueChange={handleTabValueChange}
-          variant="secondary"
-          style={{
-            width: "100%",
-          }}
-        >
+        <Tabs value={activeTab} onValueChange={handleTabValueChange} variant="secondary" style={{ width: "100%" }}>
           <Tabs.List
             style={{
               width: "100%",
@@ -829,7 +721,6 @@ const handleProtectedOpenComments = useCallback(
             }}
           >
             <Tabs.Indicator />
-
             {HOME_TABS.map((tab) => (
               <Tabs.Trigger key={tab.value} value={tab.value}>
                 {({ isSelected }) => (
@@ -837,9 +728,7 @@ const handleProtectedOpenComments = useCallback(
                     style={{
                       color: isSelected ? colors.foreground : colors.muted,
                       fontSize: 15,
-                      fontFamily: isSelected
-                        ? "Poppins_700Bold"
-                        : "Poppins_500Medium",
+                      fontFamily: isSelected ? "Poppins_700Bold" : "Poppins_500Medium",
                     }}
                   >
                     {tab.label}
@@ -851,15 +740,7 @@ const handleProtectedOpenComments = useCallback(
         </Tabs>
       </Animated.View>
     ),
-    [
-      activeTab,
-      colors.background,
-      colors.foreground,
-      colors.muted,
-      handleTabValueChange,
-      optionsOpacity,
-      optionsTranslateY,
-    ],
+    [activeTab, colors.background, colors.foreground, colors.muted, handleTabValueChange, headerAnimatedStyle],
   );
 
   const emptyComponent = useMemo(() => {
@@ -876,16 +757,9 @@ const handleProtectedOpenComments = useCallback(
         <View className="px-5 py-10">
           <Text
             className="text-center"
-            style={{
-              color: colors.danger,
-              fontSize: 14,
-              lineHeight: 22,
-              fontFamily: "Poppins_500Medium",
-            }}
+            style={{ color: colors.danger, fontSize: 14, lineHeight: 22, fontFamily: "Poppins_500Medium" }}
           >
-            {isDiscussionTab
-              ? "Failed to load discussions. Pull down to refresh."
-              : "Failed to load posts. Pull down to refresh."}
+            {isDiscussionTab ? "Failed to load discussions. Pull down to refresh." : "Failed to load posts. Pull down to refresh."}
           </Text>
         </View>
       );
@@ -895,12 +769,7 @@ const handleProtectedOpenComments = useCallback(
       <View className="px-5 py-10">
         <Text
           className="text-center"
-          style={{
-            color: colors.muted,
-            fontSize: 14,
-            lineHeight: 22,
-            fontFamily: "Poppins_400Regular",
-          }}
+          style={{ color: colors.muted, fontSize: 14, lineHeight: 22, fontFamily: "Poppins_400Regular" }}
         >
           {activeTab === "FOR_YOU"
             ? "No public posts to discover yet."
@@ -910,17 +779,7 @@ const handleProtectedOpenComments = useCallback(
         </Text>
       </View>
     );
-  }, [
-    activeTab,
-    activeLoading,
-    activeFetching,
-    activeError,
-    listData.length,
-    isDiscussionTab,
-    colors.accent,
-    colors.danger,
-    colors.muted,
-  ]);
+  }, [activeTab, activeLoading, activeFetching, activeError, listData.length, isDiscussionTab, colors.accent, colors.danger, colors.muted]);
 
   const footerComponent = useMemo(() => {
     if (activeFetching && listData.length > 0) {
@@ -933,31 +792,16 @@ const handleProtectedOpenComments = useCallback(
 
     if (activeResponse && listData.length > 0 && !activeResponse.meta?.hasMore) {
       return (
-        <Text
-          className="py-5 text-center"
-          style={{
-            color: colors.muted,
-            fontSize: 12,
-            fontFamily: "Poppins_400Regular",
-          }}
-        >
+        <Text className="py-5 text-center" style={{ color: colors.muted, fontSize: 12, fontFamily: "Poppins_400Regular" }}>
           {isDiscussionTab ? "No more discussions." : "No more posts."}
         </Text>
       );
     }
 
     return null;
-  }, [
-    activeFetching,
-    listData.length,
-    activeResponse,
-    isDiscussionTab,
-    colors.accent,
-    colors.muted,
-  ]);
+  }, [activeFetching, listData.length, activeResponse, isDiscussionTab, colors.accent, colors.muted]);
 
-  const followModalCommunityName = (followModalPost as CommunityFollowState | null)
-    ?.community?.name;
+  const followModalCommunityName = (followModalPost as CommunityFollowState | null)?.community?.name;
 
   if (isPending) {
     return (
@@ -973,13 +817,7 @@ const handleProtectedOpenComments = useCallback(
     return (
       <SafeAreaView className="flex-1 bg-background" edges={[]}>
         <View className="flex-1 items-center justify-center px-6">
-          <Text
-            className="text-center text-foreground"
-            style={{
-              fontSize: 18,
-              fontFamily: "Poppins_700Bold",
-            }}
-          >
+          <Text className="text-center text-foreground" style={{ fontSize: 18, fontFamily: "Poppins_700Bold" }}>
             Please login first
           </Text>
         </View>
@@ -990,76 +828,55 @@ const handleProtectedOpenComments = useCallback(
   return (
     <>
       <SafeAreaView className="flex-1 bg-background" edges={[]}>
-        <FlatList
-          ref={listRef}
-          data={listData}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          ListHeaderComponent={optionsHeader}
-          stickyHeaderIndices={[0]}
-          contentContainerStyle={{
-            paddingBottom: 120,
-            flexGrow: listData.length === 0 ? 1 : undefined,
-          }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={refreshControl}
-          onScrollBeginDrag={handleScrollBeginDrag}
-          onScrollEndDrag={handleScrollEndDrag}
-          onMomentumScrollBegin={handleMomentumScrollBegin}
-          onMomentumScrollEnd={handleMomentumScrollEnd}
-          onEndReached={loadMoreFeed}
-          onEndReachedThreshold={0.7}
-          ListEmptyComponent={emptyComponent}
-          ListFooterComponent={footerComponent}
-          keyboardShouldPersistTaps="handled"
-          nestedScrollEnabled
-          scrollEventThrottle={16}
-          removeClippedSubviews={false}
-          initialNumToRender={5}
-          maxToRenderPerBatch={6}
-          updateCellsBatchingPeriod={50}
-          windowSize={9}
-        />
+       <FlashList
+  ref={listRef}
+  data={listData}
+  keyExtractor={keyExtractor}
+  renderItem={renderItem}
+  getItemType={getItemType}
+  ListHeaderComponent={optionsHeader}
+  stickyHeaderIndices={[0]}
+  contentContainerStyle={{ paddingBottom: 120 }}
+  showsVerticalScrollIndicator={false}
+  refreshControl={refreshControl}
+  onScroll={scrollHandler}
+  scrollEventThrottle={16}
+  onEndReached={loadMoreFeed}
+  onEndReachedThreshold={0.7}
+  ListEmptyComponent={emptyComponent}
+  ListFooterComponent={footerComponent}
+  keyboardShouldPersistTaps="handled"
+/>
       </SafeAreaView>
 
-<CommentPostModal
-  visible={!!commentPost}
-  post={activeCommentPost}
-    showCommunityHeader={activeTab === "FOR_YOU"}
-  ownedCommunityIds={ownedCommunityIds}
-  comments={comments}
-  isLoading={
-    (isLoadingComments || isFetchingComments) &&
-    comments.length === 0
-  }
-  isCreating={isCreatingComment || isCreatingReply}
-  inputValue={commentInput}
-  onChangeInput={setCommentInput}
-  onClose={closeComments}
-  onSubmit={handleCreateComment}
-  onPressMedia={openViewer}
-  onPressPostLike={handleLikePost}
-  onPressPostShare={handleSharePost}
-  onPressCommentLike={handleCommentLike}
-  onRefreshComments={() => {
-    void refetchComments();
-  }}
- canWriteComment={
-  activeCommentPost ? canCommentOnPost(activeCommentPost) : false
-}
-  onRequestFollow={() => {
-    if (!activeCommentPost) return;
-    openFollowRequiredModal(activeCommentPost, "COMMENT");
-  }}
-  colors={colors}
-/>
-
-      <PostMediaViewer
-        visible={viewer.visible}
-        media={viewer.media}
-        initialIndex={viewer.index}
-        onClose={closeViewer}
+      <CommentPostModal
+        visible={!!commentPost}
+        post={activeCommentPost}
+        showCommunityHeader={activeTab === "FOR_YOU"}
+        ownedCommunityIds={ownedCommunityIds}
+        comments={comments}
+        isLoading={(isLoadingComments || isFetchingComments) && comments.length === 0}
+        isCreating={isCreatingComment || isCreatingReply}
+        inputValue={commentInput}
+        onChangeInput={setCommentInput}
+        onClose={closeComments}
+        onSubmit={handleCreateComment}
+        onPressMedia={openViewer}
+        onPressPostLike={handleLikePost}
+        onPressPostShare={handleSharePost}
+        onPressCommentLike={handleCommentLike}
+        onRefreshComments={() => {
+          void refetchComments();
+        }}
+        canWriteComment={activeCommentPost ? canCommentOnPost(activeCommentPost) : false}
+        onRequestFollow={() => {
+          if (!activeCommentPost) return;
+          openFollowRequiredModal(activeCommentPost, "COMMENT");
+        }}
+        colors={colors}
       />
+
+      <PostMediaViewer visible={viewer.visible} media={viewer.media} initialIndex={viewer.index} onClose={closeViewer} />
 
       <DislikeReasonModal
         visible={!!dislikePostTarget}
@@ -1073,13 +890,13 @@ const handleProtectedOpenComments = useCallback(
         }}
       />
 
-    <FollowCommunityModal
-  visible={!!followModalPost}
-  communityName={followModalCommunityName}
-  isRestricted={followModalPost ? getPostVisibility(followModalPost) === "RESTRICTED" : false}
-  onClose={closeFollowRequiredModal}
-  onFollow={handleFollowCommunityFromModal}
-/>
+      <FollowCommunityModal
+        visible={!!followModalPost}
+        communityName={followModalCommunityName}
+        isRestricted={followModalPost ? getPostVisibility(followModalPost) === "RESTRICTED" : false}
+        onClose={closeFollowRequiredModal}
+        onFollow={handleFollowCommunityFromModal}
+      />
     </>
   );
 }
