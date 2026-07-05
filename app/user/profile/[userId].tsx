@@ -9,10 +9,12 @@ import {
   Text,
   View,
 } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams,Redirect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, Tabs } from "heroui-native";
+import ProfileImageViewer from "@/components/common/profileImageViewer";
 
 import { useSession } from "@/api/better-auth-client";
 import { useCreateDirectChatMutation } from "@/store/api/chatApi";
@@ -49,7 +51,6 @@ type PublicProfilePermissions = {
 };
 
 type PublicProfileWithPermissions = FollowUser & {
-  coverImage?: string | null;
   follow?: FollowRelationship & {
     followedAt?: string | null;
   };
@@ -113,17 +114,21 @@ function IconButtonContent({
   );
 }
 
-function CoverImage({ image }: { image?: string | null }) {
+function CoverImage({ image,onPress }: { image?: string | null;
+  onPress?: () => void;
+ }) {
   const { colors } = useAppTheme();
   const imageUrl = toAbsoluteFileUrl(image);
 
   if (imageUrl) {
     return (
-      <Image
-        source={{ uri: imageUrl }}
-        style={styles.coverImage}
-        resizeMode="cover"
-      />
+     <Pressable onPress={onPress} style={{ flex: 1 }}>
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.coverImage}
+          resizeMode="cover"
+        />
+      </Pressable>
     );
   }
 
@@ -156,20 +161,24 @@ function CoverImage({ image }: { image?: string | null }) {
 function ProfileAvatar({
   image,
   name,
+  onPress,
 }: {
   image?: string | null;
   name?: string | null;
+  onPress?: () => void;
 }) {
   const { colors } = useAppTheme();
   const imageUrl = toAbsoluteFileUrl(image);
 
   if (imageUrl) {
     return (
-      <Image
-        source={{ uri: imageUrl }}
-        style={styles.avatarImage}
-        resizeMode="cover"
-      />
+     <Pressable onPress={onPress}>
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.avatarImage}
+          resizeMode="cover"
+        />
+      </Pressable>
     );
   }
 
@@ -612,6 +621,8 @@ export default function PublicProfileScreen() {
 
   const [activeTab, setActiveTab] = useState<TabKey>("about");
   const [actionUserId, setActionUserId] = useState<string | null>(null);
+  const [profileViewerVisible, setProfileViewerVisible] = useState(false);
+const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null);
 
   const safeUserId = String(userId ?? "");
   const safeSourceCommunityId = sourceCommunityId
@@ -619,8 +630,12 @@ export default function PublicProfileScreen() {
     : "";
 
   const isOwnProfile = Boolean(
-    session?.user?.id && session.user.id === safeUserId,
-  );
+  session?.user?.id && session.user.id === safeUserId,
+);
+
+if (isOwnProfile) {
+  return <Redirect href="/(tabs)/profile" />;
+}
 
   const {
     data: followStatusData,
@@ -645,6 +660,7 @@ export default function PublicProfileScreen() {
         firstName: session.user.firstName ?? null,
         lastName: session.user.lastName ?? null,
         image: session.user.image ?? null,
+        coverImage: session.user.coverImage ?? null,
         businessName: null,
         businessType: null,
         displayName,
@@ -912,6 +928,13 @@ export default function PublicProfileScreen() {
       setActionUserId(null);
     }
   };
+  const openProfileImage = (image?: string | null) => {
+  const absoluteUrl = image ? toAbsoluteFileUrl(image) : null;
+  if (absoluteUrl) {
+    setViewerImageUrl(absoluteUrl);
+    setProfileViewerVisible(true);
+  }
+};
 
   const handleUnfollowListUser = async (item: FollowItem) => {
     const targetUser = item.user;
@@ -1101,7 +1124,8 @@ export default function PublicProfileScreen() {
   const listHeader = (
     <View style={styles.page}>
       <View style={styles.coverSection}>
-        <CoverImage image={typedProfile.coverImage} />
+        <CoverImage image={typedProfile.coverImage}
+        onPress={() => openProfileImage(typedProfile.coverImage)} />
 
         <View pointerEvents="none" style={styles.coverBackdrop} />
 
@@ -1121,6 +1145,7 @@ export default function PublicProfileScreen() {
             <ProfileAvatar
               image={typedProfile.image}
               name={typedProfile.displayName}
+              onPress={() => openProfileImage(typedProfile.image)}
             />
           </View>
         </View>
@@ -1277,6 +1302,15 @@ export default function PublicProfileScreen() {
           />
         }
       />
+      <ProfileImageViewer
+  visible={profileViewerVisible}
+  imageUrl={viewerImageUrl}
+  onClose={() => {
+    setProfileViewerVisible(false);
+    setViewerImageUrl(null);
+  }}
+  type="avatar"
+/>
     </SafeAreaView>
   );
 }

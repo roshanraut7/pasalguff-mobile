@@ -14,6 +14,7 @@ export type FollowUser = {
   firstName: string | null;
   lastName: string | null;
   image: string | null;
+    coverImage: string | null;  
   businessName: string | null;
   businessType?: string | null;
   displayName: string;

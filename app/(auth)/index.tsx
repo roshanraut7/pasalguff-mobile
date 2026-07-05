@@ -107,7 +107,7 @@ export default function AuthPage() {
                   fontFamily: "Poppins_600SemiBold",
                 }}
               >
-                Pasal Guff
+                Kam Kuro
               </Text>
             </View>
 

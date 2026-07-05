@@ -563,139 +563,137 @@ function CommunityPostCard({
 
   return (
     <Surface variant="default" style={styles.card}>
-      <View style={styles.header}>
-        {showCommunityHeader ? (
-          <Pressable
-            onPress={() => {
-              const slug = post.community?.slug || post.communityId;
-              router.push({ pathname: "/user/community/[slug]", params: { slug } });
-            }}
-            style={styles.authorRow}
-          >
-            <Avatar alt="" size="md" variant="soft" color="accent">
-              {post.community?.avatarImage ? (
-                <Avatar.Image source={{ uri: toAbsoluteFileUrl(post.community.avatarImage) ?? undefined }} />
-              ) : null}
-              <Avatar.Fallback>{getInitials(post.community?.name ?? "C")}</Avatar.Fallback>
-            </Avatar>
+    <View style={styles.header}>
+  {showCommunityHeader ? (
+    <Pressable
+      onPress={() => {
+        const slug = post.community?.slug || post.communityId;
+        router.push({ pathname: "/user/community/[slug]", params: { slug } });
+      }}
+      style={styles.authorRow}
+    >
+      <Avatar alt="" size="md" variant="soft" color="accent">
+        {post.community?.avatarImage ? (
+          <Avatar.Image source={{ uri: toAbsoluteFileUrl(post.community.avatarImage) ?? undefined }} />
+        ) : null}
+        <Avatar.Fallback>{getInitials(post.community?.name ?? "C")}</Avatar.Fallback>
+      </Avatar>
 
-            <View style={styles.authorMeta}>
-              <Text numberOfLines={1} style={styles.authorName}>
-                {post.community?.name ?? "Community"}
-              </Text>
-              <View style={styles.subMetaRow}>
-                <Text style={styles.timeText}>{getPostTime(post)}</Text>
-              </View>
-            </View>
-          </Pressable>
-        ) : (
-          <Pressable onPress={() => onPressAuthor?.(post.author.id)} style={styles.authorRow}>
-            <Avatar alt="" size="md" variant="soft" color="accent">
-              {authorImage ? <Avatar.Image source={{ uri: authorImage }} /> : null}
-              <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
-            </Avatar>
+      <View style={styles.authorMeta}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text numberOfLines={1} style={styles.authorName}>
+            {post.community?.name ?? "Community"}
+          </Text>
 
-            <View style={styles.authorMeta}>
-              <Text numberOfLines={1} style={styles.authorName}>
-                {authorName}
-              </Text>
-              <View style={styles.subMetaRow}>
-                {!!post.community?.name && (
-                  <>
-                    <Text numberOfLines={1} style={styles.communityName}>
-                      {post.community.name}
-                    </Text>
-                    <Text style={styles.subMetaDot}>•</Text>
-                  </>
-                )}
-                <Text style={styles.timeText}>{getPostTime(post)}</Text>
-              </View>
-            </View>
-          </Pressable>
-        )}
-
-        {showCommunityHeader && !isOwnerOfCommunity ? (
-          <Pressable
-            onPress={handleJoinToggle}
-            style={[styles.joinButton, isJoined && styles.joinedButton]}
-            disabled={isJoining || isLeaving}
-          >
-            <Text style={styles.joinButtonText}>{isJoining || isLeaving ? "..." : isJoined ? "Joined" : "Join"}</Text>
-          </Pressable>
-        ) : showCommunityHeader && isOwnerOfCommunity ? (
-          <View style={styles.ownerBadge}>
-            <Ionicons name="shield-checkmark-outline" size={12} color={colors.accent} />
-            <Text style={styles.ownerBadgeText}>Owner</Text>
-          </View>
-        ) : canDelete || canEdit ? (
-          <View style={styles.moreWrap}>
-            <Menu>
-              <Menu.Trigger asChild>
-                <Pressable style={styles.moreButton}>
-                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
-                </Pressable>
-              </Menu.Trigger>
-
-              <Menu.Portal>
-                <Menu.Overlay />
-                <Menu.Content
-                  presentation="popover"
-                  placement="bottom"
-                  align="end"
-                  width={190}
-                  className="rounded-2xl border border-border bg-surface"
-                >
-                  {canEdit ? (
-                    <Menu.Item onPress={() => onEdit?.(post)} className="flex-row items-center gap-3">
-                      <Ionicons name="create-outline" size={18} color={colors.accent} />
-                      <Menu.ItemTitle>Edit post</Menu.ItemTitle>
-                    </Menu.Item>
-                  ) : null}
-
-                  {canDelete ? (
-                    <Menu.Item onPress={() => setIsDeleteDialogOpen(true)} variant="danger" className="flex-row items-center gap-3">
-                      <Ionicons name="trash-outline" size={18} color={colors.danger} />
-                      <Menu.ItemTitle>Delete post</Menu.ItemTitle>
-                    </Menu.Item>
-                  ) : null}
-                </Menu.Content>
-              </Menu.Portal>
-            </Menu>
-          </View>
-        ) : (
-          <Pressable style={styles.moreButton}>
-            <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
-          </Pressable>
-        )}
-      </View>
-
-      {showCommunityHeader && post.community?.name ? (
-        <View style={styles.communityTagRow}>
-          <Ionicons name="people-outline" size={12} color={colors.muted} />
-          <Text style={styles.communityTagText}>{post.community.name}</Text>
-
-          {post.community.visibility === "PUBLIC" && (
+          {post.community?.visibility === "PUBLIC" && (
             <View style={[styles.restrictedBadge, { borderColor: colors.success }]}>
               <Ionicons name="globe-outline" size={10} color={colors.success} />
               <Text style={[styles.restrictedBadgeText, { color: colors.success }]}>Public</Text>
             </View>
           )}
 
-          {post.community.visibility === "RESTRICTED" && (
+          {post.community?.visibility === "RESTRICTED" && (
             <View style={styles.restrictedBadge}>
               <Ionicons name="lock-closed-outline" size={10} color={colors.accent} />
               <Text style={styles.restrictedBadgeText}>Restricted</Text>
             </View>
           )}
-
-          {isJoined && (
-            <View style={styles.joinedBadge}>
-              <Ionicons name="checkmark-circle" size={12} color={colors.success} />
-              <Text style={styles.joinedBadgeText}>Joined</Text>
-            </View>
-          )}
         </View>
-      ) : null}
+
+        <View style={styles.subMetaRow}>
+          <Text style={styles.timeText}>{getPostTime(post)}</Text>
+        </View>
+      </View>
+    </Pressable>
+  ) : (
+    <Pressable onPress={() => onPressAuthor?.(post.author.id)} style={styles.authorRow}>
+      <Avatar alt="" size="md" variant="soft" color="accent">
+        {authorImage ? <Avatar.Image source={{ uri: authorImage }} /> : null}
+        <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
+      </Avatar>
+
+      <View style={styles.authorMeta}>
+        <Text numberOfLines={1} style={styles.authorName}>
+          {authorName}
+        </Text>
+        <View style={styles.subMetaRow}>
+          {!!post.community?.name && (
+            <>
+              <Text numberOfLines={1} style={styles.communityName}>
+                {post.community.name}
+              </Text>
+              <Text style={styles.subMetaDot}>•</Text>
+            </>
+          )}
+          <Text style={styles.timeText}>{getPostTime(post)}</Text>
+        </View>
+      </View>
+    </Pressable>
+  )}
+
+  {showCommunityHeader && !isOwnerOfCommunity ? (
+    <Pressable
+      onPress={handleJoinToggle}
+      style={[styles.joinButton, isJoined && styles.joinedButton]}
+      disabled={isJoining || isLeaving}
+    >
+      <Text style={styles.joinButtonText}>{isJoining || isLeaving ? "..." : isJoined ? "Joined" : "Join"}</Text>
+    </Pressable>
+  ) : showCommunityHeader && isOwnerOfCommunity ? (
+    <View style={styles.ownerBadge}>
+      <Ionicons name="shield-checkmark-outline" size={12} color={colors.accent} />
+      <Text style={styles.ownerBadgeText}>Owner</Text>
+    </View>
+  ) : canDelete || canEdit ? (
+    <View style={styles.moreWrap}>
+      <Menu>
+        <Menu.Trigger asChild>
+          <Pressable style={styles.moreButton}>
+            <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+          </Pressable>
+        </Menu.Trigger>
+
+        <Menu.Portal>
+          <Menu.Overlay />
+          <Menu.Content
+            presentation="popover"
+            placement="bottom"
+            align="end"
+            width={190}
+            className="rounded-2xl border border-border bg-surface"
+          >
+            {canEdit ? (
+              <Menu.Item onPress={() => onEdit?.(post)} className="flex-row items-center gap-3">
+                <Ionicons name="create-outline" size={18} color={colors.accent} />
+                <Menu.ItemTitle>Edit post</Menu.ItemTitle>
+              </Menu.Item>
+            ) : null}
+
+            {canDelete ? (
+              <Menu.Item onPress={() => setIsDeleteDialogOpen(true)} variant="danger" className="flex-row items-center gap-3">
+                <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                <Menu.ItemTitle>Delete post</Menu.ItemTitle>
+              </Menu.Item>
+            ) : null}
+          </Menu.Content>
+        </Menu.Portal>
+      </Menu>
+    </View>
+  ) : (
+    <Pressable style={styles.moreButton}>
+      <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+    </Pressable>
+  )}
+</View>
+
+{showCommunityHeader && post.community?.name ? (
+  <View style={styles.communityTagRow}>
+    <Text style={styles.communityTagText}>Post by</Text>
+    <Pressable onPress={() => onPressAuthor?.(post.author.id)} hitSlop={6}>
+      <Text style={styles.authorLinkText}>{post.author.name}</Text>
+    </Pressable>
+  </View>
+) : null}
 
       {!!tagLabel && (
         <View style={styles.tagWrap}>
@@ -1387,6 +1385,11 @@ function createStyles(colors: AppColors) {
       justifyContent: "flex-end",
       gap: 10,
       marginTop: 4,
+    },
+    authorLinkText:{
+     color: colors.link,
+     fontSize: 12,
+     fontFamily: "Poppins_500Medium",
     },
     dialogButton: {
       minHeight: 42,

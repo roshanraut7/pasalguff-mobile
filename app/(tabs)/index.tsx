@@ -314,22 +314,22 @@ const listRef = useRef<FlashListRef<HomeListItem>>(null);
   const lastOffset = useSharedValue(0);
   const headerTranslateY = useSharedValue(0);
 
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      "worklet";
-      const currentOffset = event.contentOffset.y;
-      const diff = currentOffset - lastOffset.value;
+const handleScroll = useCallback(
+  (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const currentOffset = event.nativeEvent.contentOffset.y;
+    const diff = currentOffset - lastOffset.value;
 
-      if (currentOffset <= 0) {
-        headerTranslateY.value = withTiming(0, { duration: 150 });
-      } else if (diff > 4) {
-        headerTranslateY.value = withTiming(-OPTIONS_HEADER_HEIGHT, { duration: 150 });
-      } else if (diff < -4) {
-        headerTranslateY.value = withTiming(0, { duration: 150 });
-      }
-      lastOffset.value = currentOffset;
-    },
-  });
+    if (currentOffset <= 0) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    } else if (diff > 4) {
+      headerTranslateY.value = withTiming(-OPTIONS_HEADER_HEIGHT, { duration: 150 });
+    } else if (diff < -4) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    }
+    lastOffset.value = currentOffset;
+  },
+  [lastOffset, headerTranslateY],
+);
 
   const headerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: headerTranslateY.value }],
@@ -805,7 +805,7 @@ const listRef = useRef<FlashListRef<HomeListItem>>(null);
 
   if (isPending) {
     return (
-      <SafeAreaView className="flex-1 bg-background" edges={[]}>
+      <SafeAreaView className=" flex-1 bg-background" edges={[]}>
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
@@ -815,7 +815,7 @@ const listRef = useRef<FlashListRef<HomeListItem>>(null);
 
   if (!session?.user) {
     return (
-      <SafeAreaView className="flex-1 bg-background" edges={[]}>
+      <SafeAreaView className=" flex-1bg-background" edges={[]}>
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-center text-foreground" style={{ fontSize: 18, fontFamily: "Poppins_700Bold" }}>
             Please login first
@@ -827,27 +827,63 @@ const listRef = useRef<FlashListRef<HomeListItem>>(null);
 
   return (
     <>
-      <SafeAreaView className="flex-1 bg-background" edges={[]}>
-       <FlashList
-  ref={listRef}
-  data={listData}
-  keyExtractor={keyExtractor}
-  renderItem={renderItem}
-  getItemType={getItemType}
-  ListHeaderComponent={optionsHeader}
-  stickyHeaderIndices={[0]}
-  contentContainerStyle={{ paddingBottom: 120 }}
-  showsVerticalScrollIndicator={false}
-  refreshControl={refreshControl}
-  onScroll={scrollHandler}
-  scrollEventThrottle={16}
-  onEndReached={loadMoreFeed}
-  onEndReachedThreshold={0.7}
-  ListEmptyComponent={emptyComponent}
-  ListFooterComponent={footerComponent}
-  keyboardShouldPersistTaps="handled"
-/>
-      </SafeAreaView>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={[]}>
+      <View
+        style={{
+          minHeight: OPTIONS_HEADER_HEIGHT,
+          backgroundColor: colors.background,
+          justifyContent: "center",
+        }}
+      >
+        <Tabs value={activeTab} onValueChange={handleTabValueChange} variant="secondary" style={{ width: "100%" }}>
+          <Tabs.List
+            style={{
+              width: "100%",
+              minHeight: OPTIONS_HEADER_HEIGHT,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: colors.background,
+            }}
+          >
+            <Tabs.Indicator />
+            {HOME_TABS.map((tab) => (
+              <Tabs.Trigger key={tab.value} value={tab.value}>
+                {({ isSelected }) => (
+                  <Tabs.Label
+                    style={{
+                      color: isSelected ? colors.foreground : colors.muted,
+                      fontSize: 15,
+                      fontFamily: isSelected ? "Poppins_700Bold" : "Poppins_500Medium",
+                    }}
+                  >
+                    {tab.label}
+                  </Tabs.Label>
+                )}
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
+        </Tabs>
+      </View>
+
+      <FlashList
+        ref={listRef}
+        data={listData}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        getItemType={getItemType}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={refreshControl}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onEndReached={loadMoreFeed}
+        onEndReachedThreshold={0.7}
+        ListEmptyComponent={emptyComponent}
+        ListFooterComponent={footerComponent}
+        keyboardShouldPersistTaps="handled"
+      />
+    </SafeAreaView>
+
 
       <CommentPostModal
         visible={!!commentPost}

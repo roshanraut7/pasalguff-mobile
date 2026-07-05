@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useSession } from "@/api/better-auth-client";
 import {
   ActivityIndicator,
   Image,
@@ -8,7 +9,9 @@ import {
   StatusBar,
   Text,
   View,
+  Platform
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -47,12 +50,6 @@ type PickedProfileImage = {
   mimeType?: string | null;
 };
 
-type PresetAvatar = {
-  id: string;
-  label: string;
-  image: ImageSourcePropType;
-  value: string;
-};
 
 const STEPS: StepKey[] = [
   "welcome",
@@ -78,51 +75,6 @@ const BUSINESS_TYPES = [
   "Other",
 ];
 
-const PRESET_AVATARS: PresetAvatar[] = [
-  {
-    id: "madheshi",
-    label: "Madheshi",
-    image: require("@/assets/onboarding-avatars/madeshi.png"),
-    value: "/public/default-avatars/madeshi.png",
-  },
-  {
-    id: "muslim",
-    label: "Muslim",
-    image: require("@/assets/onboarding-avatars/muslim.png"),
-    value: "/public/default-avatars/muslim.png",
-  },
-  {
-    id: "chhetri",
-    label: "Chhetri",
-    image: require("@/assets/onboarding-avatars/chetteri.png"),
-    value: "/public/default-avatars/chetteri.png",
-  },
-  {
-    id: "tharu",
-    label: "Tharu",
-    image: require("@/assets/onboarding-avatars/tharu.png"),
-    value: "/public/default-avatars/tharu.png",
-  },
-  {
-    id: "sherpa",
-    label: "Sherpa",
-    image: require("@/assets/onboarding-avatars/sherpa.png"),
-    value: "/public/default-avatars/sherpa.png",
-  },
-  {
-    id: "limbu",
-    label: "Limbu",
-    image: require("@/assets/onboarding-avatars/limbu.png"),
-    value: "/public/default-avatars/limbu.png",
-  },
-  {
-    id: "newar",
-    label: "Newar",
-    image: require("@/assets/onboarding-avatars/newar.png"),
-    value: "/public/default-avatars/newar.png",
-  },
-];
-
 export default function OnboardingScreen() {
   const { colors, isDark } = useAppTheme();
 
@@ -130,9 +82,7 @@ export default function OnboardingScreen() {
   const [profileImage, setProfileImage] = useState<PickedProfileImage | null>(
     null,
   );
-  const [selectedPresetAvatarUrl, setSelectedPresetAvatarUrl] = useState<
-    string | null
-  >(null);
+ 
 
   const [selectedBusinessType, setSelectedBusinessType] = useState("");
   const [customBusinessType, setCustomBusinessType] = useState("");
@@ -143,6 +93,7 @@ export default function OnboardingScreen() {
   const [businessName, setBusinessName] = useState("");
   const [address, setAddress] = useState("");
   const [serverError, setServerError] = useState("");
+  const { refetch: refetchSession } = useSession();
 
   const { refetch: refetchMyOnboarding } = useGetMyOnboardingQuery();
 
@@ -258,17 +209,15 @@ export default function OnboardingScreen() {
     try {
       let finalProfileImageUrl: string | undefined;
 
-      if (profileImage?.uri) {
-        const uploaded = await uploadProfileAvatar({
-          uri: profileImage.uri,
-          fileName: profileImage.fileName,
-          mimeType: profileImage.mimeType,
-        }).unwrap();
+    if (profileImage?.uri) {
+  const uploaded = await uploadProfileAvatar({
+    uri: profileImage.uri,
+    fileName: profileImage.fileName,
+    mimeType: profileImage.mimeType,
+  }).unwrap();
 
-        finalProfileImageUrl = uploaded.url;
-      } else if (selectedPresetAvatarUrl) {
-        finalProfileImageUrl = selectedPresetAvatarUrl;
-      }
+  finalProfileImageUrl = uploaded.url;
+}
 
       console.log("FINAL PROFILE IMAGE URL:", finalProfileImageUrl);
 
@@ -283,6 +232,7 @@ export default function OnboardingScreen() {
       }).unwrap();
 
       await refetchMyOnboarding();
+          await refetchSession();  
 
       router.replace("/(tabs)");
     } catch (error) {
@@ -295,188 +245,191 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <StatusBar
-        barStyle={isDark ? "light-content" : "dark-content"}
-        backgroundColor={colors.background}
-      />
+   <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+  <StatusBar
+    barStyle={isDark ? "light-content" : "dark-content"}
+    backgroundColor={colors.background}
+  />
+
+  <KeyboardAvoidingView
+    style={{ flex: 1 }}
+    behavior={Platform.OS === "ios" ? "padding" : "height"}
+  >
+    <View
+      style={{
+        flex: 1,
+        paddingHorizontal: 22,
+        paddingTop: 12,
+        paddingBottom: 20,
+      }}
+    >
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 18,
+        }}
+      >
+        <Pressable
+          onPress={goBack}
+          disabled={stepIndex === 0 || isProcessing}
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 999,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            opacity: stepIndex === 0 ? 0 : isProcessing ? 0.5 : 1,
+          }}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={20}
+            color={colors.foreground}
+          />
+        </Pressable>
+
+        <Text
+          style={{
+            color: colors.muted,
+            fontSize: 13,
+            fontFamily: "Poppins_600SemiBold",
+          }}
+        >
+          Step {stepIndex + 1} of {STEPS.length}
+        </Text>
+
+        <View style={{ width: 42 }} />
+      </View>
 
       <View
         style={{
-          flex: 1,
-          paddingHorizontal: 22,
-          paddingTop: 12,
-          paddingBottom: 20,
+          height: 8,
+          borderRadius: 999,
+          backgroundColor: colors.surface,
+          overflow: "hidden",
+          marginBottom: 24,
         }}
       >
         <View
           style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 18,
+            width: `${progressPercent}%`,
+            height: "100%",
+            backgroundColor: colors.accent,
+            borderRadius: 999,
           }}
-        >
-          <Pressable
-            onPress={goBack}
-            disabled={stepIndex === 0 || isProcessing}
-            style={{
-              width: 42,
-              height: 42,
-              borderRadius: 999,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              opacity: stepIndex === 0 ? 0 : isProcessing ? 0.5 : 1,
-            }}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={20}
-              color={colors.foreground}
-            />
-          </Pressable>
+        />
+      </View>
 
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
+      >
+        {currentStep === "welcome" ? <WelcomeStep colors={colors} /> : null}
+
+        {currentStep === "profilePhoto" ? (
+          <ProfilePhotoStep
+            colors={colors}
+            profileImage={profileImage}
+            setProfileImage={setProfileImage}
+          />
+        ) : null}
+
+        {currentStep === "vendorType" ? (
+          <VendorTypeStep
+            colors={colors}
+            selectedBusinessType={selectedBusinessType}
+            setSelectedBusinessType={setSelectedBusinessType}
+            customBusinessType={customBusinessType}
+            setCustomBusinessType={setCustomBusinessType}
+          />
+        ) : null}
+
+        {currentStep === "interests" ? (
+          <InterestsStep
+            colors={colors}
+            categories={categories ?? []}
+            isLoading={isCategoriesLoading}
+            selectedCategoryIds={selectedCategoryIds}
+            toggleCategory={toggleCategory}
+          />
+        ) : null}
+
+        {currentStep === "suggestedCommunities" ? (
+          <SuggestedCommunitiesStep
+            colors={colors}
+            communities={suggestedCommunities}
+            isLoading={
+              isSuggestedCommunitiesLoading || isSuggestedCommunitiesFetching
+            }
+            selectedCommunityIds={selectedCommunityIds}
+            toggleCommunity={toggleCommunity}
+          />
+        ) : null}
+
+        {currentStep === "businessProfile" ? (
+          <BusinessProfileStep
+            colors={colors}
+            businessName={businessName}
+            setBusinessName={setBusinessName}
+            address={address}
+            setAddress={setAddress}
+          />
+        ) : null}
+
+        {serverError ? (
           <Text
             style={{
-              color: colors.muted,
+              color: colors.danger,
               fontSize: 13,
-              fontFamily: "Poppins_600SemiBold",
+              fontFamily: "Poppins_500Medium",
+              marginTop: 16,
             }}
           >
-            Step {stepIndex + 1} of {STEPS.length}
+            {serverError}
           </Text>
+        ) : null}
+      </ScrollView>
 
-          <View style={{ width: 42 }} />
-        </View>
-
-        <View
-          style={{
-            height: 8,
-            borderRadius: 999,
-            backgroundColor: colors.surface,
-            overflow: "hidden",
-            marginBottom: 24,
-          }}
+      <View style={{ gap: 12 }}>
+        <Button
+          onPress={goNext}
+          isDisabled={isProcessing}
+          className="bg-accent rounded-full"
         >
-          <View
-            style={{
-              width: `${progressPercent}%`,
-              height: "100%",
-              backgroundColor: colors.accent,
-              borderRadius: 999,
-            }}
-          />
-        </View>
+          <Button.Label className="text-accent-foreground">
+            {isProcessing
+              ? isUploadingAvatar
+                ? "Uploading..."
+                : "Saving..."
+              : isLastStep
+                ? "Finish"
+                : currentStep === "welcome"
+                  ? "Get Started"
+                  : "Next"}
+          </Button.Label>
+        </Button>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
-        >
-          {currentStep === "welcome" ? <WelcomeStep colors={colors} /> : null}
-
-          {currentStep === "profilePhoto" ? (
-            <ProfilePhotoStep
-              colors={colors}
-              profileImage={profileImage}
-              setProfileImage={setProfileImage}
-              selectedPresetAvatarUrl={selectedPresetAvatarUrl}
-              setSelectedPresetAvatarUrl={setSelectedPresetAvatarUrl}
-            />
-          ) : null}
-
-          {currentStep === "vendorType" ? (
-            <VendorTypeStep
-              colors={colors}
-              selectedBusinessType={selectedBusinessType}
-              setSelectedBusinessType={setSelectedBusinessType}
-              customBusinessType={customBusinessType}
-              setCustomBusinessType={setCustomBusinessType}
-            />
-          ) : null}
-
-          {currentStep === "interests" ? (
-            <InterestsStep
-              colors={colors}
-              categories={categories ?? []}
-              isLoading={isCategoriesLoading}
-              selectedCategoryIds={selectedCategoryIds}
-              toggleCategory={toggleCategory}
-            />
-          ) : null}
-
-          {currentStep === "suggestedCommunities" ? (
-            <SuggestedCommunitiesStep
-              colors={colors}
-              communities={suggestedCommunities}
-              isLoading={
-                isSuggestedCommunitiesLoading || isSuggestedCommunitiesFetching
-              }
-              selectedCommunityIds={selectedCommunityIds}
-              toggleCommunity={toggleCommunity}
-            />
-          ) : null}
-
-          {currentStep === "businessProfile" ? (
-            <BusinessProfileStep
-              colors={colors}
-              businessName={businessName}
-              setBusinessName={setBusinessName}
-              address={address}
-              setAddress={setAddress}
-            />
-          ) : null}
-
-          {serverError ? (
-            <Text
-              style={{
-                color: colors.danger,
-                fontSize: 13,
-                fontFamily: "Poppins_500Medium",
-                marginTop: 16,
-              }}
-            >
-              {serverError}
-            </Text>
-          ) : null}
-        </ScrollView>
-
-        <View style={{ gap: 12 }}>
+        {currentStep !== "welcome" ? (
           <Button
-            onPress={goNext}
+            onPress={skipStep}
             isDisabled={isProcessing}
-            className="bg-accent rounded-full"
+            className="bg-transparent rounded-full border border-border"
           >
-            <Button.Label className="text-accent-foreground">
-              {isProcessing
-                ? isUploadingAvatar
-                  ? "Uploading..."
-                  : "Saving..."
-                : isLastStep
-                  ? "Finish"
-                  : currentStep === "welcome"
-                    ? "Get Started"
-                    : "Next"}
+            <Button.Label className="text-foreground">
+              Skip this step
             </Button.Label>
           </Button>
-
-          {currentStep !== "welcome" ? (
-            <Button
-              onPress={skipStep}
-              isDisabled={isProcessing}
-              className="bg-transparent rounded-full border border-border"
-            >
-              <Button.Label className="text-foreground">
-                Skip this step
-              </Button.Label>
-            </Button>
-          ) : null}
-        </View>
+        ) : null}
       </View>
-    </SafeAreaView>
+    </View>
+  </KeyboardAvoidingView>
+</SafeAreaView>
   );
 }
 
@@ -551,19 +504,11 @@ function ProfilePhotoStep({
   colors,
   profileImage,
   setProfileImage,
-  selectedPresetAvatarUrl,
-  setSelectedPresetAvatarUrl,
 }: {
   colors: any;
   profileImage: PickedProfileImage | null;
   setProfileImage: (value: PickedProfileImage | null) => void;
-  selectedPresetAvatarUrl: string | null;
-  setSelectedPresetAvatarUrl: (value: string | null) => void;
 }) {
-  const selectedPresetAvatar = PRESET_AVATARS.find(
-    (avatar) => avatar.value === selectedPresetAvatarUrl,
-  );
-
   const pickFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
@@ -584,8 +529,6 @@ function ProfilePhotoStep({
         fileName: asset.fileName ?? `profile-avatar-${Date.now()}.jpg`,
         mimeType: asset.mimeType ?? "image/jpeg",
       });
-
-      setSelectedPresetAvatarUrl(null);
     }
   };
 
@@ -610,8 +553,6 @@ function ProfilePhotoStep({
         fileName: asset.fileName ?? `profile-avatar-${Date.now()}.jpg`,
         mimeType: asset.mimeType ?? "image/jpeg",
       });
-
-      setSelectedPresetAvatarUrl(null);
     }
   };
 
@@ -634,7 +575,6 @@ function ProfilePhotoStep({
 
   const removeCurrentImage = () => {
     setProfileImage(null);
-    setSelectedPresetAvatarUrl(null);
   };
 
   return (
@@ -647,7 +587,7 @@ function ProfilePhotoStep({
           fontFamily: "Poppins_700Bold",
         }}
       >
-        Choose your profile avatar
+        Choose your profile photo
       </Text>
 
       <Text
@@ -660,8 +600,8 @@ function ProfilePhotoStep({
           marginBottom: 28,
         }}
       >
-        Select one avatar or upload your own photo so other vendors can
-        recognise you in communities and chat.
+        Upload a photo so other vendors can recognise you in communities and
+        chat.
       </Text>
 
       <View style={{ alignItems: "center" }}>
@@ -690,12 +630,6 @@ function ProfilePhotoStep({
             {profileImage?.uri ? (
               <Image
                 source={{ uri: profileImage.uri }}
-                style={{ width: "100%", height: "100%" }}
-                resizeMode="cover"
-              />
-            ) : selectedPresetAvatar ? (
-              <Image
-                source={selectedPresetAvatar.image}
                 style={{ width: "100%", height: "100%" }}
                 resizeMode="cover"
               />
@@ -786,7 +720,7 @@ function ProfilePhotoStep({
           Tap the plus icon to choose from gallery or take a picture.
         </Text>
 
-        {profileImage || selectedPresetAvatarUrl ? (
+        {profileImage ? (
           <Pressable onPress={removeCurrentImage} style={{ marginTop: 14 }}>
             <Text
               style={{
@@ -799,77 +733,6 @@ function ProfilePhotoStep({
             </Text>
           </Pressable>
         ) : null}
-
-        <View style={{ marginTop: 28, width: "100%" }}>
-          <Text
-            style={{
-              color: colors.foreground,
-              fontSize: 16,
-              fontFamily: "Poppins_600SemiBold",
-              marginBottom: 12,
-            }}
-          >
-            Choose an avatar
-          </Text>
-
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 12,
-              justifyContent: "center",
-            }}
-          >
-            {PRESET_AVATARS.map((avatar) => {
-              const selected = selectedPresetAvatarUrl === avatar.value;
-
-              return (
-                <Pressable
-                  key={avatar.id}
-                  onPress={() => {
-                    setSelectedPresetAvatarUrl(avatar.value);
-                    setProfileImage(null);
-                  }}
-                  style={{
-                    width: 92,
-                    alignItems: "center",
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 78,
-                      height: 78,
-                      borderRadius: 39,
-                      overflow: "hidden",
-                      borderWidth: selected ? 3 : 1,
-                      borderColor: selected ? colors.accent : colors.border,
-                      backgroundColor: colors.surface,
-                    }}
-                  >
-                    <Image
-                      source={avatar.image}
-                      style={{ width: "100%", height: "100%" }}
-                      resizeMode="cover"
-                    />
-                  </View>
-
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      color: selected ? colors.accent : colors.muted,
-                      fontSize: 11,
-                      fontFamily: "Poppins_500Medium",
-                      marginTop: 6,
-                      textAlign: "center",
-                    }}
-                  >
-                    {avatar.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
       </View>
     </View>
   );
