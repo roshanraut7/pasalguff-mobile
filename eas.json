@@ -12,7 +12,7 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "http://192.168.1.77:3000",
     "EXPO_PUBLIC_AUTH_URL": "http://192.168.1.77:3000",
-        "EXPO_PUBLIC_APP_SCHEME": "pasalguff"
+        "EXPO_PUBLIC_APP_SCHEME": "kamkuro"
       }
     },
     "preview": {
@@ -25,7 +25,7 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://kamkuro.com",
         "EXPO_PUBLIC_AUTH_URL": "https://kamkuro.com",
-        "EXPO_PUBLIC_APP_SCHEME": "pasalguff"
+        "EXPO_PUBLIC_APP_SCHEME": "kamkuro"
       }
     },
     "production": {
@@ -39,7 +39,7 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://kamkuro.com",
         "EXPO_PUBLIC_AUTH_URL": "https://kamkuro.com",
-        "EXPO_PUBLIC_APP_SCHEME": "pasalguff"
+        "EXPO_PUBLIC_APP_SCHEME": "kamkuro"
       }
     }
   },

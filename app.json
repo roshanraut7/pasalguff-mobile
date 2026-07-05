@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "kamkuro",
-    "slug": "kamkuro",
+    "slug": "pasalguff",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/kamkuro.png",
-    "scheme": "kamkuro  ",
+    "scheme": "kamkuro",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
@@ -26,7 +26,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "output": "static",
@@ -50,7 +54,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/kamkuro.png", 
+          "image": "./assets/images/kamkuro.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -96,6 +100,7 @@
     },
     "updates": {
       "url": "https://u.expo.dev/f046bc29-0ea1-4d7d-a66e-e6e5cc7a3c4a"
-    }
+    },
+    "owner": "roshan_1"
   }
 }
