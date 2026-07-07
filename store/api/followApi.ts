@@ -85,6 +85,7 @@ export type UnfollowResponse = {
 export type FollowListQuery = {
   page?: number;
   limit?: number;
+   search?: string; 
 };
 
 export type DiscoverFollowQuery = {
@@ -157,6 +158,7 @@ export const followApi = baseApi.injectEndpoints({
         url: `/follows/me/following${buildQueryParams({
           page: params?.page ?? 1,
           limit: params?.limit ?? 20,
+             search: params?.search, 
         })}`,
         method: "GET",
       }),

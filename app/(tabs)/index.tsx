@@ -23,6 +23,7 @@ import { useSession } from "@/api/better-auth-client";
 import CommentPostModal from "@/components/post/CommentsModal";
 import CommunityPostCard from "@/components/post/CommunityPostCard";
 import DislikeReasonModal from "@/components/post/DislikeReasonModal";
+import ShareBottomSheet, { type ShareBottomSheetRef } from "@/components/common/ShareBottomSheet";
 import PostMediaViewer from "@/components/post/PostMediaViewer";
 import CommunityDiscussionHomeCard from "@/components/common/CommunityDiscussionHomeCard";
 import FollowCommunityModal from "@/components/common/FollowCommunityModal";
@@ -131,6 +132,7 @@ export default function HomeScreen() {
   const { data: session, isPending } = useSession();
 
 const listRef = useRef<FlashListRef<HomeListItem>>(null);
+const shareSheetRef = useRef<ShareBottomSheetRef>(null);
 
 
   // React 19 concurrent transition — tab switch stays responsive
@@ -179,8 +181,7 @@ const listRef = useRef<FlashListRef<HomeListItem>>(null);
   },
   [isDiscussionTab],
 );
-
-  const {
+const {
     commentPost,
     activeCommentPost,
     comments,
@@ -202,6 +203,7 @@ const listRef = useRef<FlashListRef<HomeListItem>>(null);
     handleSubmitDislike,
     closeDislikeModal,
     handleSharePost,
+    handleShareToFriends,
     handleCreateComment,
     handleCommentLike,
     refetchComments,
@@ -601,6 +603,9 @@ const handleScroll = useCallback(
     if (!authorId) return;
     router.push(`/user/profile/${authorId}`);
   }, []);
+  const handleOpenShareSheet = useCallback((post: CommunityPost) => {
+    shareSheetRef.current?.present(post);
+  }, []);
 
   const handleJoinCommunity = useCallback((post: CommunityPost) => {
     const normalizedPost = post as CommunityFollowState;
@@ -613,7 +618,7 @@ const handleScroll = useCallback(
     [viewer.visible, commentPost, dislikePostTarget, followModalPost],
   );
 
-  const renderPostItem = useCallback(
+ const renderPostItem = useCallback(
     ({ item }: { item: CommunityPost }) => (
       <HomePostItem
         item={item}
@@ -623,7 +628,7 @@ const handleScroll = useCallback(
         onPressLike={handleLikePost}
         onPressDislike={handleDislikePost}
         onPressComment={handleProtectedOpenComments}
-        onPressShare={handleSharePost}
+        onPressShare={handleOpenShareSheet}
         onPressAuthor={handleAuthorPress}
         onPressMedia={openViewer}
         onPressPollOption={handleProtectedVotePostPoll}
@@ -637,7 +642,7 @@ const handleScroll = useCallback(
       handleLikePost,
       handleDislikePost,
       handleProtectedOpenComments,
-      handleSharePost,
+      handleOpenShareSheet,
       handleAuthorPress,
       openViewer,
       handleProtectedVotePostPoll,
@@ -926,12 +931,18 @@ const handleScroll = useCallback(
         }}
       />
 
-      <FollowCommunityModal
+   <FollowCommunityModal
         visible={!!followModalPost}
         communityName={followModalCommunityName}
         isRestricted={followModalPost ? getPostVisibility(followModalPost) === "RESTRICTED" : false}
         onClose={closeFollowRequiredModal}
         onFollow={handleFollowCommunityFromModal}
+      />
+
+      <ShareBottomSheet
+        ref={shareSheetRef}
+        onShareExternal={handleSharePost}
+        onShareToFriends={handleShareToFriends}
       />
     </>
   );

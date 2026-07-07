@@ -318,7 +318,7 @@ export type CreateCommunityPostPayload = {
   media?: CreatePostMediaPayload[];
   poll?: CreatePostPollPayload;
 };
-
+export type ShareType = "FRIENDS" | "EXTERNAL";
 export type UpdateCommunityPostPayload = {
   title?: string | null;
   content?: string | null;
@@ -343,9 +343,11 @@ export type UpdatePostCommentPayload = {
 };
 
 export type SharePostPayload = {
+  shareType: ShareType;
   platform?: string;
+  message?: string;
+  targetUserIds?: string[];
 };
-
 export type VotePostPollPayload = {
   optionId: string;
 };

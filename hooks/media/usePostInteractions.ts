@@ -540,13 +540,14 @@ export function usePostInteractions<TPost extends CommunityPost>({
           return;
         }
 
-        const result = await sharePost({
-          communityId: post.communityId,
-          postId: post.id,
-          body: {
-            platform: "native_share",
-          },
-        }).unwrap();
+    const result = await sharePost({
+  communityId: post.communityId,
+  postId: post.id,
+  body: {
+    shareType: "EXTERNAL",
+    platform: "native_share",
+  },
+}).unwrap();
 
         setPosts((prev) =>
           updatePostInList(prev, post.id, (item) => ({
@@ -571,6 +572,42 @@ export function usePostInteractions<TPost extends CommunityPost>({
     },
     [sharePost, setPosts, updateCommentPost],
   );
+  const handleShareToFriends = useCallback(
+  async (post: TPost, targetUserIds: string[], message?: string) => {
+    if (!targetUserIds.length) return;
+
+    const result = await sharePost({
+      communityId: post.communityId,
+      postId: post.id,
+      body: {
+        shareType: "FRIENDS",
+        targetUserIds,
+        message: message?.trim() || undefined,
+      },
+    }).unwrap();
+
+    setPosts((prev) =>
+      updatePostInList(prev, post.id, (item) => ({
+        ...item,
+        shareCount:
+          typeof result.shareCount === "number"
+            ? result.shareCount
+            : (item.shareCount ?? 0) + 1,
+      })),
+    );
+
+    updateCommentPost(post.id, (item) => ({
+      ...item,
+      shareCount:
+        typeof result.shareCount === "number"
+          ? result.shareCount
+          : (item.shareCount ?? 0) + 1,
+    }));
+
+    return result;
+  },
+  [sharePost, setPosts, updateCommentPost],
+);
 
   const handleCreateComment = useCallback(
     async (replyingTo?: FeedComment | null) => {
@@ -717,6 +754,7 @@ export function usePostInteractions<TPost extends CommunityPost>({
 
     likingPostIds,
     isLoadingComments,
+    handleShareToFriends, 
     isFetchingComments,
     isCreatingComment,
     isCreatingReply,
