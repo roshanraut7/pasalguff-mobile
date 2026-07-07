@@ -66,11 +66,11 @@ export const authClient = createAuthClient({
         },
       },
     }),
-    expoClient({
-      scheme: "pasalguff",
-      storagePrefix: "pasalguff",
-      storage: SecureStore,
-    }),
+   expoClient({
+  scheme: "kamkuro",
+  storagePrefix: "kamkuro",
+  storage: SecureStore,
+}),
   ],
 });
 

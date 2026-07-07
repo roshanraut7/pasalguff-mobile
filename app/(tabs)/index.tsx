@@ -940,10 +940,13 @@ const handleScroll = useCallback(
       />
 
       <ShareBottomSheet
-        ref={shareSheetRef}
-        onShareExternal={handleSharePost}
-        onShareToFriends={handleShareToFriends}
-      />
+  ref={shareSheetRef}
+  onShareExternal={handleSharePost}
+  onShareToFriends={handleShareToFriends}
+  onLinkCopied={() => {
+    // e.g. Toast.show({ type: "success", text1: "Link copied" })
+  }}
+/>
     </>
   );
 }

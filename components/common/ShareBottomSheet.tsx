@@ -45,7 +45,6 @@ type ShareBottomSheetProps = {
     targetUserIds: string[],
     message?: string,
   ) => Promise<unknown>;
-  /** Called after a successful "Copy link" tap, e.g. to show a toast. */
   onLinkCopied?: () => void;
 };
 
@@ -71,11 +70,6 @@ function getInitials(name: string) {
   return `${parts[0]?.charAt(0) ?? ""}${parts[1]?.charAt(0) ?? ""}`.toUpperCase();
 }
 
-/**
- * The URL used for "Copy link" and as the link portion of external
- * app shares. Assumes the API now returns a public shareUrl on the
- * post; falls back to a web route built from the id if not.
- */
 function getShareUrl(post: CommunityPost) {
   return (post as any).shareUrl ?? `https://yourapp.com/p/${post.id}`;
 }
@@ -84,14 +78,6 @@ function buildShareText(post: CommunityPost) {
   return `Check this out: ${getShareUrl(post)}`;
 }
 
-// ------------------------------------------------------------
-// Row of external apps shown below the friends grid, Instagram-
-// style. WhatsApp gets a real deep link since its scheme reliably
-// accepts pre-filled text. Messenger/Telegram/"More" fall back to
-// the native share sheet — deep-linking those with pre-filled
-// content is unreliable without each platform's own SDK wired in,
-// and the native sheet already lists them as options anyway.
-// ------------------------------------------------------------
 type ShareAppConfig = {
   id: string;
   label: string;
@@ -117,7 +103,6 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
     const [message, setMessage] = useState("");
     const [isSharing, setIsSharing] = useState(false);
 
-    // Raw text as typed vs. the debounced value actually sent to the API.
     const [searchQuery, setSearchQuery] = useState("");
     const [debouncedQuery, setDebouncedQuery] = useState("");
 
@@ -128,8 +113,6 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
       return () => clearTimeout(timer);
     }, [searchQuery]);
 
-    // Only fetches once the sheet is actually opened for a post.
-    // Re-fetches automatically whenever debouncedQuery changes.
     const { data, isLoading, isFetching } = useGetMyFollowingQuery(
       { limit: 100, search: debouncedQuery || undefined },
       { skip: !post },
@@ -187,13 +170,6 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
       }
     }, [post, selectedIds, message, isSharing, onShareToFriends]);
 
-    // ------------------------------------------------------------
-    // External app row handler. WhatsApp uses a real deep link;
-    // "Copy link" uses the clipboard directly; everything else routes
-    // through the native share sheet, which Android/iOS populate with
-    // whatever's installed (Messenger, Telegram, Instagram, Mail, etc.)
-    // automatically.
-    // ------------------------------------------------------------
     const handleShareAppPress = useCallback(
       async (app: ShareAppConfig) => {
         if (!post) return;
@@ -223,22 +199,16 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
             return;
           }
 
-          // messenger, telegram, more -> native share sheet
           await Share.share({ message: buildShareText(post) });
           onShareExternal(post);
           sheetRef.current?.dismiss();
         } catch {
-          // user cancelled the native sheet, clipboard failed, or Linking
-          // failed — no-op, sheet stays open so they can try again
+          // user cancelled the native sheet, clipboard failed, or Linking failed — no-op
         }
       },
       [post, onShareExternal, onLinkCopied],
     );
 
-    // ------------------------------------------------------------
-    // Instagram-style grid cell: avatar with a selection ring +
-    // checkmark badge, first name underneath.
-    // ------------------------------------------------------------
     const renderItem = useCallback(
       ({ item }: { item: FollowItem }) => {
         const fullName = getUserName(item.user);
@@ -285,20 +255,11 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
       [],
     );
 
-    // ------------------------------------------------------------
-    // Section header above the grid ("Share with") — purely visual.
-    // ------------------------------------------------------------
     const renderGridHeader = useCallback(
-      () => (
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>Share with</Text>
-      ),
+      () => <Text style={[styles.sectionLabel, { color: colors.muted }]}>Share with</Text>,
       [colors],
     );
 
-    // ------------------------------------------------------------
-    // App row rendered BELOW the friends grid, as the FlatList's
-    // ListFooterComponent — mirrors Instagram's layout exactly.
-    // ------------------------------------------------------------
     const renderAppsSection = useCallback(
       () => (
         <View>
@@ -320,17 +281,12 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
               </Pressable>
             ))}
           </View>
-          {/* Leaves room so this row isn't hidden behind the pinned footer. */}
           <View style={{ height: 140 }} />
         </View>
       ),
       [colors, handleShareAppPress],
     );
 
-    // ------------------------------------------------------------
-    // BottomSheetFooter pins the message input + Share button above
-    // the keyboard automatically. Only relevant to the friends flow.
-    // ------------------------------------------------------------
     const renderFooter = useCallback(
       (footerProps: any) => (
         <BottomSheetFooter {...footerProps} bottomInset={0}>
@@ -386,12 +342,10 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
           <Text style={[styles.title, { color: colors.foreground }]}>Share post</Text>
         </View>
 
-        <View
-          style={[
-            styles.searchWrap,
-            { backgroundColor: colors.surfaceSecondary },
-          ]}
-        >
+        {/* Fixed-width trailing icon slot below prevents the row from
+            reflowing mid-keystroke when isFetching toggles, which was
+            causing dropped/jumbled characters in the input. */}
+        <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
           <Ionicons name="search" size={16} color={colors.muted} />
           <BottomSheetTextInput
             value={searchQuery}
@@ -402,13 +356,15 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
             autoCorrect={false}
             autoCapitalize="none"
           />
-          {isFetching && debouncedQuery ? (
-            <ActivityIndicator size="small" color={colors.muted} />
-          ) : searchQuery.length > 0 ? (
-            <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={colors.muted} />
-            </Pressable>
-          ) : null}
+          <View style={styles.searchTrailingIcon}>
+            {isFetching && debouncedQuery ? (
+              <ActivityIndicator size="small" color={colors.muted} />
+            ) : searchQuery.length > 0 ? (
+              <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={colors.muted} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         {isLoading ? (
@@ -464,6 +420,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   searchInput: { flex: 1, fontSize: 14, padding: 0 },
+  searchTrailingIcon: {
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   sectionLabel: {
     fontSize: 12,

@@ -8,11 +8,14 @@
     "scheme": "kamkuro",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "ios": {
+     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kamkuro.app",
       "buildNumber": "1",
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["whatsapp", "fb-messenger", "tg"]
+      }
     },
     "android": {
       "package": "com.kamkuro.app",

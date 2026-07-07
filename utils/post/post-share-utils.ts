@@ -30,7 +30,7 @@ export function normalizeShareUrl(value?: string | null) {
 
   const cleanUrl = value.trim();
 
-  if (/^(https?:|mailto:|tel:|pasalguff:)/i.test(cleanUrl)) {
+  if (/^(https?:|mailto:|tel:|kamkuro:)/i.test(cleanUrl)) {
     return cleanUrl;
   }
 
@@ -60,15 +60,9 @@ export function getPostPublicLink(post: CommunityPost) {
     return existingPublicLink;
   }
 
-  const webBaseUrl = getWebBaseUrl();
+ const webBaseUrl = getWebBaseUrl();
 
-  if (webBaseUrl) {
-    return `${webBaseUrl}/posts/${post.id}`;
-  }
-
-  const appScheme = process.env.EXPO_PUBLIC_APP_SCHEME ?? "pasalguff";
-
-  return `${appScheme}://posts/${post.id}`;
+return `${webBaseUrl ?? "https://kamkuro.com"}/posts/${post.id}`;
 }
 
 export function getPostShareMessage(post: CommunityPost) {
