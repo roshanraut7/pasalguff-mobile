@@ -1,4 +1,4 @@
-export const APP_NAME = "PasalGuff";
+export const APP_NAME = "KamKuro";
 export const TERMS_VERSION = "1.0";
 
 export const VENDOR_TERMS = [
@@ -39,7 +39,7 @@ export const VENDOR_TERMS = [
     id: "platform-role",
     title: "Platform Role and Account Action",
     paragraphs: [
-      "PasalGuff helps vendors and users connect. We are not responsible for private business agreements, payments, deliveries, product quality issues, refunds, or disputes between users.",
+      "KamKuro helps vendors and users connect. We are not responsible for private business agreements, payments, deliveries, product quality issues, refunds, or disputes between users.",
       "If you break these rules or applicable laws of Nepal, we may remove your posts, restrict your account, or permanently ban your account without prior warning.",
     ],
   },

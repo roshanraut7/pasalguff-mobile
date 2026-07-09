@@ -3,13 +3,12 @@ import { useSession } from "@/api/better-auth-client";
 import {
   ActivityIndicator,
   Image,
-  ImageSourcePropType,
   Pressable,
   ScrollView,
   StatusBar,
   Text,
   View,
-  Platform
+  Platform,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -50,7 +49,6 @@ type PickedProfileImage = {
   mimeType?: string | null;
 };
 
-
 const STEPS: StepKey[] = [
   "welcome",
   "profilePhoto",
@@ -61,19 +59,58 @@ const STEPS: StepKey[] = [
 ];
 
 const BUSINESS_TYPES = [
-  "Mobile Seller",
-  "Laptop / Computer Seller",
-  "CCTV / Security Vendor",
-  "Electronics Repair Shop",
-  "Home Appliance Seller",
-  "Spare Parts Supplier",
+  // Consumer Electronics & Retail
+  "Smartphone Retailer",
+  "Mobile Phone Dealer",
+  "Laptop & Computer Dealer",
+  "Home Appliance Dealer",
+  "Audio & Video Equipment Seller",
+  "Gaming & Accessories Dealer",
+  "Wearables & Fitness Gadgets Retailer",
+  "Camera & Photography Equipment Dealer",
+  "Car Electronics & Audio Installer",
+
+  // B2B, Supply Chain & Distribution
   "Wholesaler",
-  "Retailer",
   "Distributor",
   "Importer",
-  "Service Provider",
+  "Mobile & Laptop Spare Parts Supplier",
+  "Electronics Accessories Supplier",
+
+  // Smart Tech, Security & Power
+  "CCTV & Security Systems Vendor",
+  "Smart Home & IoT Devices",
+  "Solar & Power Backup Solutions",
+  "EV Charging Stations & Accessories Dealer",
+  "Drone & UAV Seller",
+
+  // Enterprise & Office IT
+  "IT Infrastructure & Networking Vendor",
+  "POS & Billing Systems Provider",
+  "Office Automation & Equipment Dealer",
+  "Software & License Reseller",
+
+  // Services & Circular Economy
+  "Electronics Repair Shop",
+  "Service Center (Repair & Installation)",
+  "Refurbished & Second-Hand Electronics Dealer",
+  "E-Waste Recycling & Scrap Buyer",
+  "3D Printing Equipment & Materials Supplier",
+
+  // Training & Education
+  "Instructor",
+  "Trainer",
+  "Trainee",
+
   "Other",
 ];
+
+// Profession types that only need Professional Email + Phone
+// (no business name / address required)
+const TRAINING_PROFESSIONS = ["Instructor", "Trainer", "Trainee"];
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^\+?[0-9\s-]{7,15}$/;
 
 export default function OnboardingScreen() {
   const { colors, isDark } = useAppTheme();
@@ -82,7 +119,6 @@ export default function OnboardingScreen() {
   const [profileImage, setProfileImage] = useState<PickedProfileImage | null>(
     null,
   );
- 
 
   const [selectedBusinessType, setSelectedBusinessType] = useState("");
   const [customBusinessType, setCustomBusinessType] = useState("");
@@ -92,6 +128,8 @@ export default function OnboardingScreen() {
   );
   const [businessName, setBusinessName] = useState("");
   const [address, setAddress] = useState("");
+  const [businessEmail, setBusinessEmail] = useState("");
+  const [businessPhoneNo, setBusinessPhoneNo] = useState("");
   const [serverError, setServerError] = useState("");
   const { refetch: refetchSession } = useSession();
 
@@ -127,6 +165,18 @@ export default function OnboardingScreen() {
     selectedBusinessType === "Other"
       ? customBusinessType.trim()
       : selectedBusinessType.trim();
+
+  const isTrainingProfession = TRAINING_PROFESSIONS.includes(
+    selectedBusinessType,
+  );
+
+  const isBusinessProfileValid = isTrainingProfession
+    ? EMAIL_REGEX.test(businessEmail.trim()) &&
+      PHONE_REGEX.test(businessPhoneNo.trim())
+    : businessName.trim().length > 0 &&
+      address.trim().length > 0 &&
+      EMAIL_REGEX.test(businessEmail.trim()) &&
+      PHONE_REGEX.test(businessPhoneNo.trim());
 
   const toggleCategory = (categoryId: string) => {
     setSelectedCategoryIds((prev) => {
@@ -171,6 +221,15 @@ export default function OnboardingScreen() {
         await savePartialOnboarding();
       }
 
+      if (currentStep === "businessProfile" && !isBusinessProfileValid) {
+        setServerError(
+          isTrainingProfession
+            ? "Please fill in your professional email and professional phone number."
+            : "Please fill in business name, address, business email, and business phone number.",
+        );
+        return;
+      }
+
       if (!isLastStep) {
         setStepIndex((prev) => prev + 1);
         return;
@@ -209,30 +268,32 @@ export default function OnboardingScreen() {
     try {
       let finalProfileImageUrl: string | undefined;
 
-    if (profileImage?.uri) {
-  const uploaded = await uploadProfileAvatar({
-    uri: profileImage.uri,
-    fileName: profileImage.fileName,
-    mimeType: profileImage.mimeType,
-  }).unwrap();
+      if (profileImage?.uri) {
+        const uploaded = await uploadProfileAvatar({
+          uri: profileImage.uri,
+          fileName: profileImage.fileName,
+          mimeType: profileImage.mimeType,
+        }).unwrap();
 
-  finalProfileImageUrl = uploaded.url;
-}
-
-      console.log("FINAL PROFILE IMAGE URL:", finalProfileImageUrl);
+        finalProfileImageUrl = uploaded.url;
+      }
 
       await updateMyOnboarding({
         ...(finalProfileImageUrl ? { image: finalProfileImageUrl } : {}),
         businessType: finalBusinessType || null,
-        businessName: businessName.trim() || null,
-        address: address.trim() || null,
+        businessName: isTrainingProfession
+          ? null
+          : businessName.trim() || null,
+        address: isTrainingProfession ? null : address.trim() || null,
+        businessEmail: businessEmail.trim() || null,
+        businessPhoneNo: businessPhoneNo.trim() || null,
         categoryIds: selectedCategoryIds,
         communityIds: selectedCommunityIds,
         onboardingCompleted: true,
       }).unwrap();
 
       await refetchMyOnboarding();
-          await refetchSession();  
+      await refetchSession();
 
       router.replace("/(tabs)");
     } catch (error) {
@@ -244,17 +305,10 @@ export default function OnboardingScreen() {
     }
   };
 
-  return (
-   <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-  <StatusBar
-    barStyle={isDark ? "light-content" : "dark-content"}
-    backgroundColor={colors.background}
-  />
+  const showSkip =
+    currentStep !== "welcome" && currentStep !== "businessProfile";
 
-  <KeyboardAvoidingView
-    style={{ flex: 1 }}
-    behavior={Platform.OS === "ios" ? "padding" : "height"}
-  >
+  const content = (
     <View
       style={{
         flex: 1,
@@ -286,12 +340,14 @@ export default function OnboardingScreen() {
             opacity: stepIndex === 0 ? 0 : isProcessing ? 0.5 : 1,
           }}
         >
-          <Ionicons
-            name="chevron-back"
-            size={20}
-            color={colors.foreground}
-          />
+          <Ionicons name="chevron-back" size={20} color={colors.foreground} />
         </Pressable>
+
+        <Image
+          source={require("@/assets/images/kamkuro.png")}
+          style={{ width: 44, height: 44 }}
+          resizeMode="contain"
+        />
 
         <Text
           style={{
@@ -302,27 +358,27 @@ export default function OnboardingScreen() {
         >
           Step {stepIndex + 1} of {STEPS.length}
         </Text>
-
-        <View style={{ width: 42 }} />
       </View>
 
       <View
         style={{
-          height: 8,
-          borderRadius: 999,
-          backgroundColor: colors.surface,
-          overflow: "hidden",
+          flexDirection: "row",
+          gap: 6,
           marginBottom: 24,
         }}
       >
-        <View
-          style={{
-            width: `${progressPercent}%`,
-            height: "100%",
-            backgroundColor: colors.accent,
-            borderRadius: 999,
-          }}
-        />
+        {STEPS.map((step, idx) => (
+          <View
+            key={step}
+            style={{
+              flex: 1,
+              height: 6,
+              borderRadius: 999,
+              backgroundColor:
+                idx <= stepIndex ? colors.accent : colors.surface,
+            }}
+          />
+        ))}
       </View>
 
       <ScrollView
@@ -375,10 +431,15 @@ export default function OnboardingScreen() {
         {currentStep === "businessProfile" ? (
           <BusinessProfileStep
             colors={colors}
+            isTrainingProfession={isTrainingProfession}
             businessName={businessName}
             setBusinessName={setBusinessName}
             address={address}
             setAddress={setAddress}
+            businessEmail={businessEmail}
+            setBusinessEmail={setBusinessEmail}
+            businessPhoneNo={businessPhoneNo}
+            setBusinessPhoneNo={setBusinessPhoneNo}
           />
         ) : null}
 
@@ -396,7 +457,7 @@ export default function OnboardingScreen() {
         ) : null}
       </ScrollView>
 
-      <View style={{ gap: 12 }}>
+      <View style={{ gap: 12, paddingTop: 12 }}>
         <Button
           onPress={goNext}
           isDisabled={isProcessing}
@@ -415,7 +476,7 @@ export default function OnboardingScreen() {
           </Button.Label>
         </Button>
 
-        {currentStep !== "welcome" ? (
+        {showSkip ? (
           <Button
             onPress={skipStep}
             isDisabled={isProcessing}
@@ -428,26 +489,43 @@ export default function OnboardingScreen() {
         ) : null}
       </View>
     </View>
-  </KeyboardAvoidingView>
-</SafeAreaView>
+  );
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar
+        barStyle={isDark ? "light-content" : "dark-content"}
+        backgroundColor={colors.background}
+      />
+
+      {Platform.OS === "ios" ? (
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+          {content}
+        </KeyboardAvoidingView>
+      ) : (
+        content
+      )}
+    </SafeAreaView>
   );
 }
 
 function WelcomeStep({ colors }: { colors: any }) {
   return (
-    <View style={{ flex: 1, justifyContent: "center", paddingVertical: 32 }}>
+    <View style={{ flex: 1, justifyContent: "center", paddingVertical: 20 }}>
       <View
         style={{
-          width: 82,
-          height: 82,
-          borderRadius: 28,
-          backgroundColor: colors.accent,
+          width: 120,
+          height: 120,
           alignItems: "center",
           justifyContent: "center",
           marginBottom: 24,
         }}
       >
-        <Ionicons name="storefront-outline" size={38} color="#FFFFFF" />
+        <Image
+          source={require("@/assets/images/kamkuro.png")}
+          style={{ width: 120, height: 120 }}
+          resizeMode="contain"
+        />
       </View>
 
       <Text
@@ -458,7 +536,7 @@ function WelcomeStep({ colors }: { colors: any }) {
           fontFamily: "Poppins_700Bold",
         }}
       >
-        Welcome to PasalGuff
+        Welcome to KamKuro
       </Text>
 
       <Text
@@ -771,7 +849,7 @@ function VendorTypeStep({
           fontFamily: "Poppins_700Bold",
         }}
       >
-        What type of vendor are you?
+        Choose your profession
       </Text>
 
       <Text
@@ -784,8 +862,8 @@ function VendorTypeStep({
           marginBottom: 22,
         }}
       >
-        Choose your vendor type. If it is not listed, select Other and type your
-        own business type.
+        Choose your vendor type. If it is not listed, select Other and type
+        your own business type.
       </Text>
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -922,7 +1000,8 @@ function InterestsStep({
               marginTop: 4,
             }}
           >
-            Seed your backend categories first, then this list will appear here.
+            Seed your backend categories first, then this list will appear
+            here.
           </Text>
         </View>
       ) : null}
@@ -1140,11 +1219,7 @@ function SuggestedCommunitiesStep({
                 </View>
 
                 {selected ? (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={22}
-                    color="#FFFFFF"
-                  />
+                  <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
                 ) : (
                   <Ionicons
                     name="add-circle-outline"
@@ -1176,17 +1251,34 @@ function SuggestedCommunitiesStep({
 
 function BusinessProfileStep({
   colors,
+  isTrainingProfession,
   businessName,
   setBusinessName,
   address,
   setAddress,
+  businessEmail,
+  setBusinessEmail,
+  businessPhoneNo,
+  setBusinessPhoneNo,
 }: {
   colors: any;
+  isTrainingProfession: boolean;
   businessName: string;
   setBusinessName: (value: string) => void;
   address: string;
   setAddress: (value: string) => void;
+  businessEmail: string;
+  setBusinessEmail: (value: string) => void;
+  businessPhoneNo: string;
+  setBusinessPhoneNo: (value: string) => void;
 }) {
+  const emailLabel = isTrainingProfession
+    ? "Professional Email"
+    : "Business Email";
+  const phoneLabel = isTrainingProfession
+    ? "Professional Phone"
+    : "Business Phone";
+
   return (
     <View style={{ paddingVertical: 10 }}>
       <Text
@@ -1197,7 +1289,9 @@ function BusinessProfileStep({
           fontFamily: "Poppins_700Bold",
         }}
       >
-        Complete your business profile
+        {isTrainingProfession
+          ? "Complete your contact details"
+          : "Complete your business profile"}
       </Text>
 
       <Text
@@ -1210,28 +1304,58 @@ function BusinessProfileStep({
           marginBottom: 22,
         }}
       >
-        This is optional. You can add PAN number, registration number, cover
-        image and other details later from Edit Profile.
+        {isTrainingProfession
+          ? "This helps other vendors reach you directly for training or consultation."
+          : "These details are required so other vendors can trust and reach you. PAN, registration number and cover image can be added later from Edit Profile."}
       </Text>
 
       <View style={{ gap: 16 }}>
+        {!isTrainingProfession ? (
+          <>
+            <TextField>
+              <Label>Business Name *</Label>
+              <Input
+                value={businessName}
+                onChangeText={setBusinessName}
+                placeholder="Example: Nikhil Electronics"
+                className="border-field-border bg-field-background"
+              />
+              <FieldError />
+            </TextField>
+
+            <TextField>
+              <Label>Address *</Label>
+              <Input
+                value={address}
+                onChangeText={setAddress}
+                placeholder="Example: Kathmandu, Nepal"
+                className="border-field-border bg-field-background"
+              />
+              <FieldError />
+            </TextField>
+          </>
+        ) : null}
+
         <TextField>
-          <Label>Business Name</Label>
+          <Label>{emailLabel} *</Label>
           <Input
-            value={businessName}
-            onChangeText={setBusinessName}
-            placeholder="Example: Nikhil Electronics"
+            value={businessEmail}
+            onChangeText={setBusinessEmail}
+            placeholder="Example: contact@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
             className="border-field-border bg-field-background"
           />
           <FieldError />
         </TextField>
 
         <TextField>
-          <Label>Address</Label>
+          <Label>{phoneLabel} *</Label>
           <Input
-            value={address}
-            onChangeText={setAddress}
-            placeholder="Example: Kathmandu, Nepal"
+            value={businessPhoneNo}
+            onChangeText={setBusinessPhoneNo}
+            placeholder="Example: 9800000000"
+            keyboardType="phone-pad"
             className="border-field-border bg-field-background"
           />
           <FieldError />
@@ -1275,8 +1399,8 @@ function BusinessProfileStep({
                 marginTop: 3,
               }}
             >
-              A complete business profile helps other vendors recognise and
-              trust you in communities and chat.
+              A complete profile helps other vendors recognise and trust you
+              in communities and chat.
             </Text>
           </View>
         </View>

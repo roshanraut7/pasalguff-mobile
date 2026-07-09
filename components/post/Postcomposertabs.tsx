@@ -68,42 +68,20 @@ export function TitleField({
   );
 }
 
-// ─── Text Tab ────────────────────────────────────────────────────────────────
+// ─── Post Tab (merged Text + Images) ─────────────────────────────────────────
+// CHANGED: this replaces the old separate TextTab and MediaTab. Title,
+// description, and image picker all live together under the single "Post"
+// tab now, matching how most social apps let you write + attach photos in
+// one composer instead of forcing a tab switch.
 
-export function TextTab(props: SharedTabProps) {
-  const { styles, errors, editor, onChangeHtml } = props;
-  return (
-    <View style={styles.sectionCard}>
-      <TitleField {...props} />
-
-      <View style={styles.cardDivider} />
-
-      <View style={styles.descriptionBlock}>
-        <AppRichTextEditor
-          editor={editor}
-          onChangeHtml={onChangeHtml}
-          label="Description"
-          editorHeight={300}
-          showToolbar
-        />
-        {errors.content ? (
-          <Text style={styles.errorText}>{errors.content}</Text>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
-// ─── Media Tab ───────────────────────────────────────────────────────────────
-
-type MediaTabProps = SharedTabProps & {
+type ComposerPostTabProps = SharedTabProps & {
   attachments: ComposerAttachment[];
   onPickMedia: () => void;
   onReplaceAttachment: (id: string) => void;
   onRemoveAttachment: (id: string) => void;
 };
 
-export function MediaTab(props: MediaTabProps) {
+export function ComposerPostTab(props: ComposerPostTabProps) {
   const {
     p,
     styles,
@@ -127,7 +105,7 @@ export function MediaTab(props: MediaTabProps) {
           editor={editor}
           onChangeHtml={onChangeHtml}
           label="Description"
-          editorHeight={220}
+          editorHeight={260}
           showToolbar
         />
         {errors.content ? (

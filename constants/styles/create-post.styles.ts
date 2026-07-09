@@ -324,6 +324,7 @@ export function createCreatePostStyles(p: CreatePostPalette) {
   borderColor: p.border,      // ← moved from titleWrap
 },
 
+
     cardDivider: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: p.divider,
@@ -354,6 +355,12 @@ export function createCreatePostStyles(p: CreatePostPalette) {
       borderColor: p.border,
       backgroundColor: p.input,
     },
+    sectionLabel: {
+  fontSize: 13,
+  fontWeight: "700",
+  color: p.muted,
+  marginBottom: 6,
+},
 
     linkLeadingIcon: {
       width: 36,

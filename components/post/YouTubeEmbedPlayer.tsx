@@ -29,11 +29,6 @@ type YouTubeEmbedPlayerProps = {
   playbackDisabled?: boolean;
 };
 
-/**
- * These values match your app.json:
- * android.package = "com.pasalguff.app"
- * ios.bundleIdentifier = "com.pasalguff.app"
- */
 const ANDROID_APP_ID = "com.kamkuro.app";
 const IOS_APP_ID = "com.kamkuro.app";
 

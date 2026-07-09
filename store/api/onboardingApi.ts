@@ -10,7 +10,6 @@ export type OnboardingCategory = {
 export type UserInterest = {
   category: OnboardingCategory;
 };
-
 export type OnboardingProfile = {
   id: string;
   email: string;
@@ -24,6 +23,8 @@ export type OnboardingProfile = {
   panNo?: string | null;
   registrationNo?: string | null;
   address?: string | null;
+  businessEmail?: string | null;
+  businessPhoneNo?: string | null;
   onboardingCompleted: boolean;
   role: "USER" | "ADMIN" | "SUPER_ADMIN";
   interests?: UserInterest[];
@@ -37,6 +38,8 @@ export type UpdateOnboardingPayload = {
   panNo?: string | null;
   registrationNo?: string | null;
   address?: string | null;
+  businessEmail?: string | null;
+  businessPhoneNo?: string | null;
   categoryIds?: string[];
   communityIds?: string[];
   onboardingCompleted?: boolean;

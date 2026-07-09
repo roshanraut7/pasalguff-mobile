@@ -18,7 +18,7 @@ type AppRichTextEditorProps = {
   placeholder?: string;
   editorHeight?: number;
   showToolbar?: boolean;
-  plain?:boolean
+  plain?: boolean;
 };
 
 function HtmlWatcher({
@@ -49,7 +49,7 @@ export function AppRichTextEditor({
   helperText,
   editorHeight = 260,
   showToolbar = false,
-  plain= false
+  plain = false,
 }: AppRichTextEditorProps) {
   const { colors } = useAppTheme();
 
@@ -67,9 +67,9 @@ export function AppRichTextEditor({
         styles.container,
         {
           backgroundColor: palette.card,
-      borderColor: plain ? "transparent" : palette.border,
-      borderWidth: plain ? 0 : 1,
-      borderRadius: plain ? 0 : 24,
+          borderColor: plain ? "transparent" : palette.border,
+          borderWidth: plain ? 0 : 1,
+          borderRadius: plain ? 0 : 24,
         },
       ]}
     >
@@ -95,6 +95,12 @@ export function AppRichTextEditor({
         </View>
       ) : null}
 
+      {/*
+        IMPORTANT:
+        The toolbar sits in its own fixed-height row, ABOVE the editor box.
+        It never resizes and never eats into the editor's height, so bold/
+        italic/etc. are always visible without shrinking the typing area.
+      */}
       {showToolbar ? (
         <View
           style={[
@@ -109,11 +115,20 @@ export function AppRichTextEditor({
         </View>
       ) : null}
 
+      {/*
+        IMPORTANT:
+        editorArea is now a FIXED height box (editorHeight), with
+        overflow: "hidden" on the RN side. The WebView itself scrolls
+        internally (see injectedCss below: overflow-y: auto). This means
+        only the description box scrolls when its content is long — the
+        outer page ScrollView (title, community bar, tags, etc.) is never
+        dragged along with it.
+      */}
       <View
         style={[
           styles.editorArea,
           {
-            minHeight: editorHeight,
+            height: editorHeight,
             backgroundColor: palette.card,
           },
         ]}
@@ -123,7 +138,7 @@ export function AppRichTextEditor({
           style={[
             styles.richText,
             {
-              minHeight: editorHeight,
+              height: editorHeight,
             },
           ]}
         />
@@ -183,12 +198,15 @@ export function useCreateEditor() {
     avoidIosKeyboard: true,
 
     /**
-     * IMPORTANT:
-     * Keep this true.
-     * This allows the editor to grow when long text is pasted.
-     * Then the parent ScrollView in CreatePostScreen will scroll normally.
+     * CHANGED (was true):
+     * The editor box now has a FIXED height (see editorHeight prop on
+     * AppRichTextEditor) and scrolls its own content internally instead
+     * of growing to fit it. This is what makes "only the description box
+     * scrolls" true — with dynamicHeight true, the WebView grew taller
+     * with every line typed and dragged the whole page's ScrollView with
+     * it, so there was no independent scroll region for the description.
      */
-    dynamicHeight: true,
+    dynamicHeight: false,
 
     editable: true,
     initialContent: "<p></p>",
@@ -221,34 +239,27 @@ export function useCreateEditor() {
         margin: 0 !important;
         padding: 0 !important;
         width: 100% !important;
-        min-height: 100% !important;
+        height: 100% !important;
 
         /*
-          IMPORTANT:
-          Do not make the WebView internally scroll.
-          The editor should grow, and React Native ScrollView should scroll the page.
+          CHANGED (was hidden):
+          The WebView now has a fixed height (set on the RN side), so the
+          page itself must scroll internally to reveal overflowing text.
+          This is the "description box is scrollable, not the whole
+          screen" behavior.
         */
-        overflow-y: hidden !important;
-      }
-
-      body {
-        min-height: 100% !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
       }
 
       .ProseMirror {
         background: ${palette.card} !important;
         color: ${palette.text} !important;
         caret-color: ${palette.text} !important;
-        padding: 0 !important;
+        padding: 12px !important;
         margin: 0 !important;
 
-        /*
-          IMPORTANT:
-          Do not use 100vh here.
-          100vh traps long content inside the editor WebView on Android.
-          260px gives an empty editor enough clickable height.
-        */
-        min-height: 260px !important;
+        min-height: 100% !important;
 
         outline: none !important;
         overflow: visible !important;
@@ -336,10 +347,11 @@ const styles = StyleSheet.create({
     padding: 0,
 
     /**
-     * IMPORTANT:
-     * visible allows the dynamic editor height to expand inside the page ScrollView.
+     * CHANGED (was "visible"):
+     * The box is now a fixed-height clipped region — the WebView inside
+     * handles its own internal scroll (see injectedCss overflow-y: auto).
      */
-    overflow: "visible",
+    overflow: "hidden",
   },
 
   richText: {

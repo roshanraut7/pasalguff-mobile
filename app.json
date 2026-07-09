@@ -71,8 +71,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Pasalguff to access your photos so you can update profile, cover images, and send media in chat.",
-          "cameraPermission": "Allow Pasalguff to use your camera so you can take profile photos, cover photos, and chat images."
+          "photosPermission": "Allow KamKuro to access your photos so you can update profile, cover images, and send media in chat.",
+          "cameraPermission": "Allow KamKuro to use your camera so you can take profile photos, cover photos, and chat images."
         }
       ],
       "expo-video",
@@ -80,7 +80,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow Pasalguff to access your microphone so you can send voice messages.",
+          "microphonePermission": "Allow KamKuro to access your microphone so you can send voice messages.",
           "recordAudioAndroid": true,
           "enableBackgroundPlayback": false,
           "enableBackgroundRecording": false

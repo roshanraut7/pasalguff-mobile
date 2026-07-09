@@ -609,94 +609,29 @@ export function usePostInteractions<TPost extends CommunityPost>({
   [sharePost, setPosts, updateCommentPost],
 );
 
-  const handleCreateComment = useCallback(
-    async (replyingTo?: FeedComment | null) => {
-      if (!activeCommentPost || !sessionUser) return;
+const handleCreateComment = useCallback(
+  async (content: string, replyingTo?: FeedComment | null) => {
+    if (!activeCommentPost || !sessionUser) return;
 
-      const content = commentInput.trim();
-      if (!content) return;
+    const trimmedContent = content.trim();
+    if (!trimmedContent) return;
 
-      const tempId = `local-${activeCommentPost.id}-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`;
+    const tempId = `local-${activeCommentPost.id}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
 
-      const currentAuthor = getSessionUserAsCommentAuthor(sessionUser);
+    const currentAuthor = getSessionUserAsCommentAuthor(sessionUser);
 
-      setCommentInput("");
+    if (replyingTo?.id) {
+      const rootCommentId = replyingTo.parentId ?? replyingTo.id;
+      const replyToCommentId = replyingTo.id;
 
-      if (replyingTo?.id) {
-        const rootCommentId = replyingTo.parentId ?? replyingTo.id;
-        const replyToCommentId = replyingTo.id;
-
-        const tempReply: FeedComment = {
-          id: tempId,
-          postId: activeCommentPost.id,
-          authorId: currentAuthor.id,
-          parentId: rootCommentId,
-          content,
-          createdAt: new Date().toISOString(),
-          author: currentAuthor,
-          replies: [],
-          replyCount: 0,
-          likeCount: 0,
-          liked: false,
-          isLiked: false,
-          isLikedByMe: false,
-        } as FeedComment;
-
-        setComments((prev) => addReplyToComment(prev, rootCommentId, tempReply));
-        updatePostCommentCount(activeCommentPost.id, 1);
-
-        try {
-          const payload = await createCommentReply({
-            communityId: activeCommentPost.communityId,
-            postId: activeCommentPost.id,
-            commentId: rootCommentId,
-            body: {
-              content,
-              replyToCommentId,
-            },
-          }).unwrap();
-
-          const createdReply = normalizeCreatedComment(payload, tempReply);
-
-          setComments((prev) =>
-            replaceReplyInComment(prev, rootCommentId, tempId, createdReply),
-          );
-
-          setTimeout(() => {
-            void refetchComments();
-          }, 250);
-        } catch (error) {
-          console.log("Create reply failed:", error);
-
-          setComments((prev) =>
-            prev.map((comment) =>
-              comment.id === rootCommentId
-                ? {
-                    ...comment,
-                    replies: (comment.replies ?? []).filter(
-                      (reply) => reply.id !== tempId,
-                    ),
-                    replyCount: Math.max(0, (comment.replyCount ?? 1) - 1),
-                  }
-                : comment,
-            ),
-          );
-
-          updatePostCommentCount(activeCommentPost.id, -1);
-          setCommentInput(content);
-        }
-
-        return;
-      }
-
-      const tempComment: FeedComment = {
+      const tempReply: FeedComment = {
         id: tempId,
         postId: activeCommentPost.id,
         authorId: currentAuthor.id,
-        parentId: null,
-        content,
+        parentId: rootCommentId,
+        content: trimmedContent,
         createdAt: new Date().toISOString(),
         author: currentAuthor,
         replies: [],
@@ -707,44 +642,107 @@ export function usePostInteractions<TPost extends CommunityPost>({
         isLikedByMe: false,
       } as FeedComment;
 
-      setComments((prev) => mergeCommentTrees([tempComment], prev));
+      setComments((prev) => addReplyToComment(prev, rootCommentId, tempReply));
       updatePostCommentCount(activeCommentPost.id, 1);
 
       try {
-        const payload = await createPostComment({
+        const payload = await createCommentReply({
           communityId: activeCommentPost.communityId,
           postId: activeCommentPost.id,
+          commentId: rootCommentId,
           body: {
-            content,
+            content: trimmedContent,
+            replyToCommentId,
           },
         }).unwrap();
 
-        const createdComment = normalizeCreatedComment(payload, tempComment);
+        const createdReply = normalizeCreatedComment(payload, tempReply);
 
-        setComments((prev) => replaceRootComment(prev, tempId, createdComment));
+        setComments((prev) =>
+          replaceReplyInComment(prev, rootCommentId, tempId, createdReply),
+        );
 
         setTimeout(() => {
           void refetchComments();
         }, 250);
       } catch (error) {
-        console.log("Create comment failed:", error);
+        console.log("Create reply failed:", error);
 
-        setComments((prev) => prev.filter((item) => item.id !== tempId));
+        setComments((prev) =>
+          prev.map((comment) =>
+            comment.id === rootCommentId
+              ? {
+                  ...comment,
+                  replies: (comment.replies ?? []).filter(
+                    (reply) => reply.id !== tempId,
+                  ),
+                  replyCount: Math.max(0, (comment.replyCount ?? 1) - 1),
+                }
+              : comment,
+          ),
+        );
+
         updatePostCommentCount(activeCommentPost.id, -1);
-        setCommentInput(content);
+        // NOTE: no more setCommentInput(content) here — the modal
+        // now owns its own input text locally, so there's nothing
+        // to restore on this side anymore.
       }
-    },
-    [
-      activeCommentPost,
-      sessionUser,
-      commentInput,
-      createPostComment,
-      createCommentReply,
-      refetchComments,
-      updatePostCommentCount,
-    ],
-  );
 
+      return;
+    }
+
+    const tempComment: FeedComment = {
+      id: tempId,
+      postId: activeCommentPost.id,
+      authorId: currentAuthor.id,
+      parentId: null,
+      content: trimmedContent,
+      createdAt: new Date().toISOString(),
+      author: currentAuthor,
+      replies: [],
+      replyCount: 0,
+      likeCount: 0,
+      liked: false,
+      isLiked: false,
+      isLikedByMe: false,
+    } as FeedComment;
+
+    setComments((prev) => mergeCommentTrees([tempComment], prev));
+    updatePostCommentCount(activeCommentPost.id, 1);
+
+    try {
+      const payload = await createPostComment({
+        communityId: activeCommentPost.communityId,
+        postId: activeCommentPost.id,
+        body: {
+          content: trimmedContent,
+        },
+      }).unwrap();
+
+      const createdComment = normalizeCreatedComment(payload, tempComment);
+
+      setComments((prev) => replaceRootComment(prev, tempId, createdComment));
+
+      setTimeout(() => {
+        void refetchComments();
+      }, 250);
+    } catch (error) {
+      console.log("Create comment failed:", error);
+
+      setComments((prev) => prev.filter((item) => item.id !== tempId));
+      updatePostCommentCount(activeCommentPost.id, -1);
+      // Same here — no setCommentInput(content) needed anymore.
+    }
+  },
+  [
+    activeCommentPost,
+    sessionUser,
+    createPostComment,
+    createCommentReply,
+    refetchComments,
+    updatePostCommentCount,
+  ],
+);
   return {
     commentPost,
     activeCommentPost,

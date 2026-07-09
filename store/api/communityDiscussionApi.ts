@@ -439,6 +439,25 @@ export const communityDiscussionApi = baseApi.injectEndpoints({
       ...(sortBy ? { sortBy } : {}),
     },
   }),
+serializeQueryArgs: ({ queryArgs }) => {
+    const { search, sortBy } = queryArgs;
+    return { search, sortBy };
+  },
+
+  merge: (currentCache, newResponse, { arg }) => {
+    if (!arg.cursor) {
+      return newResponse;
+    }
+    const existingIds = new Set(currentCache.data.map((d) => d.id));
+    currentCache.data.push(
+      ...newResponse.data.filter((d) => !existingIds.has(d.id)),
+    );
+    currentCache.meta = newResponse.meta;
+  },
+
+  forceRefetch: ({ currentArg, previousArg }) =>
+    currentArg?.cursor !== previousArg?.cursor,
+
   providesTags: ["CommunityDiscussion"],
 }),
 

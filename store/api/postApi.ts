@@ -486,9 +486,27 @@ getHomeFeedPosts: builder.query<
     },
   }),
 
+  serializeQueryArgs: ({ queryArgs }) => {
+    const { feedType, search, tag, type, sortBy } = queryArgs;
+    return { feedType: feedType ?? "FOR_YOU", search, tag, type, sortBy };
+  },
+
+  merge: (currentCache, newResponse, { arg }) => {
+    if (!arg.cursor) {
+      return newResponse;
+    }
+    const existingIds = new Set(currentCache.data.map((post) => post.id));
+    currentCache.data.push(
+      ...newResponse.data.filter((post) => !existingIds.has(post.id)),
+    );
+    currentCache.meta = newResponse.meta;
+  },
+
+  forceRefetch: ({ currentArg, previousArg }) =>
+    currentArg?.cursor !== previousArg?.cursor,
+
   providesTags: (result, _error, arg) => {
     const feedType = arg.feedType ?? "FOR_YOU";
-
     return result
       ? [
           ...result.data.map((post) => ({

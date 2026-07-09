@@ -18,6 +18,10 @@ import {
   View,
 } from "react-native";
 import {
+  getPostPublicLink,
+  getPostShareMessage,
+} from "@/utils/post/post-share-utils";
+import {
   BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetFlatList,
@@ -70,13 +74,6 @@ function getInitials(name: string) {
   return `${parts[0]?.charAt(0) ?? ""}${parts[1]?.charAt(0) ?? ""}`.toUpperCase();
 }
 
-function getShareUrl(post: CommunityPost) {
-  return (post as any).shareUrl ?? `https://yourapp.com/p/${post.id}`;
-}
-
-function buildShareText(post: CommunityPost) {
-  return `Check this out: ${getShareUrl(post)}`;
-}
 
 type ShareAppConfig = {
   id: string;
@@ -176,7 +173,7 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
 
         try {
           if (app.id === "whatsapp") {
-            const text = buildShareText(post);
+           const text = getPostShareMessage(post);
             const url = `whatsapp://send?text=${encodeURIComponent(text)}`;
             const supported = await Linking.canOpenURL(url);
             if (supported) {
@@ -193,13 +190,13 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
           }
 
           if (app.id === "copy") {
-            await Clipboard.setStringAsync(getShareUrl(post));
+           await Clipboard.setStringAsync(getPostPublicLink(post));
             onLinkCopied?.();
             sheetRef.current?.dismiss();
             return;
           }
 
-          await Share.share({ message: buildShareText(post) });
+         await Clipboard.setStringAsync(getPostPublicLink(post));
           onShareExternal(post);
           sheetRef.current?.dismiss();
         } catch {

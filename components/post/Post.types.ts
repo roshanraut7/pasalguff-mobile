@@ -8,7 +8,10 @@ export type PostTag =
   | "EVENT"
   | "NEWS"
   | "HELP";
-export type PostTab = "text" | "media" | "link" | "poll";
+
+// CHANGED: "text" + "media" merged into a single "post" tab, and "discussion"
+// is now a tab instead of a floating button above the tabs.
+export type PostTab = "post" | "discussion" | "link" | "poll";
 
 export type CommunityPostMedia = {
   id?: string;

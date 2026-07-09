@@ -36,10 +36,30 @@ type CommentPostModalProps = {
   comments: FeedComment[];
   isLoading: boolean;
   isCreating: boolean;
+
+  /**
+   * ------------------------------------------------------------
+   * PERFORMANCE NOTE (why inputValue/onChangeInput usage changed):
+   *
+   * Previously this modal was a fully "controlled" text input —
+   * every keystroke called onChangeInput(value), which updated
+   * state living in the parent screen (HomeScreen). That caused
+   * the ENTIRE HomeScreen (post list, tabs, header animation) to
+   * re-render on every single character typed -> visible jitter.
+   *
+   * Now the modal keeps its own local `localInput` state for
+   * typing. `inputValue`/`onChangeInput` are only used to prime
+   * the field when it's first opened (or reset) — not on every
+   * keystroke. The final typed text is handed back to the parent
+   * only once, via `onSubmit(content, replyingTo)`, when the user
+   * actually sends the comment/reply.
+   * ------------------------------------------------------------
+   */
   inputValue: string;
   onChangeInput: (value: string) => void;
+
   onClose: () => void;
-  onSubmit: (replyingTo?: FeedComment | null) => void;
+  onSubmit: (content: string, replyingTo?: FeedComment | null) => void;
   onPressMedia?: (media: PostMedia[], startIndex: number) => void;
   onPressPostLike?: (post: CommunityPost) => void;
   onPressPostShare?: (post: CommunityPost) => void;
@@ -50,8 +70,7 @@ type CommentPostModalProps = {
   colors: Colors;
 };
 
-const MIN_INPUT_HEIGHT = 42;
-const MAX_INPUT_HEIGHT = 126;
+const FIXED_INPUT_HEIGHT = 42;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -279,7 +298,73 @@ function CommentPostModal({
 
   const [replyingTo, setReplyingTo] = useState<FeedComment | null>(null);
   const [expandedReplyIds, setExpandedReplyIds] = useState<Set<string>>(() => new Set());
-  const [textInputHeight, setTextInputHeight] = useState(MIN_INPUT_HEIGHT);
+  // const [textInputHeight, setTextInputHeight] = useState(MIN_INPUT_HEIGHT);
+
+  // ------------------------------------------------------------
+  // FIX: typing lives HERE, locally, instead of in the parent
+  // screen's state. This is the actual fix for the jitter/jump
+  // while typing — every keystroke now only re-renders THIS
+  // modal, never the HomeScreen behind it (its FlashList, tabs,
+  // header animation, etc. stay completely untouched).
+  //
+  // `inputValue` (prop) is only used to *seed* localInput when
+  // the modal opens for a post, or when the parent explicitly
+  // resets it (e.g. clears after a failed submit). It is NOT
+  // synced on every keystroke anymore.
+  // ------------------------------------------------------------
+  // const [localInput, setLocalInput] = useState(inputValue);
+  const inputTextRef = useRef("");
+  const [hasText, setHasText] = useState(false);
+  const lastSeededPostId = useRef<string | null>(null);
+
+ // ------------------------------------------------------------
+// Since the TextInput is now uncontrolled (no `value` prop),
+// we can't "push" new text into it via setState anymore.
+// Instead, when we need to seed/reset the box's starting text
+// (opening a different post, or parent restoring text after a
+// failed send), we bump `resetKey` — this forces the TextInput
+// to remount with a fresh `defaultValue`, which is the only way
+// to change an uncontrolled input's text from outside.
+// ------------------------------------------------------------
+const [resetKey, setResetKey] = useState(0);
+const seedValueRef = useRef(inputValue);
+
+useEffect(() => {
+  if (!visible) return;
+
+  const currentPostId = post?.id ?? null;
+
+  // Re-seed only when a *different* post is opened.
+  if (currentPostId !== lastSeededPostId.current) {
+    lastSeededPostId.current = currentPostId;
+
+    seedValueRef.current = inputValue;
+    inputTextRef.current = inputValue;
+    setHasText(inputValue.trim().length > 0);
+    setResetKey((k) => k + 1); // force remount with new defaultValue
+  }
+}, [visible, post?.id, inputValue]);
+
+// If parent clears/restores inputValue externally (e.g. after a
+// failed send where it restores the typed text), pick that up.
+const prevExternalValueRef = useRef(inputValue);
+useEffect(() => {
+  if (prevExternalValueRef.current !== inputValue) {
+    prevExternalValueRef.current = inputValue;
+
+    seedValueRef.current = inputValue;
+    inputTextRef.current = inputValue;
+    setHasText(inputValue.trim().length > 0);
+    setResetKey((k) => k + 1);
+  }
+}, [inputValue]);
+
+const handleChangeText = useCallback((text: string) => {
+  inputTextRef.current = text;
+
+  const nonEmpty = text.trim().length > 0;
+  setHasText((prev) => (prev !== nonEmpty ? nonEmpty : prev));
+}, []);
 
   // ── THE KEY FIX ──
   // With edgeToEdgeEnabled:true + softwareKeyboardLayoutMode:"pan" in app.json,
@@ -295,11 +380,11 @@ function CommentPostModal({
     }
   }, [visible]);
 
-  useEffect(() => {
-    if (!inputValue.trim()) {
-      setTextInputHeight(MIN_INPUT_HEIGHT);
-    }
-  }, [inputValue]);
+  // useEffect(() => {
+  //   if (!localInput.trim()) {
+  //     setTextInputHeight(MIN_INPUT_HEIGHT);
+  //   }
+  // }, [localInput]);
 
   const totalComments = post?.commentCount ?? comments.length;
 
@@ -318,21 +403,32 @@ function CommentPostModal({
     onRefreshComments?.();
   }, [onRefreshComments]);
 
-  const handleSubmitPress = useCallback(() => {
-    if (!canWriteComment) { onRequestFollow?.(); return; }
-    if (!inputValue.trim() || isCreating) return;
-    const selectedReply = replyingTo;
-    if (selectedReply?.id) {
-      setExpandedReplyIds((prev) => {
-        const next = new Set(prev);
-        next.add(selectedReply.id);
-        return next;
-      });
-    }
-    setReplyingTo(null);
-    setTextInputHeight(MIN_INPUT_HEIGHT);
-    onSubmit(selectedReply);
-  }, [canWriteComment, onRequestFollow, inputValue, isCreating, replyingTo, onSubmit]);
+ const handleSubmitPress = useCallback(() => {
+  if (!canWriteComment) { onRequestFollow?.(); return; }
+
+  const content = inputTextRef.current.trim();
+  if (!content || isCreating) return;
+
+  const selectedReply = replyingTo;
+
+  if (selectedReply?.id) {
+    setExpandedReplyIds((prev) => {
+      const next = new Set(prev);
+      next.add(selectedReply.id);
+      return next;
+    });
+  }
+
+  setReplyingTo(null);
+
+  // Clear the native box directly (no React round-trip needed)
+  inputRef.current?.clear();
+  inputTextRef.current = "";
+  setHasText(false);
+
+  onChangeInput("");
+  onSubmit(content, selectedReply);
+}, [canWriteComment, onRequestFollow, isCreating, replyingTo, onChangeInput, onSubmit]);
 
   const handleInputFocus = useCallback(() => {
     if (!canWriteComment) {
@@ -344,12 +440,18 @@ function CommentPostModal({
     setTimeout(() => listRef.current?.scrollToEnd?.({ animated: true }), 300);
   }, [canWriteComment, onRequestFollow]);
 
-  const handleInputContentSizeChange = useCallback((event: {
-    nativeEvent: { contentSize: { height: number } };
-  }) => {
-    const h = event.nativeEvent.contentSize.height;
-    setTextInputHeight(Math.min(MAX_INPUT_HEIGHT, Math.max(MIN_INPUT_HEIGHT, Math.ceil(h) + 12)));
-  }, []);
+// const handleInputContentSizeChange = useCallback((event: {
+//   nativeEvent: { contentSize: { height: number } };
+// }) => {
+//   const h = event.nativeEvent.contentSize.height;
+//   const nextHeight = Math.min(MAX_INPUT_HEIGHT, Math.max(MIN_INPUT_HEIGHT, Math.ceil(h) + 12));
+
+//   // Only grow the box, never shrink it while the user is actively typing.
+//   // Shrinking is handled separately (only when the field becomes empty).
+//   // This stops the "grow then snap back" flicker caused by predictive
+//   // keyboards (SwiftKey/Gboard) briefly reporting a smaller size mid-word.
+//   setTextInputHeight((prev) => Math.max(prev, nextHeight));
+// }, []);
 
   const handlePostCardCommentPress = useCallback(() => {
     if (!canWriteComment) { onRequestFollow?.(); return; }
@@ -360,7 +462,6 @@ function CommentPostModal({
     Keyboard.dismiss();
     setReplyingTo(null);
     setExpandedReplyIds(new Set());
-    setTextInputHeight(MIN_INPUT_HEIGHT);
     onClose();
   }, [onClose]);
 
@@ -494,13 +595,12 @@ function CommentPostModal({
           ) : null}
 
           <View style={styles.inputBar}>
-            <View style={[styles.inputWrapper, { height: textInputHeight }]}>
+          <View style={[styles.inputWrapper, { height: FIXED_INPUT_HEIGHT }]}>
               <BottomSheetTextInput
                 ref={inputRef as any}
-                value={inputValue}
-                onChangeText={onChangeInput}
+                defaultValue=""
+                onChangeText={handleChangeText}
                 onFocus={handleInputFocus}
-                onContentSizeChange={handleInputContentSizeChange}
                 placeholder={
                   !canWriteComment
                     ? "Follow community to comment..."
@@ -511,17 +611,17 @@ function CommentPostModal({
                 placeholderTextColor={colors.muted}
                 editable={!isCreating}
                 multiline
-                scrollEnabled={textInputHeight >= MAX_INPUT_HEIGHT - 2}
+                scrollEnabled={true}
                 textAlignVertical="top"
                 blurOnSubmit={false}
                 returnKeyType="default"
-                style={[styles.input, { height: textInputHeight }]}
+                style={[styles.input, { height: FIXED_INPUT_HEIGHT }]}
               />
             </View>
             <Pressable
               onPress={handleSubmitPress}
-              disabled={!inputValue.trim() || isCreating}
-              style={[styles.sendButton, !inputValue.trim() && styles.sendButtonDisabled]}
+              disabled={!hasText || isCreating}
+              style={[styles.sendButton, !hasText && styles.sendButtonDisabled]}
             >
               {isCreating ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
@@ -529,7 +629,7 @@ function CommentPostModal({
                 <Ionicons
                   name="send"
                   size={19}
-                  color={inputValue.trim() ? "#FFFFFF" : colors.muted}
+                  color={hasText ? "#FFFFFF" : colors.muted}
                 />
               )}
             </Pressable>
@@ -890,8 +990,6 @@ function createStyles(
 
     inputWrapper: {
       flex: 1,
-      minHeight: MIN_INPUT_HEIGHT,
-      maxHeight: MAX_INPUT_HEIGHT,
       borderRadius: 22,
       backgroundColor: colors.surfaceSecondary,
       justifyContent: "center",
@@ -899,9 +997,8 @@ function createStyles(
     },
 
     input: {
-      minHeight: MIN_INPUT_HEIGHT,
-      maxHeight: MAX_INPUT_HEIGHT,
-      paddingHorizontal: 14,
+
+      paddingHorizontal: 12,
       paddingTop: Platform.OS === "ios" ? 11 : 9,
       paddingBottom: Platform.OS === "ios" ? 11 : 9,
       color: colors.foreground,

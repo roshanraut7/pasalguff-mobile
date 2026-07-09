@@ -361,19 +361,21 @@ const handleScroll = useCallback(
   );
 
   const canCommentOnPost = useCallback(
-    (post: CommunityPost) => {
-      const normalizedPost = post as CommunityFollowState;
-      const visibility = String(
-        normalizedPost.community?.visibility ??
-          normalizedPost.communityVisibility ??
-          normalizedPost.visibility ??
-          "",
-      ).toUpperCase();
-      if (visibility === "PUBLIC") return true;
-      return isPostCommunityFollowed(post);
-    },
-    [isPostCommunityFollowed],
-  );
+  (post: CommunityPost) => {
+    const normalizedPost = post as CommunityFollowState;
+    const visibility = String(
+      normalizedPost.community?.visibility ??
+        normalizedPost.communityVisibility ??
+        normalizedPost.visibility ??
+        "",
+    ).toUpperCase();
+
+    if (visibility === "PUBLIC" || visibility === "RESTRICTED") return true;
+
+    return isPostCommunityFollowed(post);
+  },
+  [isPostCommunityFollowed],
+);
 
   const getPostVisibility = useCallback((post: CommunityPost) => {
     const normalizedPost = post as CommunityFollowState;
