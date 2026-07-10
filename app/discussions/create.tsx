@@ -2,6 +2,7 @@ import React, {
   useEffect,
   useMemo,
   useState,
+   useRef, 
 } from "react";
 import {
   Alert,
@@ -31,7 +32,9 @@ import {
   useScheduleLiveDiscussionMutation,
   useStartLiveDiscussionMutation,
 } from "@/store/api/communityDiscussionLiveApi";
-import { CommunityPickerModal } from "@/components/post/Postpickermodals";
+import {CommunityPickerSheet  } from "@/components/post/Postpickermodals";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
+
 
 type CommunityWithPurpose = {
   id: string;
@@ -138,7 +141,7 @@ export default function CreateDiscussionScreen() {
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
 
   const [communitySearch, setCommunitySearch] = useState("");
-  const [communityModalVisible, setCommunityModalVisible] = useState(false);
+ const communitySheetRef = useRef<BottomSheetModal>(null);
   const [selectedCommunityId, setSelectedCommunityId] = useState(
     paramCommunityId ?? "",
   );
@@ -461,8 +464,7 @@ export default function CreateDiscussionScreen() {
       );
       return;
     }
-
-    setCommunityModalVisible(true);
+communitySheetRef.current?.present();
   };
 
   const startDiscussion = async () => {
@@ -1221,18 +1223,20 @@ export default function CreateDiscussionScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <CommunityPickerModal
-        visible={communityModalVisible}
-        communities={filteredCommunities}
-        selectedId={selectedCommunityId}
-        searchValue={communitySearch}
-        onSearchChange={setCommunitySearch}
-        onSelect={setSelectedCommunityId}
-        onClose={() => {
-          setCommunityModalVisible(false);
-          setCommunitySearch("");
-        }}
-      />
+     <CommunityPickerSheet
+  ref={communitySheetRef}
+  communities={filteredCommunities}
+  selectedId={selectedCommunityId}
+  searchValue={communitySearch}
+  onSelect={(id) => {
+    setSelectedCommunityId(id);
+    communitySheetRef.current?.dismiss();
+  }}
+  onSearchChange={setCommunitySearch}
+  onClose={() => {
+    setCommunitySearch("");
+  }}
+/>
     </SafeAreaView>
   );
 }

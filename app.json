@@ -1,20 +1,24 @@
 {
   "expo": {
     "name": "kamkuro",
-    "slug": "pasalguff",
+    "slug": "kamkuro",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/kamkuro.png",
     "scheme": "kamkuro",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-     "ios": {
+    "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kamkuro.app",
       "buildNumber": "1",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["whatsapp", "fb-messenger", "tg"]
+        "LSApplicationQueriesSchemes": [
+          "whatsapp",
+          "fb-messenger",
+          "tg"
+        ]
       }
     },
     "android": {
@@ -95,15 +99,13 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "f046bc29-0ea1-4d7d-a66e-e6e5cc7a3c4a"
+        "projectId": "32e3e0f9-bc8c-49f2-907c-6db7de44e935"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "updates": {
-      "url": "https://u.expo.dev/f046bc29-0ea1-4d7d-a66e-e6e5cc7a3c4a"
-    },
-    "owner": "roshan_1"
+    "updates": {},
+    "owner": "kamkuro"
   }
 }
