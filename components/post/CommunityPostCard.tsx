@@ -367,6 +367,80 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
   );
 });
 
+// ------------------------------------------------------------
+// Renders the quoted/original post inside a "SHARE" type post.
+// Shows a placeholder if the original post is no longer available
+// (deleted/unpublished) instead of erroring or showing blank data.
+//
+// CHANGE 3 + 4:
+//  - Now accepts `onPressMedia` and wires it to the embed's Pressable
+//    so tapping the shared post's image opens the full-screen viewer,
+//    same as it does on a normal (non-shared) post.
+//  - Now uses the same `PostMediaCarousel` component the original post
+//    uses (instead of a single static <ExpoImage>), so a reposted
+//    multi-image post shows the same swipeable carousel + dots inline,
+//    matching how the original post itself would render.
+// ------------------------------------------------------------
+const SharedPostEmbed = memo(function SharedPostEmbed({
+  sharedPost,
+  styles,
+  colors,
+  onPressMedia,
+}: {
+  sharedPost: NonNullable<CommunityPost["sharedPost"]>;
+  styles: ReturnType<typeof createStyles>;
+  colors: AppColors;
+  onPressMedia?: (media: PostMedia[], startIndex: number) => void;
+}) {
+  if (sharedPost.status !== "PUBLISHED") {
+    return (
+      <View style={styles.embedCard}>
+        <Text style={styles.embedUnavailableText}>This post is no longer available.</Text>
+      </View>
+    );
+  }
+
+  const authorName = getAuthorName(sharedPost.author as CommunityPost["author"]);
+  const previewText = htmlToPlainText(sharedPost.content);
+  const sharedMedia = sharedPost.media ?? [];
+
+  return (
+    <View style={styles.embedCard}>
+      <View style={styles.embedHeader}>
+        <Avatar alt="" size="sm" variant="soft" color="accent">
+          {sharedPost.author?.image ? (
+            <Avatar.Image source={{ uri: toAbsoluteFileUrl(sharedPost.author.image) ?? undefined }} />
+          ) : null}
+          <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
+        </Avatar>
+        <View style={{ marginLeft: 8, flex: 1 }}>
+          <Text numberOfLines={1} style={styles.embedAuthorName}>
+            {authorName}
+          </Text>
+          {!!sharedPost.community?.name && (
+            <Text numberOfLines={1} style={styles.embedCommunityName}>
+              {sharedPost.community.name}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      {!!sharedPost.title && <Text style={styles.embedTitle}>{sharedPost.title}</Text>}
+      {!!previewText && (
+        <Text numberOfLines={4} style={styles.embedContent}>
+          {previewText}
+        </Text>
+      )}
+
+      {sharedMedia.length > 0 ? (
+        <View style={styles.embedMediaWrap}>
+          <PostMediaCarousel media={sharedMedia} onPressMedia={onPressMedia} styles={styles} />
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
 function CommunityPostCard({
   post,
   disableMediaPlayback = false,
@@ -401,6 +475,7 @@ function CommunityPostCard({
   const hasMedia = Boolean(post.media?.length);
   const tagLabel = getPostTagLabel(post.tag);
   const isOwnerOfCommunity = Boolean(post.community?.id && ownedCommunityIds?.has(post.community.id));
+  const isSharePost = post.type === "SHARE" && Boolean(post.sharedPost);
 
   const hasYouTubeEmbed =
     !hasMedia && post.linkType === "VIDEO" && post.linkProvider === "YOUTUBE" && Boolean(post.linkExternalId);
@@ -410,13 +485,6 @@ function CommunityPostCard({
   const [joinCommunity, { isLoading: isJoining }] = useJoinCommunityMutation();
   const [leaveCommunity, { isLoading: isLeaving }] = useLeaveCommunityMutation();
   const [isJoined, setIsJoined] = useState(false);
-
-  // FIX: the real react-native-render-html renderer runs its own layout
-  // pass on the JS thread. Mounting it for every visible card at once
-  // (first paint of the feed) is the main cause of the multi-second
-  // freeze in your logs. We show the cheap plain-text version first and
-  // upgrade to rich HTML once the current frame of interactions is free.
- 
 
   const liked = Boolean(post.isLikedByMe);
   const disliked = Boolean(post.isDislikedByMe);
@@ -695,6 +763,15 @@ function CommunityPostCard({
   </View>
 ) : null}
 
+      {isSharePost ? (
+        <View style={styles.tagWrap}>
+          <View style={styles.shareBadgeChip}>
+            <Ionicons name="repeat-outline" size={12} color={colors.accent} />
+            <Text style={styles.postTagText}>Shared to feed</Text>
+          </View>
+        </View>
+      ) : null}
+
       {!!tagLabel && (
         <View style={styles.tagWrap}>
           <View style={styles.postTagChip}>
@@ -731,6 +808,17 @@ function CommunityPostCard({
     )}
   </View>
 ) : null}
+
+      {/* CHANGE 3: onPressMedia is now passed down so tapping the shared
+          post's image opens the full-screen media viewer. */}
+      {isSharePost && post.sharedPost ? (
+        <SharedPostEmbed
+          sharedPost={post.sharedPost}
+          styles={styles}
+          colors={colors}
+          onPressMedia={onPressMedia}
+        />
+      ) : null}
 
       {hasYouTubeEmbed && post.linkExternalId ? (
         <YouTubeEmbedPlayer
@@ -970,6 +1058,18 @@ function createStyles(colors: AppColors) {
       flexDirection: "row",
     },
     postTagChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      alignSelf: "flex-start",
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    shareBadgeChip: {
       flexDirection: "row",
       alignItems: "center",
       gap: 5,
@@ -1498,6 +1598,68 @@ function createStyles(colors: AppColors) {
       color: colors.accent,
       fontSize: 11,
       fontFamily: "Poppins_600SemiBold",
+    },
+
+    // shared post embed card
+    embedCard: {
+      marginHorizontal: 12,
+      marginTop: 6,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceSecondary,
+      overflow: "hidden",
+      padding: 10,
+    },
+    embedHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    embedAuthorName: {
+      fontSize: 13,
+      color: colors.foreground,
+      fontFamily: "Poppins_600SemiBold",
+    },
+    embedCommunityName: {
+      fontSize: 11,
+      color: colors.muted,
+      fontFamily: "Poppins_400Regular",
+    },
+    embedTitle: {
+      marginTop: 6,
+      fontSize: 14,
+      color: colors.foreground,
+      fontFamily: "Poppins_700Bold",
+    },
+    embedContent: {
+      marginTop: 4,
+      fontSize: 13,
+      lineHeight: 19,
+      color: colors.foreground,
+      fontFamily: "Poppins_400Regular",
+    },
+    // CHANGE 4: wraps the reused PostMediaCarousel inside the embed card.
+    // The carousel itself is full-bleed (screen-width) by design, so this
+    // wrapper clips it to the embed card's rounded corners; adjust height
+    // here if the carousel looks oversized inside the smaller embed box.
+    embedMediaWrap: {
+      marginTop: 8,
+      marginHorizontal: -10, // cancel out embedCard's padding so media reaches the card edges
+      borderRadius: 0,
+      overflow: "hidden",
+    },
+    embedImage: {
+      marginTop: 8,
+      width: "100%",
+      height: 160,
+      borderRadius: 10,
+      backgroundColor: colors.surface,
+    },
+    embedUnavailableText: {
+      fontSize: 13,
+      color: colors.muted,
+      fontFamily: "Poppins_400Regular",
+      fontStyle: "italic",
     },
   });
 }

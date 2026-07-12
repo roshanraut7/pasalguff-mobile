@@ -69,6 +69,8 @@ const BUSINESS_TYPES = [
   "Wearables & Fitness Gadgets Retailer",
   "Camera & Photography Equipment Dealer",
   "Car Electronics & Audio Installer",
+  "Ev FourWheelers",
+    "Ev TwoWheelers",
 
   // B2B, Supply Chain & Distribution
   "Wholesaler",
@@ -76,7 +78,8 @@ const BUSINESS_TYPES = [
   "Importer",
   "Mobile & Laptop Spare Parts Supplier",
   "Electronics Accessories Supplier",
-
+  "Repair Tools & Dealer",
+  "Parts & Accessories",
   // Smart Tech, Security & Power
   "CCTV & Security Systems Vendor",
   "Smart Home & IoT Devices",

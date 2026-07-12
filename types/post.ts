@@ -2,7 +2,7 @@
    BASIC TYPES
    ========================================================= */
 
-export type CommunityPostType = "TEXT" | "MEDIA" | "LINK" |"POLL";
+export type CommunityPostType = "TEXT" | "MEDIA" | "LINK" | "POLL" | "SHARE";
 
 export type PostVisibility =
   | "PUBLIC"
@@ -46,6 +46,26 @@ export type AdminPostSortBy =
 
 export type FeedSortBy = "newest" | "oldest";
 export type HomeFeedType ="FOR_YOU" | "COMMUNITY";
+export type SharedPostPreview = {
+  id: string;
+  communityId: string;
+  authorId: string;
+  type: string;
+  title: string | null;
+  content: string | null;
+  status: string;
+  linkUrl: string | null;
+  linkType: string | null;
+  linkProvider: string | null;
+  linkThumbnailUrl: string | null;
+  createdAt: string;
+  publishedAt: string | null;
+  community: { id: string; name: string; slug: string; avatarImage: string | null; visibility?: string } | null;
+  author: PostAuthor; 
+  media: PostMedia[];
+  likeCount: number;
+  commentCount: number;
+};
 
 /**
  * Optional aliases.
@@ -196,6 +216,8 @@ approvalRate: number | null;
   
 
   poll: PostPoll | null;
+   sharedPostId?: string | null;          // <-- ADD THIS
+  sharedPost?: SharedPostPreview | null; 
 
   likeCount: number;
   commentCount: number;
@@ -318,7 +340,7 @@ export type CreateCommunityPostPayload = {
   media?: CreatePostMediaPayload[];
   poll?: CreatePostPollPayload;
 };
-export type ShareType = "FRIENDS" | "EXTERNAL";
+export type ShareType = "FRIENDS" | "FOLLOWING" | "OTHER" | "FEED";
 export type UpdateCommunityPostPayload = {
   title?: string | null;
   content?: string | null;
@@ -351,6 +373,18 @@ export type SharePostPayload = {
 export type VotePostPollPayload = {
   optionId: string;
 };
+export type SharePostToFeedPayload = {
+  targetCommunityId: string;
+  content?: string;
+  visibility?: PostVisibility;
+};
+
+export type SharePostToFeedArgs = {
+  postId: string;
+  body: SharePostToFeedPayload;
+};
+
+export type SharePostToFeedResponse = CommunityPost;
 
 /* =========================================================
    QUERY ARG TYPES

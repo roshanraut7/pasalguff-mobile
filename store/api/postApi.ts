@@ -30,7 +30,9 @@ import type {
   VotePostPollArgs,
   GetHomeFeedPostsArgs,
   DislikePostArgs,
-  PostReactionResponse
+  PostReactionResponse,
+  SharePostToFeedArgs,
+  SharePostToFeedResponse,
 } from "@/types/post";
 type CommentReactionArgs = {
   communityId: string;
@@ -612,6 +614,22 @@ getHomeFeedPosts: builder.query<
         { type: "AdminPosts" as const, id: "LIST" },
       ],
     }),
+    sharePostToFeed: builder.mutation<SharePostToFeedResponse, SharePostToFeedArgs>({
+  query: ({ postId, body }) => ({
+    url: `/posts/${postId}/share-to-feed`,
+    method: "POST",
+    body,
+  }),
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Post" as const, id: arg.postId },
+    { type: "Post" as const, id: "LIST" },
+    { type: "Post" as const, id: "HOME-FEED" },
+    { type: "Post" as const, id: `COMMUNITY-${arg.body.targetCommunityId}` },
+    { type: "PostShare" as const, id: arg.postId },
+    { type: "AdminPosts" as const, id: arg.postId },
+    { type: "AdminPosts" as const, id: "LIST" },
+  ],
+}),
 
     updateComment: builder.mutation<PostComment, UpdateCommentArgs>({
       query: ({ communityId, postId, commentId, body }) => ({
@@ -701,5 +719,6 @@ export const {
      useDislikePostMutation,
       useRemoveDislikePostMutation,
       useLikeCommentMutation,
-      useUnlikeCommentMutation
+      useUnlikeCommentMutation,
+        useSharePostToFeedMutation,
 } = postApi;

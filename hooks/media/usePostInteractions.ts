@@ -20,6 +20,7 @@ import {
   useSharePostMutation,
   useUnlikeCommentMutation,
   useUnlikePostMutation,
+    useSharePostToFeedMutation,
 } from "@/store/api/postApi";
 
 import type { CommunityPost } from "@/types/post";
@@ -193,6 +194,7 @@ export function usePostInteractions<TPost extends CommunityPost>({
   const [dislikePost] = useDislikePostMutation();
   const [removeDislikePost] = useRemoveDislikePostMutation();
   const [sharePost] = useSharePostMutation();
+  const [sharePostToFeed] = useSharePostToFeedMutation();
 
   const [createPostComment, { isLoading: isCreatingComment }] =
     useCreatePostCommentMutation();
@@ -544,7 +546,7 @@ export function usePostInteractions<TPost extends CommunityPost>({
   communityId: post.communityId,
   postId: post.id,
   body: {
-    shareType: "EXTERNAL",
+    shareType: "OTHER",
     platform: "native_share",
   },
 }).unwrap();
@@ -608,7 +610,25 @@ export function usePostInteractions<TPost extends CommunityPost>({
   },
   [sharePost, setPosts, updateCommentPost],
 );
+const handleShareToFeed = useCallback(
+  async (post: TPost, targetCommunityId: string, content?: string) => {
+    try {
+      const result = await sharePostToFeed({
+        postId: post.sharedPostId ?? post.id,
+        body: {
+          targetCommunityId,
+          content: content?.trim() || undefined,
+        },
+      }).unwrap();
 
+      return result;
+    } catch (error) {
+      console.log("Share to feed failed:", error);
+      throw error;
+    }
+  },
+  [sharePostToFeed],
+);
 const handleCreateComment = useCallback(
   async (content: string, replyingTo?: FeedComment | null) => {
     if (!activeCommentPost || !sessionUser) return;
@@ -777,5 +797,6 @@ const handleCreateComment = useCallback(
     handleSharePost,
     handleCreateComment,
     refetchComments,
+    handleShareToFeed,
   };
 }

@@ -57,6 +57,7 @@ import {
   type ProfileColors,
   type ProfileStyles,
 } from "@/constants/styles/profile.styles";
+import ImageCropModal from "@/components/post/ImageCropModal";
 
 type ImageTarget = "avatar" | "cover";
 
@@ -379,39 +380,69 @@ export default function ProfileScreen() {
       setUploadingTarget(null);
     }
   };
+  const handleCropConfirm = async (croppedUri: string) => {
+  const target = cropState.target;
+  setCropState((prev) => ({ ...prev, visible: false }));
 
-  const pickFromCamera = async (target: ImageTarget) => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) return;
+  if (!target) return;
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      allowsEditing: target === "avatar",
-      aspect: target === "avatar" ? [1, 1] : undefined,
-      quality: 0.8,
-    });
+  await uploadPickedAsset(
+    {
+      uri: croppedUri,
+      fileName: `${target}-${Date.now()}.jpg`,
+      mimeType: "image/jpeg",
+    } as ImagePicker.ImagePickerAsset,
+    target,
+  );
+};
 
-    if (result.canceled || !result.assets?.[0]) return;
+const handleCropCancel = () => {
+  setCropState((prev) => ({ ...prev, visible: false }));
+};
 
-    await uploadPickedAsset(result.assets[0], target);
-  };
+ const pickFromCamera = async (target: ImageTarget) => {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) return;
 
-  const pickFromGallery = async (target: ImageTarget) => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+  const result = await ImagePicker.launchCameraAsync({
+    mediaTypes: ["images"],
+    allowsEditing: false,   // <-- was: target === "avatar"
+    quality: 0.8,
+  });
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: target === "avatar",
-      aspect: target === "avatar" ? [1, 1] : undefined,
-      quality: 0.8,
-    });
+  if (result.canceled || !result.assets?.[0]) return;
 
-    if (result.canceled || !result.assets?.[0]) return;
+  const asset = result.assets[0];
+  setCropState({
+    visible: true,
+    uri: asset.uri,
+    width: asset.width,
+    height: asset.height,
+    target,
+  });
+};
 
-    await uploadPickedAsset(result.assets[0], target);
-  };
+ const pickFromGallery = async (target: ImageTarget) => {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) return;
 
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    allowsEditing: false,   // <-- was: target === "avatar"
+    quality: 0.8,
+  });
+
+  if (result.canceled || !result.assets?.[0]) return;
+
+  const asset = result.assets[0];
+  setCropState({
+    visible: true,
+    uri: asset.uri,
+    width: asset.width,
+    height: asset.height,
+    target,
+  });
+};
   const removeProfileImage = async (target: ImageTarget) => {
     try {
       if (target === "avatar") {
@@ -426,6 +457,19 @@ export default function ProfileScreen() {
 
   const isUploadingAvatar = uploadingTarget === "avatar";
   const isUploadingCover = uploadingTarget === "cover";
+  const [cropState, setCropState] = useState<{
+  visible: boolean;
+  uri: string | null;
+  width: number;
+  height: number;
+  target: ImageTarget | null;
+}>({
+  visible: false,
+  uri: null,
+  width: 0,
+  height: 0,
+  target: null,
+});
 
 const renderPost = useCallback(
   ({ item }: { item: CommunityPost }) => {
@@ -955,6 +999,15 @@ const renderPost = useCallback(
         initialIndex={viewer.index}
         onClose={closeViewer}
       />
+      <ImageCropModal
+  visible={cropState.visible}
+  imageUri={cropState.uri}
+  imageWidth={cropState.width}
+  imageHeight={cropState.height}
+  aspect={cropState.target === "avatar" ? "square" : "wide"}
+  onCancel={handleCropCancel}
+  onConfirm={handleCropConfirm}
+/>
     </>
   );
 }

@@ -206,6 +206,7 @@ const {
     handleShareToFriends,
     handleCreateComment,
     handleCommentLike,
+     handleShareToFeed,  
     refetchComments,
   } = usePostInteractions({
     posts: activePosts,
@@ -941,14 +942,15 @@ const handleScroll = useCallback(
         onFollow={handleFollowCommunityFromModal}
       />
 
-      <ShareBottomSheet
-  ref={shareSheetRef}
-  onShareExternal={handleSharePost}
-  onShareToFriends={handleShareToFriends}
-  onLinkCopied={() => {
-    // e.g. Toast.show({ type: "success", text1: "Link copied" })
-  }}
-/>
+   <ShareBottomSheet
+        ref={shareSheetRef}
+        onShareExternal={handleSharePost}
+        onShareToFriends={handleShareToFriends}
+        onShareToFeed={handleShareToFeed}   // NEW
+        onLinkCopied={() => {
+          // e.g. Toast.show({ type: "success", text1: "Link copied" })
+        }}
+      />
     </>
   );
 }
