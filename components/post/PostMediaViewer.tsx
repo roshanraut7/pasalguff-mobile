@@ -1,12 +1,15 @@
-import React, { memo, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Modal,
+    Alert,
   Pressable,
   StyleSheet,
+    Linking,
   Text,
   View,
   useWindowDimensions,
 } from "react-native";
+import { saveImageToGallery } from "@/lib/saveToGallery";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Carousel from "react-native-reanimated-carousel";
@@ -45,6 +48,7 @@ export default function PostMediaViewer({
 }: PostMediaViewerProps) {
   const { width, height } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [isSaving, setIsSaving] = useState(false);
 
   const normalizedMedia = useMemo<PostMedia[]>(
     () =>
@@ -69,6 +73,35 @@ export default function PostMediaViewer({
     }
   }, [visible, safeInitialIndex]);
 
+  const handleSave = useCallback(async () => {
+  const current = normalizedMedia[currentIndex];
+  if (!current?.url || isSaving) return;
+
+  setIsSaving(true);
+  try {
+    const result = await saveImageToGallery(current.url);
+    if (result.success) {
+      Alert.alert("Saved", "Image saved to your gallery.");
+    } else if (result.reason === "blocked") {
+      Alert.alert(
+        "Permission needed",
+        "Enable photo library access in Settings to save images.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ],
+      );
+    } else {
+      Alert.alert("Permission needed", "We need permission to save photos.");
+    }
+  } catch (error) {
+    console.log("Save image failed:", error);
+    Alert.alert("Couldn't save", "Something went wrong while saving this image.");
+  } finally {
+    setIsSaving(false);
+  }
+}, [normalizedMedia, currentIndex, isSaving]);
+
   const viewerWidth = width;
   const viewerHeight = height * 0.84;
 
@@ -90,7 +123,18 @@ export default function PostMediaViewer({
             {normalizedMedia.length ? currentIndex + 1 : 0}/{normalizedMedia.length}
           </Text>
 
-          <View style={styles.viewerHeaderBtn} />
+      <Pressable
+  onPress={handleSave}
+  disabled={isSaving || normalizedMedia.length === 0}
+  style={styles.viewerHeaderBtn}
+  hitSlop={8}
+>
+  <Ionicons
+    name={isSaving ? "hourglass-outline" : "download-outline"}
+    size={22}
+    color="#ffffff"
+  />
+</Pressable>
         </View>
 
         <View style={styles.viewerBody}>
