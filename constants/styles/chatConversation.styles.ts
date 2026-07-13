@@ -135,6 +135,15 @@ export function createConversationStyles(
     bubbleRow: {
       marginVertical: 4,
       flexDirection: "row",
+      // Explicit width + cross-axis alignment. Without these, this row's
+      // width depends on being stretched by every single ancestor View
+      // in the chain (ScrollView content container -> per-message
+      // wrapper -> this row). That chain is fragile — any ancestor that
+      // doesn't stretch breaks left/right alignment for one side only,
+      // which is exactly the "incoming bubbles drifting toward center"
+      // bug. Setting it explicitly here removes the dependency.
+      width: "100%",
+      alignItems: "flex-end",
     },
     bubbleRowMe: {
       justifyContent: "flex-end",
@@ -143,10 +152,22 @@ export function createConversationStyles(
       justifyContent: "flex-start",
     },
     bubble: {
-      maxWidth: "78%",
+      // NOTE: the 78%-width cap lives on the wrapping <View> in
+      // ConversationScreen.tsx (around senderName + this bubble), not
+      // here. Having it in both places means a bubble could compute
+      // "78% of 78%", and worse, the inner 78% resolves against a
+      // parent whose own width is itself content-based (not fixed) —
+      // React Native/Yoga does not reliably lay out a percentage width
+      // against an indeterminate parent size. That mismatch is what
+      // caused bubbles to render undersized / oddly centered. Keep the
+      // cap in exactly one place.
       borderRadius: 18,
       paddingHorizontal: 13,
       paddingVertical: 9,
+      // Stops short messages (e.g. "Hello") from being narrower than
+      // their own "4:52 PM ✓✓" row, which was causing the timestamp to
+      // wrap and clip.
+      minWidth: 92,
     },
     bubbleMe: {
       backgroundColor: colors.accent,
@@ -161,6 +182,8 @@ export function createConversationStyles(
     bubbleText: {
       fontSize: 14,
       lineHeight: 20,
+      flexWrap: "wrap",
+      flexShrink: 1,
     },
 
     // Important dark-mode fix:
@@ -184,6 +207,9 @@ export function createConversationStyles(
       borderWidth: 0,
       paddingHorizontal: 0,
       paddingVertical: 0,
+      // IMAGE bubbles don't need the text-message minWidth — undo it so
+      // photos aren't force-padded wider than the image itself.
+      minWidth: 0,
     },
 
     imageGridBubble: {
@@ -303,6 +329,9 @@ export function createConversationStyles(
       fontSize: 10,
       color: colors.muted,
       alignSelf: "flex-end",
+      // Stops "4:52 PM" from line-breaking mid-string when the bubble
+      // is narrow.
+      flexShrink: 0,
     },
 
     // Important dark-mode fix:
@@ -317,6 +346,8 @@ export function createConversationStyles(
       justifyContent: "flex-end",
       gap: 4,
       marginTop: 5,
+      // Keeps the time + checkmark on one line, never wrapping.
+      flexWrap: "nowrap",
     },
 
     composerOuter: {

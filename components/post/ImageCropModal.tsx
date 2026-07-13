@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -138,6 +138,7 @@ export default function ImageCropModal({
 
   return (
     <Modal visible={visible} animationType="fade" statusBarTranslucent>
+        <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.root}>
         <View style={styles.header}>
           <Pressable onPress={handleCancel} hitSlop={12}>
@@ -177,6 +178,7 @@ export default function ImageCropModal({
           <Text style={styles.footerHint}>Pinch to zoom, drag to reposition</Text>
         </View>
       </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

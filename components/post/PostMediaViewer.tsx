@@ -9,7 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { saveImageToGallery } from "@/lib/saveToGallery";
+import { saveImageToGallery } from "@/lib/saveImageToGallery";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Carousel from "react-native-reanimated-carousel";

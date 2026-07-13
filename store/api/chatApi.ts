@@ -26,6 +26,7 @@ export type ChatMember = {
   chatId: string;
   userId: string;
   status: "ACTIVE" | "BLOCKED";
+   role?: "ADMIN" | "MEMBER"; 
   joinedAt: string;
   blockedAt?: string | null;
   lastReadAt?: string | null;
@@ -50,9 +51,14 @@ export type ChatMessage = {
   deletedAt?: string | null;
   sender?: ChatUser;
 };
-
+export type ChatType = "DIRECT" | "GROUP";
 export type Chat = {
   id: string;
+
+  type?: ChatType;          // ← add
+  isGroup?: boolean;        // ← add
+  name?: string | null;     // ← add
+  avatarImage?: string | null, // ← add
 
   sourceCommunity?: {
     id: string;
@@ -202,7 +208,53 @@ export const chatApi = baseApi.injectEndpoints({
         { type: "Message" as const, id: arg.chatId },
       ],
     }),
-
+    //create group chat
+    createGroupChat: builder.mutation<
+  Chat,
+  { name?: string; avatarImage?: string; memberIds: string[] }
+>({
+  query: (body) => ({
+    url: "/chats/group",
+    method: "POST",
+    body,
+  }),
+  invalidatesTags: [{ type: "Chat", id: "LIST" }, { type: "Chat", id: "SUGGESTIONS" }],
+}),
+//add group member
+addGroupMember: builder.mutation<Chat, { chatId: string; userId: string }>({
+  query: ({ chatId, userId }) => ({
+    url: `/chats/${chatId}/members`,
+    method: "PATCH",
+    body: { userId },
+  }),
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Chat", id: "LIST" },
+    { type: "Chat", id: arg.chatId },
+  ],
+}),
+//remove group member
+removeGroupMember: builder.mutation<Chat, { chatId: string; userId: string }>({
+  query: ({ chatId, userId }) => ({
+    url: `/chats/${chatId}/members/${userId}`,
+    method: "DELETE",
+  }),
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Chat", id: "LIST" },
+    { type: "Chat", id: arg.chatId },
+  ],
+}),
+//leave group 
+leaveGroup: builder.mutation<{ success: boolean; chatId: string }, string>({
+  query: (chatId) => ({
+    url: `/chats/${chatId}/leave`,
+    method: "DELETE",
+  }),
+  invalidatesTags: (_result, _error, chatId) => [
+    { type: "Chat", id: "LIST" },
+    { type: "Chat", id: chatId },
+  ],
+}),
+//create direct chat
     createDirectChat: builder.mutation<
       Chat,
       { targetUserId: string; body?: CreateDirectChatBody }
@@ -218,6 +270,7 @@ export const chatApi = baseApi.injectEndpoints({
         { type: "Chat", id: arg.targetUserId },
       ],
     }),
+    //send message
 
     sendMessage: builder.mutation<
       ChatMessage,
@@ -234,7 +287,7 @@ export const chatApi = baseApi.injectEndpoints({
         { type: "Message", id: arg.chatId },
       ],
     }),
-
+//markchat read
     markChatRead: builder.mutation<unknown, string>({
       query: (chatId) => ({
         url: `/chats/${chatId}/read`,
@@ -245,7 +298,7 @@ export const chatApi = baseApi.injectEndpoints({
         { type: "Chat", id: chatId },
       ],
     }),
-
+//accept message request
     acceptMessageRequest: builder.mutation<Chat, string>({
       query: (chatId) => ({
         url: `/chats/${chatId}/accept`,
@@ -258,6 +311,7 @@ export const chatApi = baseApi.injectEndpoints({
         { type: "Message", id: chatId },
       ],
     }),
+    //decline message request
 
     declineMessageRequest: builder.mutation<Chat, string>({
       query: (chatId) => ({
@@ -272,6 +326,30 @@ export const chatApi = baseApi.injectEndpoints({
       ],
     }),
 
+// blockchat 
+        blockChat: builder.mutation<unknown, string>({
+      query: (chatId) => ({
+        url: `/chats/${chatId}/block`,
+        method: "PATCH",
+      }),
+      invalidatesTags: (_result, _error, chatId) => [
+        { type: "Chat", id: "LIST" },
+        { type: "Chat", id: chatId },
+      ],
+    }),
+     deleteMessage: builder.mutation<unknown, { chatId: string; messageId: string }>({
+  query: ({ messageId }) => ({
+    url: `/chats/messages/${messageId}`,
+    method: "DELETE",
+  }),
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Message", id: arg.chatId },
+    { type: "Chat", id: "LIST" },
+  ],
+}),
+
+    
+//upload chat file
     uploadChatFile: builder.mutation<UploadChatFileResponse, FormData>({
       query: (formData) => ({
         url: "/uploads/chat",
@@ -294,4 +372,10 @@ export const {
   useAcceptMessageRequestMutation,
   useDeclineMessageRequestMutation,
   useUploadChatFileMutation,
+  useCreateGroupChatMutation,
+   useAddGroupMemberMutation,     // ← add
+  useRemoveGroupMemberMutation,  // ← add
+  useLeaveGroupMutation,
+  useBlockChatMutation,
+  useDeleteMessageMutation,
 } = chatApi;

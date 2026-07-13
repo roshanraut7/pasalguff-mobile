@@ -27,6 +27,7 @@ import {
   useCreateDirectChatMutation,
   useGetMyChatsQuery,
   useLazySearchChatSuggestionsQuery,
+  useCreateGroupChatMutation
 } from "@/store/api/chatApi";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 
@@ -101,6 +102,7 @@ export default function MessagesScreen() {
   const [localChats, setLocalChats] = useState<Chat[]>([]);
   const [localUnread, setLocalUnread] = useState<UnreadMap>({});
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [createGroupChat, { isLoading: isCreatingGroup }] = useCreateGroupChatMutation();
 
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
@@ -458,14 +460,19 @@ export default function MessagesScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.container}>
-        <View style={styles.topRow}>
+       <View style={styles.topRow}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="chevron-back" size={20} color={colors.accent} />
           </Pressable>
 
           <Text style={styles.title}>Messages</Text>
 
-          <View style={styles.headerSpacer} />
+          <Pressable
+            onPress={() => router.push("/pages/create-group")}
+            style={styles.backButton}
+          >
+            <Ionicons name="people-outline" size={20} color={colors.accent} />
+          </Pressable>
         </View>
 
         <Text style={styles.subtitle}>
@@ -600,7 +607,6 @@ export default function MessagesScreen() {
     </SafeAreaView>
   );
 }
-
 function ConversationRow({
   chat,
   unreadCount,
@@ -618,13 +624,23 @@ function ConversationRow({
   currentUserId?: string;
   onPress: () => void;
 }) {
-  const name =
-    chat.otherUser?.name || chat.otherUser?.businessName || "Unknown User";
+  const isGroup = chat.isGroup || chat.type === "GROUP";
 
-  const avatar = getAvatarUrl(name, chat.otherUser?.image);
+  const name = isGroup
+    ? chat.name || "Group Chat"
+    : chat.otherUser?.name || chat.otherUser?.businessName || "Unknown User";
+
+  const avatar = isGroup
+    ? getAvatarUrl(name, chat.avatarImage)
+    : getAvatarUrl(name, chat.otherUser?.image);
+
   const requestBadge = getChatRequestBadge(chat, currentUserId);
   const lastMessage = getLastMessagePreview(chat);
-  const presenceText = getChatPresenceText(chat, currentUserId, presenceTick);
+
+  const presenceText = isGroup
+    ? `${chat.members?.length ?? 0} members`
+    : getChatPresenceText(chat, currentUserId, presenceTick);
+
   const isUnread = unreadCount > 0;
 
   return (
@@ -639,7 +655,9 @@ function ConversationRow({
       <View style={styles.avatarWrap}>
         <Image source={{ uri: avatar }} style={styles.avatar} />
 
-        {chat.otherUser?.isOnline ? <View style={styles.onlineDot} /> : null}
+        {!isGroup && chat.otherUser?.isOnline ? (
+          <View style={styles.onlineDot} />
+        ) : null}
       </View>
 
       <View style={styles.rowMiddle}>
@@ -653,7 +671,7 @@ function ConversationRow({
 
           {requestBadge ? (
             <Text style={styles.requestBadge}>{requestBadge}</Text>
-          ) : chat.otherUser?.isOnline ? (
+          ) : !isGroup && chat.otherUser?.isOnline ? (
             <Text style={styles.onlineText}>Online</Text>
           ) : null}
         </View>

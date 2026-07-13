@@ -34,10 +34,14 @@ import { io, type Socket } from "socket.io-client";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useSession } from "@/api/better-auth-client";
 import {
+  type Chat,
   type ChatMessage,
+  type ChatUser,
   type MessageType,
   useAcceptMessageRequestMutation,
+  useBlockChatMutation,
   useDeclineMessageRequestMutation,
+  useDeleteMessageMutation,
   useGetChatMessagesQuery,
   useGetChatQuery,
   useMarkChatReadMutation,
@@ -87,6 +91,9 @@ const DRAWER_ACTIONS: DrawerAction[] = [
 ];
 
 const ANDROID_KEYBOARD_EXTRA = 40;
+
+// Long messages collapse after this many characters, WhatsApp-style.
+const MESSAGE_TRUNCATE_LENGTH = 300;
 
 const RAW_API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ?? process.env.EXPO_PUBLIC_AUTH_URL ?? "";
@@ -161,8 +168,14 @@ export default function ConversationScreen() {
     useAcceptMessageRequestMutation();
   const [declineMessageRequest, { isLoading: isDecliningRequest }] =
     useDeclineMessageRequestMutation();
+  const [deleteMessage] = useDeleteMessageMutation();
+  const [blockChat, { isLoading: isBlocking }] = useBlockChatMutation();
 
   const messages = messagePage?.items ?? [];
+
+  const isGroupChat = Boolean(
+    (chat as Chat | undefined)?.isGroup || (chat as Chat | undefined)?.type === "GROUP",
+  );
 
   const requestStatus = String((chat as any)?.requestStatus ?? "ACCEPTED");
   const requestedById = ((chat as any)?.requestedById ?? null) as string | null;
@@ -179,9 +192,10 @@ export default function ConversationScreen() {
   const shouldShowRequestActions = isPendingRequest && !isRequestSender;
 
   const shouldLockComposer =
-    isDeclinedRequest ||
-    shouldShowRequestActions ||
-    (isPendingRequest && isRequestSender && hasCurrentUserSentMessage);
+    !isGroupChat &&
+    (isDeclinedRequest ||
+      shouldShowRequestActions ||
+      (isPendingRequest && isRequestSender && hasCurrentUserSentMessage));
 
   const composerPlaceholder = isDeclinedRequest
     ? "This message request was declined"
@@ -211,10 +225,26 @@ export default function ConversationScreen() {
     }, [chatId, refetchMessages, refetchChat, markChatRead]),
   );
 
-  const otherUserName =
-    chat?.otherUser?.name || chat?.otherUser?.businessName || "Chat";
+  const otherUserName = isGroupChat
+    ? (chat as Chat | undefined)?.name || "Group Chat"
+    : chat?.otherUser?.name || chat?.otherUser?.businessName || "Chat";
 
-  const otherUserAvatar = getAvatarUrl(otherUserName, chat?.otherUser?.image);
+  const otherUserAvatar = isGroupChat
+    ? getAvatarUrl(otherUserName, (chat as Chat | undefined)?.avatarImage)
+    : getAvatarUrl(otherUserName, chat?.otherUser?.image);
+
+  // Map of userId -> user, used to show sender avatar/name on each bubble.
+  const chatMembersById = useMemo(() => {
+    const map = new Map<string, ChatUser>();
+
+    (chat?.members ?? []).forEach((member) => {
+      if (member.user) {
+        map.set(member.userId, member.user);
+      }
+    });
+
+    return map;
+  }, [chat]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -858,6 +888,87 @@ export default function ConversationScreen() {
     );
   };
 
+  const handleDeleteMessage = useCallback(
+    (messageId: string) => {
+      Alert.alert(
+        "Delete message?",
+        "This message will be deleted for everyone in this chat.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await deleteMessage({ chatId, messageId }).unwrap();
+                await refetchMessages();
+              } catch (error: any) {
+                console.log(
+                  "Delete message failed:",
+                  JSON.stringify(error, null, 2),
+                );
+
+                Alert.alert(
+                  "Could not delete",
+                  error?.data?.message ?? "Please try again.",
+                );
+              }
+            },
+          },
+        ],
+      );
+    },
+    [chatId, deleteMessage, refetchMessages],
+  );
+
+  const handleBlockUser = useCallback(() => {
+    if (!chatId || isBlocking) return;
+
+    Alert.alert(
+      "Block this user?",
+      "They won't be able to send you messages anymore.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await blockChat(chatId).unwrap();
+              router.back();
+            } catch (error: any) {
+              console.log(
+                "Block user failed:",
+                JSON.stringify(error, null, 2),
+              );
+
+              Alert.alert(
+                "Could not block user",
+                error?.data?.message ?? "Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  }, [chatId, blockChat, isBlocking]);
+
+  const handleHeaderActionPress = useCallback(() => {
+    if (isGroupChat) {
+      router.push({ pathname: "/pages/group-info", params: { chatId } });
+      return;
+    }
+
+    Alert.alert(otherUserName, undefined, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Block User",
+        style: "destructive",
+        onPress: handleBlockUser,
+      },
+    ]);
+  }, [isGroupChat, chatId, otherUserName, handleBlockUser]);
+
   const composerBottom =
     keyboardHeight > 0
       ? keyboardHeight +
@@ -876,17 +987,21 @@ export default function ConversationScreen() {
     }
   }, [chatId, refetchMessages, refetchChat]);
 
-  const headerStatus = isPendingRequest
-    ? isRequestSender
-      ? "Message request sent"
-      : "Message request"
-    : isDeclinedRequest
-      ? "Message request declined"
-      : isOtherTyping
-        ? "Typing..."
-        : `${formatActiveStatus(chat?.otherUser, presenceTick)}${
-            chat?.sourceCommunity?.name ? ` • ${chat.sourceCommunity.name}` : ""
-          }`;
+  const headerStatus = isGroupChat
+    ? `${chat?.members?.length ?? 0} member${
+        (chat?.members?.length ?? 0) === 1 ? "" : "s"
+      }`
+    : isPendingRequest
+      ? isRequestSender
+        ? "Message request sent"
+        : "Message request"
+      : isDeclinedRequest
+        ? "Message request declined"
+        : isOtherTyping
+          ? "Typing..."
+          : `${formatActiveStatus(chat?.otherUser, presenceTick)}${
+              chat?.sourceCommunity?.name ? ` • ${chat.sourceCommunity.name}` : ""
+            }`;
 
   const isRecording = recorderState.isRecording;
   const hasTextMessage = message.trim().length > 0;
@@ -934,12 +1049,28 @@ export default function ConversationScreen() {
             <Ionicons name="chevron-back" size={20} color={colors.accent} />
           </Pressable>
 
-          <View style={styles.avatarWrap}>
+          <Pressable
+            style={styles.avatarWrap}
+            onPress={() => {
+              if (isGroupChat) {
+                router.push({ pathname: "/pages/group-info", params: { chatId } });
+              }
+            }}
+          >
             <Image source={{ uri: otherUserAvatar }} style={styles.headerAvatar} />
-            {chat.otherUser?.isOnline ? <View style={styles.onlineDot} /> : null}
-          </View>
+            {!isGroupChat && chat.otherUser?.isOnline ? (
+              <View style={styles.onlineDot} />
+            ) : null}
+          </Pressable>
 
-          <View style={styles.headerMeta}>
+          <Pressable
+            style={styles.headerMeta}
+            onPress={() => {
+              if (isGroupChat) {
+                router.push({ pathname: "/pages/group-info", params: { chatId } });
+              }
+            }}
+          >
             <Text numberOfLines={1} style={styles.headerName}>
               {otherUserName}
             </Text>
@@ -947,9 +1078,9 @@ export default function ConversationScreen() {
             <Text numberOfLines={1} style={styles.headerStatus}>
               {headerStatus}
             </Text>
-          </View>
+          </Pressable>
 
-          <Pressable style={styles.headerAction}>
+          <Pressable style={styles.headerAction} onPress={handleHeaderActionPress}>
             <Ionicons
               name="ellipsis-horizontal"
               size={20}
@@ -998,7 +1129,15 @@ export default function ConversationScreen() {
             </View>
           ) : (
             <>
-              {renderMessages(messages, currentUserId, styles, colors)}
+              {renderMessages(
+                messages,
+                currentUserId,
+                styles,
+                colors,
+                chatMembersById,
+                isGroupChat,
+                handleDeleteMessage,
+              )}
 
               {pendingUploads.length > 0 ? (
                 <PendingUploadGrid
@@ -1173,6 +1312,9 @@ function renderMessages(
   currentUserId: string | undefined,
   styles: ReturnType<typeof createConversationStyles>,
   colors: ReturnType<typeof useAppTheme>["colors"],
+  chatMembersById: Map<string, ChatUser>,
+  isGroupChat: boolean,
+  onDeleteMessage: (messageId: string) => void,
 ) {
   const groups = groupMessagesForDisplay(messages);
 
@@ -1186,6 +1328,10 @@ function renderMessages(
     lastDateLabel = currentDateLabel;
 
     const isMe = firstMessage.senderId === currentUserId;
+    const sender = chatMembersById.get(firstMessage.senderId);
+    const senderName =
+      sender?.name || sender?.businessName || firstMessage.sender?.name || "Member";
+    const senderAvatar = getAvatarUrl(senderName, sender?.image ?? firstMessage.sender?.image);
 
     return (
       <View key={group.key}>
@@ -1202,6 +1348,9 @@ function renderMessages(
             messages={group.items}
             isMe={isMe}
             styles={styles}
+            isGroupChat={isGroupChat}
+            senderName={senderName}
+            senderAvatar={senderAvatar}
           />
         ) : (
           <View
@@ -1210,40 +1359,77 @@ function renderMessages(
               isMe ? styles.bubbleRowMe : styles.bubbleRowOther,
             ]}
           >
-            <View
-              style={[
-                styles.bubble,
-                isMe ? styles.bubbleMe : styles.bubbleOther,
-                firstMessage.type === "IMAGE" && styles.imageBubbleClean,
-              ]}
-            >
-              {renderMessageContent(firstMessage, isMe, styles, colors)}
+            {!isMe ? (
+              <Image
+                source={{ uri: senderAvatar }}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  marginRight: 6,
+                  flexShrink: 0,
+                  backgroundColor: colors.surfaceSecondary,
+                }}
+              />
+            ) : null}
 
-              {isMe ? (
-                <View style={styles.messageStatusRow}>
-                  <Text style={[styles.messageTime, styles.messageTimeMe]}>
+            {/* Single source of truth for the 78% width cap — see the
+                comment on `bubble` in chatConversation.styles.ts for why
+                this must not also be set inside styles.bubble. */}
+            <View style={{ maxWidth: "78%", flexShrink: 1 }}>
+              {isGroupChat && !isMe ? (
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "700",
+                    color: colors.muted,
+                    marginBottom: 2,
+                    marginLeft: 4,
+                  }}
+                >
+                  {senderName}
+                </Text>
+              ) : null}
+
+              <Pressable
+                onLongPress={() => {
+                  if (isMe) onDeleteMessage(firstMessage.id);
+                }}
+                delayLongPress={350}
+                style={[
+                  styles.bubble,
+                  isMe ? styles.bubbleMe : styles.bubbleOther,
+                  firstMessage.type === "IMAGE" && styles.imageBubbleClean,
+                ]}
+              >
+                {renderMessageContent(firstMessage, isMe, styles, colors)}
+
+                {isMe ? (
+                  <View style={styles.messageStatusRow}>
+                    <Text style={[styles.messageTime, styles.messageTimeMe]}>
+                      {formatMessageTime(firstMessage.createdAt)}
+                    </Text>
+
+                    <Ionicons
+                      name={
+                        firstMessage.status === "DELIVERED"
+                          ? "checkmark-done"
+                          : "checkmark"
+                      }
+                      size={14}
+                      color={
+                        firstMessage.status === "DELIVERED"
+                          ? colors.success
+                          : "#ffffff"
+                      }
+                    />
+                  </View>
+                ) : (
+                  <Text style={styles.messageTime}>
                     {formatMessageTime(firstMessage.createdAt)}
                   </Text>
-
-                  <Ionicons
-                    name={
-                      firstMessage.status === "DELIVERED"
-                        ? "checkmark-done"
-                        : "checkmark"
-                    }
-                    size={14}
-                    color={
-                      firstMessage.status === "DELIVERED"
-                        ? colors.success
-                        : "#ffffff"
-                    }
-                  />
-                </View>
-              ) : (
-                <Text style={styles.messageTime}>
-                  {formatMessageTime(firstMessage.createdAt)}
-                </Text>
-              )}
+                )}
+              </Pressable>
             </View>
           </View>
         )}
@@ -1334,10 +1520,16 @@ function ImageMessageGrid({
   messages,
   isMe,
   styles,
+  isGroupChat,
+  senderName,
+  senderAvatar,
 }: {
   messages: ChatMessage[];
   isMe: boolean;
   styles: ReturnType<typeof createConversationStyles>;
+  isGroupChat: boolean;
+  senderName: string;
+  senderAvatar: string;
 }) {
   const visibleMessages = messages.slice(0, 4);
   const extraCount = messages.length - visibleMessages.length;
@@ -1349,50 +1541,79 @@ function ImageMessageGrid({
         isMe ? styles.bubbleRowMe : styles.bubbleRowOther,
       ]}
     >
-      <View style={styles.imageGridBubble}>
-        <View
-          style={[
-            styles.imageGrid,
-            visibleMessages.length === 2 && styles.imageGridTwo,
-          ]}
-        >
-          {visibleMessages.map((item, index) => {
-            const imageUrl = toAbsoluteFileUrl(item.mediaUrl);
+      {!isMe ? (
+        <Image
+          source={{ uri: senderAvatar }}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            marginRight: 6,
+            flexShrink: 0,
+          }}
+        />
+      ) : null}
 
-            if (!imageUrl) return null;
+      <View style={{ maxWidth: "78%", flexShrink: 1 }}>
+        {isGroupChat && !isMe ? (
+          <Text
+            style={{
+              fontSize: 11,
+              fontWeight: "700",
+              color: "#94a3b8",
+              marginBottom: 2,
+              marginLeft: 4,
+            }}
+          >
+            {senderName}
+          </Text>
+        ) : null}
 
-            const isLastVisible = index === visibleMessages.length - 1;
+        <View style={styles.imageGridBubble}>
+          <View
+            style={[
+              styles.imageGrid,
+              visibleMessages.length === 2 && styles.imageGridTwo,
+            ]}
+          >
+            {visibleMessages.map((item, index) => {
+              const imageUrl = toAbsoluteFileUrl(item.mediaUrl);
 
-            return (
-              <Pressable
-                key={item.id}
-                style={[
-                  styles.imageGridItem,
-                  visibleMessages.length === 1 && styles.imageGridItemSingle,
-                  visibleMessages.length === 2 && styles.imageGridItemTwo,
-                ]}
-                onPress={() => openImageGallery(messages, index)}
-              >
-                <Image source={{ uri: imageUrl }} style={styles.imageGridImage} />
+              if (!imageUrl) return null;
 
-                {extraCount > 0 && isLastVisible ? (
-                  <Pressable
-                    style={styles.imageGridOverlay}
-                    onPress={() => openImageGallery(messages, index)}
-                  >
-                    <Text style={styles.imageGridOverlayText}>
-                      +{extraCount}
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </Pressable>
-            );
-          })}
+              const isLastVisible = index === visibleMessages.length - 1;
+
+              return (
+                <Pressable
+                  key={item.id}
+                  style={[
+                    styles.imageGridItem,
+                    visibleMessages.length === 1 && styles.imageGridItemSingle,
+                    visibleMessages.length === 2 && styles.imageGridItemTwo,
+                  ]}
+                  onPress={() => openImageGallery(messages, index)}
+                >
+                  <Image source={{ uri: imageUrl }} style={styles.imageGridImage} />
+
+                  {extraCount > 0 && isLastVisible ? (
+                    <Pressable
+                      style={styles.imageGridOverlay}
+                      onPress={() => openImageGallery(messages, index)}
+                    >
+                      <Text style={styles.imageGridOverlayText}>
+                        +{extraCount}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.imageGridTime}>
+            {formatMessageTime(messages[messages.length - 1].createdAt)}
+          </Text>
         </View>
-
-        <Text style={styles.imageGridTime}>
-          {formatMessageTime(messages[messages.length - 1].createdAt)}
-        </Text>
       </View>
     </View>
   );
@@ -1439,6 +1660,75 @@ function PendingUploadGrid({
         </View>
       </View>
     </View>
+  );
+}
+
+/**
+ * Truncates to `limit` characters without cutting a word in half.
+ * Snaps back to the nearest preceding space/newline, as long as that
+ * doesn't throw away more than ~40% of the allowed length.
+ */
+function truncateAtWordBoundary(text: string, limit: number) {
+  if (text.length <= limit) return text;
+
+  const hardCut = text.slice(0, limit);
+  const lastBreak = Math.max(
+    hardCut.lastIndexOf(" "),
+    hardCut.lastIndexOf("\n"),
+  );
+
+  if (lastBreak > limit * 0.6) {
+    return hardCut.slice(0, lastBreak).trimEnd();
+  }
+
+  return hardCut.trimEnd();
+}
+
+/**
+ * WhatsApp-style message text:
+ * - wraps normally instead of relying on the bubble's implicit width
+ * - long messages collapse with an inline "Read more" / "Read less" toggle
+ *   that sits at the end of the last line, not on its own row
+ * - truncation always breaks on a full word, never mid-word
+ */
+function MessageText({
+  text,
+  isMe,
+  styles,
+}: {
+  text: string;
+  isMe: boolean;
+  styles: ReturnType<typeof createConversationStyles>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const safeText = text ?? "";
+  const isLong = safeText.length > MESSAGE_TRUNCATE_LENGTH;
+  const truncated = isLong
+    ? truncateAtWordBoundary(safeText, MESSAGE_TRUNCATE_LENGTH)
+    : safeText;
+
+  const readMoreColor = isMe ? "rgba(255,255,255,0.85)" : "#128C7E";
+
+  return (
+    <Text
+      style={[
+        styles.bubbleText,
+        isMe ? styles.bubbleTextMe : styles.bubbleTextOther,
+      ]}
+    >
+      {isLong && !expanded ? `${truncated}\u2026 ` : safeText}
+
+      {isLong ? (
+        <Text
+          suppressHighlighting
+          onPress={() => setExpanded((value) => !value)}
+          style={{ fontWeight: "700", color: readMoreColor }}
+        >
+          {expanded ? "  Read less" : "Read more"}
+        </Text>
+      ) : null}
+    </Text>
   );
 }
 
@@ -1522,16 +1812,7 @@ function renderMessageContent(
     );
   }
 
-  return (
-    <Text
-      style={[
-        styles.bubbleText,
-        isMe ? styles.bubbleTextMe : styles.bubbleTextOther,
-      ]}
-    >
-      {item.content}
-    </Text>
-  );
+  return <MessageText text={item.content ?? ""} isMe={isMe} styles={styles} />;
 }
 
 function AudioMessageBubble({
@@ -1549,8 +1830,8 @@ function AudioMessageBubble({
 }) {
   const player = useAudioPlayer(audioUrl);
   const status = useAudioPlayerStatus(player);
-    const isMountedRef = useRef(true);
-    useEffect(() => {
+  const isMountedRef = useRef(true);
+  useEffect(() => {
     isMountedRef.current = true;
 
     return () => {
@@ -1581,68 +1862,67 @@ function AudioMessageBubble({
     player.play();
   };
 
- return (
-  <Pressable
-    style={[styles.fileBubble, { width: "100%", maxWidth: "100%" }]}
-    onPress={handleTogglePlayback}
-  >
-    <View style={styles.fileIconWrap}>
-      <Ionicons
-        name={isPlaying ? "pause" : "play"}
-        size={20}
-        color={isMe ? "#ffffff" : colors.foreground}
-      />
-    </View>
-
-    <View style={[styles.fileTextWrap, { flex: 1, minWidth: 0 }]}>
-      <Text
-        numberOfLines={1}
-        style={[
-          styles.fileNameText,
-          isMe ? styles.bubbleTextMe : styles.bubbleTextOther,
-        ]}
-      >
-        Voice message
-      </Text>
-
-      <View
-        style={{
-          height: 4,
-          borderRadius: 999,
-          overflow: "hidden",
-          marginTop: 8,
-          backgroundColor: isMe ? "rgba(255,255,255,0.35)" : colors.border,
-          width: "100%",
-        }}
-      >
-        <View
-          style={{
-            height: "100%",
-            width: `${progress * 100}%`,
-            backgroundColor: isMe ? "#ffffff" : colors.accent,
-          }}
+  return (
+    <Pressable
+      style={[styles.fileBubble, { width: "100%", maxWidth: "100%" }]}
+      onPress={handleTogglePlayback}
+    >
+      <View style={styles.fileIconWrap}>
+        <Ionicons
+          name={isPlaying ? "pause" : "play"}
+          size={20}
+          color={isMe ? "#ffffff" : colors.foreground}
         />
       </View>
 
-      <Text
-        numberOfLines={1}
-        style={[
-          styles.fileMetaText,
-          isMe ? styles.fileMetaTextMe : styles.fileMetaTextOther,
-          { marginTop: 6 },
-        ]}
-      >
-        {duration > 0
-          ? `${formatAudioDuration(currentTime)} / ${formatAudioDuration(duration)}`
-          : fileSize
-            ? formatFileSize(fileSize)
-            : "Audio"}
-      </Text>
-    </View>
-  </Pressable>
-);
-}
+      <View style={[styles.fileTextWrap, { flex: 1, minWidth: 0 }]}>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.fileNameText,
+            isMe ? styles.bubbleTextMe : styles.bubbleTextOther,
+          ]}
+        >
+          Voice message
+        </Text>
 
+        <View
+          style={{
+            height: 4,
+            borderRadius: 999,
+            overflow: "hidden",
+            marginTop: 8,
+            backgroundColor: isMe ? "rgba(255,255,255,0.35)" : colors.border,
+            width: "100%",
+          }}
+        >
+          <View
+            style={{
+              height: "100%",
+              width: `${progress * 100}%`,
+              backgroundColor: isMe ? "#ffffff" : colors.accent,
+            }}
+          />
+        </View>
+
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.fileMetaText,
+            isMe ? styles.fileMetaTextMe : styles.fileMetaTextOther,
+            { marginTop: 6 },
+          ]}
+        >
+          {duration > 0
+            ? `${formatAudioDuration(currentTime)} / ${formatAudioDuration(duration)}`
+            : fileSize
+              ? formatFileSize(fileSize)
+              : "Audio"}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
 
 function MessageRequestBanner({
   colors,
@@ -1862,7 +2142,6 @@ function normalizeMessageType(value: MessageType | string): MessageType {
    */
   return "FILE";
 }
-
 
 function formatAudioDuration(seconds: number) {
   const safeSeconds = Math.max(0, Math.floor(seconds || 0));
