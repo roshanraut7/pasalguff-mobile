@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Menu, Tabs } from "heroui-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
@@ -26,6 +27,8 @@ import { useSession } from "@/api/better-auth-client";
 
 import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
 import type { CommunityItem } from "@/types/community";
+import VerifiedBadge from "@/components/common/verifiedBadge";
+import { useGetMyVerificationStatusQuery } from "@/store/api/verificationApi";
 
 import {
   useGetMyProfileQuery,
@@ -63,6 +66,14 @@ type ImageTarget = "avatar" | "cover";
 
 const POSTS_LIMIT = 10;
 
+// Profession types that only need Professional Email + Phone
+// (no business name / address required). Keep in sync with
+// TRAINING_PROFESSIONS in onboarding.tsx.
+const TRAINING_PROFESSIONS = ["Instructor", "Trainer", "Trainee"];
+
+const PROFILE_BANNER_DISMISS_KEY = "profileCompletionBannerDismissedUntil";
+const REMIND_LATER_HOURS = 24;
+
 export default function ProfileScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createProfileStyles(colors), [colors]);
@@ -76,6 +87,8 @@ export default function ProfileScreen() {
   const [postsCursor, setPostsCursor] = useState<string | null>(null);
   const [allPosts, setAllPosts] = useState<CommunityPost[]>([]);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [isBannerDismissed, setIsBannerDismissed] = useState(false);
+  const [isBannerCheckDone, setIsBannerCheckDone] = useState(false);
 
   const refreshStartedRef = useRef(false);
 
@@ -100,6 +113,11 @@ export default function ProfileScreen() {
   } = useGetMyProfileQuery(undefined, {
     skip: !session?.user,
   });
+  const {
+  data: verificationStatus,
+} = useGetMyVerificationStatusQuery(undefined, {
+  skip: !session?.user,
+});
 
   const {
     data: myCommunitiesResponse,
@@ -146,6 +164,31 @@ export default function ProfileScreen() {
   const [uploadProfileCover] = useUploadProfileCoverMutation();
 
   const user = profile ?? session?.user;
+
+  const isTrainingProfession = TRAINING_PROFESSIONS.includes(
+    user?.businessType ?? "",
+  );
+
+  const requiredFieldChecks = useMemo(() => {
+    const checks = [
+      !!user?.image,
+      !!user?.businessType,
+      !!user?.businessEmail,
+      !!user?.businessPhoneNo,
+    ];
+
+    if (!isTrainingProfession) {
+      checks.push(!!user?.businessName, !!user?.address);
+    }
+
+    return checks;
+  }, [user, isTrainingProfession]);
+
+  const completedCount = requiredFieldChecks.filter(Boolean).length;
+  const completionPercent = Math.round(
+    (completedCount / requiredFieldChecks.length) * 100,
+  );
+  const isProfileComplete = completedCount === requiredFieldChecks.length;
 
   const {
     commentPost,
@@ -250,6 +293,35 @@ export default function ProfileScreen() {
     myPostsFetching,
   ]);
 
+  useEffect(() => {
+    const checkBannerDismissal = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(
+          PROFILE_BANNER_DISMISS_KEY,
+        );
+
+        if (stored) {
+          const dismissedUntil = Number(stored);
+
+          if (
+            Number.isFinite(dismissedUntil) &&
+            Date.now() < dismissedUntil
+          ) {
+            setIsBannerDismissed(true);
+          } else {
+            setIsBannerDismissed(false);
+          }
+        }
+      } catch (error) {
+        console.log("Failed to read banner dismissal:", error);
+      } finally {
+        setIsBannerCheckDone(true);
+      }
+    };
+
+    checkBannerDismissal();
+  }, []);
+
   const loadMorePosts = useCallback(() => {
     if (tab !== "posts") return;
     if (isPullRefreshing) return;
@@ -308,6 +380,20 @@ export default function ProfileScreen() {
 
   const handleOpenSettingsPrivacy = () => {
     router.push("/pages/privacySetting");
+  };
+
+  const handleDismissBanner = async () => {
+    setIsBannerDismissed(true);
+
+    try {
+      const remindAt = Date.now() + REMIND_LATER_HOURS * 60 * 60 * 1000;
+      await AsyncStorage.setItem(
+        PROFILE_BANNER_DISMISS_KEY,
+        String(remindAt),
+      );
+    } catch (error) {
+      console.log("Failed to persist banner dismissal:", error);
+    }
   };
 
   const openViewer = useCallback((media: PostMedia[], index: number) => {
@@ -708,7 +794,16 @@ const renderPost = useCallback(
               <View style={styles.profileInfoSection}>
                 <View style={styles.profileInfoRow}>
                   <View style={styles.profileInfoLeft}>
+                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Text style={styles.profileName}>{fullName}</Text>
+                      {verificationStatus?.isVerified ? (
+      <VerifiedBadge
+        track={verificationStatus.verificationTrack}
+        size={16}
+      />
+    
+    ) : null}
+      </View>
                     <Text style={styles.profileEmail}>{user?.email}</Text>
 
                     {!!user?.businessType && (
@@ -757,6 +852,104 @@ const renderPost = useCallback(
                   </View>
                 </View>
               </View>
+
+              {!isProfileComplete && !isBannerDismissed && isBannerCheckDone ? (
+                <Pressable
+                  onPress={() => router.push("/pages/editBusinessProfile")}
+                  style={{
+                    marginHorizontal: 20,
+                    marginTop: 16,
+                    padding: 14,
+                    borderRadius: 20,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.foreground,
+                        fontSize: 14,
+                        fontFamily: "Poppins_600SemiBold",
+                      }}
+                    >
+                      Complete your{" "}
+                      {isTrainingProfession
+                        ? "contact details"
+                        : "business profile"}
+                    </Text>
+
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: colors.accent,
+                          fontSize: 13,
+                          fontFamily: "Poppins_700Bold",
+                        }}
+                      >
+                        {completionPercent}%
+                      </Text>
+
+                      <Pressable
+                        hitSlop={8}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleDismissBanner();
+                        }}
+                      >
+                        <Ionicons
+                          name="close"
+                          size={16}
+                          color={colors.muted}
+                        />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  <View
+                    style={{
+                      height: 6,
+                      borderRadius: 999,
+                      backgroundColor: colors.segment,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <View
+                      style={{
+                        height: "100%",
+                        width: `${completionPercent}%`,
+                        backgroundColor: colors.accent,
+                        borderRadius: 999,
+                      }}
+                    />
+                  </View>
+
+                  <Text
+                    style={{
+                      color: colors.muted,
+                      fontSize: 12,
+                      fontFamily: "Poppins_400Regular",
+                      marginTop: 8,
+                    }}
+                  >
+                    Vendors trust complete profiles more. Tap to finish yours.
+                  </Text>
+                </Pressable>
+              ) : null}
 
               <View style={styles.tabsSection}>
                 <Tabs
@@ -828,6 +1021,40 @@ const renderPost = useCallback(
                           colors={colors}
                           styles={styles}
                         />
+
+                        {!isTrainingProfession && (
+                          <InfoRow
+                            icon="business-outline"
+                            label="Business Name"
+                            value={user?.businessName || "-"}
+                            colors={colors}
+                            styles={styles}
+                          />
+                        )}
+
+                        <InfoRow
+                          icon="mail-outline"
+                          label={
+                            isTrainingProfession
+                              ? "Professional Email"
+                              : "Business Email"
+                          }
+                          value={user?.businessEmail || "-"}
+                          colors={colors}
+                          styles={styles}
+                        />
+
+                        <InfoRow
+                          icon="call-outline"
+                          label={
+                            isTrainingProfession
+                              ? "Professional Phone"
+                              : "Business Phone"
+                          }
+                          value={user?.businessPhoneNo || "-"}
+                          colors={colors}
+                          styles={styles}
+                        />
                       </View>
                     </View>
                   ) : null}
@@ -864,7 +1091,7 @@ const renderPost = useCallback(
                               key={community.id}
                               community={community}
                               variant="profile"
-                              badgeText="Owner"
+                               badgeText={community.visibility === "PUBLIC" ? "Super Mod" : "Admin"}
                               onPress={() =>
                                 router.push({
                                   pathname: "/user/community-dashboard",

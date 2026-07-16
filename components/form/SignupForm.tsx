@@ -10,6 +10,7 @@ import { router } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Ionicons } from "@expo/vector-icons";
+import { setPendingPassword } from "@/lib/pending-auth";
 import {
   Button,
   FieldError,
@@ -23,7 +24,7 @@ import {
   signupSchema,
   type SignupFormValues,
 } from "@/schema/singup.schema";
-import { signUpWithEmail } from "@/api/better-auth-client";
+import { signUpWithEmail,sendSignupOTP } from "@/api/better-auth-client";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { NEPAL_DISTRICTS } from "@/constants/nepalDistricts";
 
@@ -52,28 +53,34 @@ export default function SignupForm() {
     },
   });
 
-  const onSubmit = async (values: SignupFormValues) => {
+ const onSubmit = async (values: SignupFormValues) => {
     try {
       setServerError("");
       setIsSubmitting(true);
 
+      const email = values.email.trim().toLowerCase();
+
       await signUpWithEmail({
         firstName: values.firstName.trim(),
         lastName: values.lastName.trim(),
-        email: values.email.trim().toLowerCase(),
+        email,
         password: values.password,
         districtName: values.districtName.trim(),
         address: values.address?.trim() || "",
       });
 
-      router.replace("/onboarding");
+      await sendSignupOTP(email);
+
+      setPendingPassword(values.password);
+
+      // no router.replace here anymore —
+      // AuthPage's session-based <Redirect> handles navigation to verify-otp
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Signup failed");
     } finally {
       setIsSubmitting(false);
     }
   };
-
   return (
     <>
       <View className="gap-4">

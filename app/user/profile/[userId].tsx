@@ -15,6 +15,7 @@ import { router, useLocalSearchParams,Redirect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, Tabs } from "heroui-native";
 import ProfileImageViewer from "@/components/common/profileImageViewer";
+import VerifiedBadge from "@/components/common/verifiedBadge";
 
 import { useSession } from "@/api/better-auth-client";
 import { useCreateDirectChatMutation } from "@/store/api/chatApi";
@@ -664,6 +665,8 @@ if (isOwnProfile) {
         businessName: null,
         businessType: null,
         displayName,
+         isVerified: false,           // add
+  verificationTrack: null, 
         createdAt: new Date().toISOString(),
         follow: {
           isFollowing: false,
@@ -672,6 +675,7 @@ if (isOwnProfile) {
           canMessage: false,
           buttonText: "Follow",
           followedAt: null,
+          
         },
         permissions: {
           canViewProfile: true,

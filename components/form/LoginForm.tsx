@@ -38,19 +38,6 @@ export default function LoginForm() {
     try {
       setServerError("");
       setIsSubmitting(true);
-      const testUrl = "http://192.168.1.77:3000/api/auth/get-session";
-
-try {
-  console.log("APP FETCH TEST START:", testUrl);
-
-  const response = await fetch(testUrl);
-  const text = await response.text();
-
-  console.log("APP FETCH TEST STATUS:", response.status);
-  console.log("APP FETCH TEST TEXT:", text);
-} catch (err) {
-  console.log("APP FETCH TEST FAILED:", err);
-}
 
       const result = await signInWithEmail({
         email: values.email.trim().toLowerCase(),
@@ -92,57 +79,63 @@ try {
         </Text>
       </View>
 
-      <Controller
-        control={control}
-        name="email"
-        render={({ field: { onChange, value } }) => (
-          <TextField isRequired isInvalid={!!errors.email}>
-            <Label>Email</Label>
-            <InputGroup className="border-field-border bg-field-background">
-              <InputGroup.Input
-                value={value}
-                onChangeText={onChange}
-                placeholder="Enter your email"
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-            </InputGroup>
-            {errors.email?.message ? (
-              <FieldError>{errors.email.message}</FieldError>
-            ) : null}
-          </TextField>
-        )}
-      />
+   <Controller
+  control={control}
+  name="email"
+  render={({ field: { onChange, value } }) => (
+    <TextField isRequired isInvalid={!!errors.email}>
+      <Label>Email</Label>
+      <InputGroup className="border-field-border bg-field-background">
+        <InputGroup.Input
+          value={value}
+          onChangeText={onChange}
+          placeholder="Enter your email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          autoComplete="email"
+          textContentType="username"
+          importantForAutofill="yes"
+        />
+      </InputGroup>
+      {errors.email?.message ? (
+        <FieldError>{errors.email.message}</FieldError>
+      ) : null}
+    </TextField>
+  )}
+/>
 
-      <Controller
-        control={control}
-        name="password"
-        render={({ field: { onChange, value } }) => (
-          <TextField isRequired isInvalid={!!errors.password}>
-            <Label>Password</Label>
-            <InputGroup className="border-field-border bg-field-background">
-              <InputGroup.Input
-                value={value}
-                onChangeText={onChange}
-                placeholder="Enter your password"
-                secureTextEntry={!showPassword}
-              />
-              <InputGroup.Suffix>
-                <Pressable onPress={() => setShowPassword((prev) => !prev)}>
-                  <Ionicons
-                    name={showPassword ? "eye-off-outline" : "eye-outline"}
-                    size={18}
-                    color={colors.muted}
-                  />
-                </Pressable>
-              </InputGroup.Suffix>
-            </InputGroup>
-            {errors.password?.message ? (
-              <FieldError>{errors.password.message}</FieldError>
-            ) : null}
-          </TextField>
-        )}
-      />
+<Controller
+  control={control}
+  name="password"
+  render={({ field: { onChange, value } }) => (
+    <TextField isRequired isInvalid={!!errors.password}>
+      <Label>Password</Label>
+      <InputGroup className="border-field-border bg-field-background">
+        <InputGroup.Input
+          value={value}
+          onChangeText={onChange}
+          placeholder="Enter your password"
+          secureTextEntry={!showPassword}
+          autoComplete="password"
+          textContentType="password"
+          importantForAutofill="yes"
+        />
+        <InputGroup.Suffix>
+          <Pressable onPress={() => setShowPassword((prev) => !prev)}>
+            <Ionicons
+              name={showPassword ? "eye-off-outline" : "eye-outline"}
+              size={18}
+              color={colors.muted}
+            />
+          </Pressable>
+        </InputGroup.Suffix>
+      </InputGroup>
+      {errors.password?.message ? (
+        <FieldError>{errors.password.message}</FieldError>
+      ) : null}
+    </TextField>
+  )}
+/>
 
       {serverError ? (
         <Text
@@ -155,6 +148,21 @@ try {
           {serverError}
         </Text>
       ) : null}
+
+      <Pressable
+        onPress={() => router.push({ pathname: "/pages/forgot-password" })}
+        style={{ alignSelf: "flex-end" }}
+      >
+        <Text
+          style={{
+            fontSize: 13,
+            fontFamily: "Poppins_600SemiBold",
+            color: colors.success,
+          }}
+        >
+          Forgot password?
+        </Text>
+      </Pressable>
 
       <Button
         onPress={handleSubmit(onSubmit)}

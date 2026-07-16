@@ -2,7 +2,15 @@
    BASIC TYPES
    ========================================================= */
 
-export type CommunityPostType = "TEXT" | "MEDIA" | "LINK" | "POLL" | "SHARE";
+import { VerificationTrack } from "@/store/api/verificationApi";
+
+export type CommunityPostType =
+  | "TEXT"
+  | "MEDIA"
+  | "LINK"
+  | "POLL"
+  | "SHARE"
+  | "LIVE_HIGHLIGHT"; // <-- ADD THIS
 
 export type PostVisibility =
   | "PUBLIC"
@@ -177,6 +185,8 @@ export type PostAuthor = {
   lastName: string | null;
   image: string | null;
   businessName: string | null;
+  isVerified: boolean;                          // add
+  verificationTrack: VerificationTrack | null; 
 };
 
 export type CommunityPost = {
@@ -190,6 +200,14 @@ export type CommunityPost = {
   tag: CommunityPostTag;
   status: CommunityPostStatus;
   visibility: PostVisibility;
+  isLiveHighlight?: boolean;
+  highlightDiscussionId?: string | null;
+  highlightParticipantCount?: number | null;
+  highlightMessageCount?: number | null;
+  highlightDurationMinutes?: number | null;
+  shareUrl?: string;   // your formatPostResponse also returns this, currently unused on frontend
+  // --------------------
+
 
   content: string | null;
   linkUrl: string | null;

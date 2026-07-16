@@ -11,6 +11,31 @@ export type LiveViewerRole =
   | "MANAGER";
 
 export type DiscussionParticipantMode = "NORMAL" | "VIEWER_LIMITED" | "BLOCKED";
+// Add this
+export type EndLiveDiscussionPayload = {
+  communityId: string;
+  discussionId: string;
+  highlightBody?: string;        // optional
+};
+
+export type LiveHighlightPost = {
+  id: string;
+  communityId: string;
+  authorId: string;
+  title?: string | null;
+  content?: string | null;
+  isLiveHighlight: boolean;
+  highlightDiscussionId?: string | null;
+  highlightParticipantCount?: number | null;
+  highlightMessageCount?: number | null;
+  highlightDurationMinutes?: number | null;
+  linkUrl?: string | null;
+  createdAt: string;
+  publishedAt?: string | null;
+  author?: DiscussionAuthor;
+};
+
+export type GetLiveHighlightPostResponse = LiveHighlightPost | null;
 
 export type LiveViewerContext = {
   role: LiveViewerRole;
@@ -29,6 +54,7 @@ export type LiveViewerContext = {
   isViewerLimited: boolean;
   message?: string | null;
 };
+
 export type CommunityDiscussionLiveParticipant = {
   id: string;
   userId: string;
@@ -43,9 +69,11 @@ export type CommunityDiscussionLiveParticipant = {
     businessName?: string | null;
   } | null;
 };
+
 export type GetLiveDiscussionParticipantsResponse = {
   data: CommunityDiscussionLiveParticipant[];
 };
+
 export type GetLiveDiscussionParticipantsPayload = {
   communityId: string;
   discussionId: string;
@@ -111,6 +139,12 @@ export type GetLiveDiscussionResponse = {
 export type LiveDiscussionResponse = {
   message: string;
   data: CommunityDiscussionLiveChat;
+  highlightPost?: {
+    id: string;
+    communityId: string;
+    title?: string | null;
+    content?: string | null;
+  } | null;
 };
 
 export type JoinLiveDiscussionResponse = {
@@ -213,6 +247,7 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
         "CommunityDiscussionLive",
       ],
     }),
+
     getLiveDiscussionParticipants: builder.query<
       GetLiveDiscussionParticipantsResponse,
       GetLiveDiscussionParticipantsPayload
@@ -284,19 +319,31 @@ export const communityDiscussionLiveApi = baseApi.injectEndpoints({
       ],
     }),
 
-    endLiveDiscussion: builder.mutation<
-      LiveDiscussionResponse,
-      LiveDiscussionPayload
-    >({
-      query: ({ communityId, discussionId }) => ({
-        url: `/communities/${communityId}/discussions/${discussionId}/live/end`,
-        method: "POST",
-      }),
+   endLiveDiscussion: builder.mutation<LiveDiscussionResponse, EndLiveDiscussionPayload>({
+  query: ({ communityId, discussionId, highlightBody }) => ({
+    url: `/communities/${communityId}/discussions/${discussionId}/live/end`,
+    method: "POST",
+    body: highlightBody ? { highlightBody } : {},
+  }),
       invalidatesTags: (_result, _error, arg) => [
         { type: "CommunityDiscussionLive", id: arg.discussionId },
         { type: "CommunityDiscussion", id: arg.discussionId },
         "CommunityDiscussionLive",
         "CommunityDiscussion",
+      ],
+    }),
+
+    getLiveHighlightPost: builder.query<
+      GetLiveHighlightPostResponse,
+      LiveDiscussionPayload
+    >({
+      query: ({ communityId, discussionId }) => ({
+        url: `/communities/${communityId}/discussions/${discussionId}/live/highlight`,
+        method: "GET",
+      }),
+      providesTags: (_result, _error, arg) => [
+        { type: "CommunityDiscussionLive", id: arg.discussionId },
+        "CommunityDiscussionLive",
       ],
     }),
 
@@ -415,4 +462,5 @@ export const {
   useSendLiveDiscussionMessageMutation,
   useDeleteLiveDiscussionMessageMutation,
   useGetLiveDiscussionParticipantsQuery,
+  useGetLiveHighlightPostQuery,
 } = communityDiscussionLiveApi;

@@ -7,7 +7,7 @@ import React, {
   useTransition,
   useEffect,
 } from "react";
-import { ActivityIndicator, RefreshControl, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, Text, View } from "react-native";
 import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -17,7 +17,7 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Tabs } from "heroui-native";
-import { FlashList,type FlashListRef } from "@shopify/flash-list";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 
 import { useSession } from "@/api/better-auth-client";
 import CommentPostModal from "@/components/post/CommentsModal";
@@ -48,6 +48,7 @@ import type { CommunityPost, PostMedia } from "@/types/post";
 // const AnimatedFlatList = Animated.FlatList as unknown as typeof FlatList;
 
 type HomeFeedTab = "FOR_YOU" | "COMMUNITY" | "DISCUSSION";
+type DiscussionSubTab = "DISCUSSION" | "LIVE";
 type HomeListItem = CommunityPost | CommunityDiscussion;
 type PendingFollowAction = "COMMENT" | "POLL";
 
@@ -131,9 +132,8 @@ export default function HomeScreen() {
   const { colors } = useAppTheme();
   const { data: session, isPending } = useSession();
 
-const listRef = useRef<FlashListRef<HomeListItem>>(null);
-const shareSheetRef = useRef<ShareBottomSheetRef>(null);
-
+  const listRef = useRef<FlashListRef<HomeListItem>>(null);
+  const shareSheetRef = useRef<ShareBottomSheetRef>(null);
 
   // React 19 concurrent transition — tab switch stays responsive
   // even while the new tab's list is being rendered/re-committed.
@@ -141,6 +141,16 @@ const shareSheetRef = useRef<ShareBottomSheetRef>(null);
 
   const [activeTab, setActiveTab] = useState<HomeFeedTab>("FOR_YOU");
   const isDiscussionTab = activeTab === "DISCUSSION";
+
+  // ------------------------------------------------------------
+  // NEW: sub-tab inside the Discussions tab.
+  // "DISCUSSION" = forum-only discussions (discussion.liveChat is null).
+  // "LIVE" = discussions that have (or had) a live chat attached —
+  // LIVE, SCHEDULED, ENDED, or CANCELLED all stay here, since the
+  // liveChat relation is never removed once created, only its
+  // status changes. Same CommunityDiscussionHomeCard renders both.
+  // ------------------------------------------------------------
+  const [discussionSubTab, setDiscussionSubTab] = useState<DiscussionSubTab>("DISCUSSION");
 
   // ------------------------------------------------------------
   // FIX: each feed keeps its own cursor + its own local list.
@@ -170,18 +180,18 @@ const shareSheetRef = useRef<ShareBottomSheetRef>(null);
   const activePosts = activeTab === "COMMUNITY" ? communityPosts : forYouPosts;
   const setActivePosts = activeTab === "COMMUNITY" ? setCommunityPosts : setForYouPosts;
   const getItemType = useCallback(
-  (item: HomeListItem) => {
-    if (isDiscussionTab) return "discussion";
-    const post = item as CommunityPost;
-    if (post.poll) return "poll";
-    const mediaCount = post.media?.length ?? 0;
-    if (mediaCount > 1) return "carousel";
-    if (mediaCount === 1) return "single-image";
-    return "text";
-  },
-  [isDiscussionTab],
-);
-const {
+    (item: HomeListItem) => {
+      if (isDiscussionTab) return "discussion";
+      const post = item as CommunityPost;
+      if (post.poll) return "poll";
+      const mediaCount = post.media?.length ?? 0;
+      if (mediaCount > 1) return "carousel";
+      if (mediaCount === 1) return "single-image";
+      return "text";
+    },
+    [isDiscussionTab],
+  );
+  const {
     commentPost,
     activeCommentPost,
     comments,
@@ -206,7 +216,7 @@ const {
     handleShareToFriends,
     handleCreateComment,
     handleCommentLike,
-     handleShareToFeed,  
+    handleShareToFeed,
     refetchComments,
   } = usePostInteractions({
     posts: activePosts,
@@ -317,22 +327,22 @@ const {
   const lastOffset = useSharedValue(0);
   const headerTranslateY = useSharedValue(0);
 
-const handleScroll = useCallback(
-  (event: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const currentOffset = event.nativeEvent.contentOffset.y;
-    const diff = currentOffset - lastOffset.value;
+  const handleScroll = useCallback(
+    (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+      const currentOffset = event.nativeEvent.contentOffset.y;
+      const diff = currentOffset - lastOffset.value;
 
-    if (currentOffset <= 0) {
-      headerTranslateY.value = withTiming(0, { duration: 150 });
-    } else if (diff > 4) {
-      headerTranslateY.value = withTiming(-OPTIONS_HEADER_HEIGHT, { duration: 150 });
-    } else if (diff < -4) {
-      headerTranslateY.value = withTiming(0, { duration: 150 });
-    }
-    lastOffset.value = currentOffset;
-  },
-  [lastOffset, headerTranslateY],
-);
+      if (currentOffset <= 0) {
+        headerTranslateY.value = withTiming(0, { duration: 150 });
+      } else if (diff > 4) {
+        headerTranslateY.value = withTiming(-OPTIONS_HEADER_HEIGHT, { duration: 150 });
+      } else if (diff < -4) {
+        headerTranslateY.value = withTiming(0, { duration: 150 });
+      }
+      lastOffset.value = currentOffset;
+    },
+    [lastOffset, headerTranslateY],
+  );
 
   const headerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: headerTranslateY.value }],
@@ -362,21 +372,21 @@ const handleScroll = useCallback(
   );
 
   const canCommentOnPost = useCallback(
-  (post: CommunityPost) => {
-    const normalizedPost = post as CommunityFollowState;
-    const visibility = String(
-      normalizedPost.community?.visibility ??
-        normalizedPost.communityVisibility ??
-        normalizedPost.visibility ??
-        "",
-    ).toUpperCase();
+    (post: CommunityPost) => {
+      const normalizedPost = post as CommunityFollowState;
+      const visibility = String(
+        normalizedPost.community?.visibility ??
+          normalizedPost.communityVisibility ??
+          normalizedPost.visibility ??
+          "",
+      ).toUpperCase();
 
-    if (visibility === "PUBLIC" || visibility === "RESTRICTED") return true;
+      if (visibility === "PUBLIC" || visibility === "RESTRICTED") return true;
 
-    return isPostCommunityFollowed(post);
-  },
-  [isPostCommunityFollowed],
-);
+      return isPostCommunityFollowed(post);
+    },
+    [isPostCommunityFollowed],
+  );
 
   const getPostVisibility = useCallback((post: CommunityPost) => {
     const normalizedPost = post as CommunityFollowState;
@@ -426,6 +436,12 @@ const handleScroll = useCallback(
         setActiveTab(tab);
       });
 
+      // Always land back on the Discussion sub-tab when re-entering
+      // the Discussions tab, so state stays predictable.
+      if (tab === "DISCUSSION") {
+        setDiscussionSubTab("DISCUSSION");
+      }
+
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
       headerTranslateY.value = withTiming(0, { duration: 150 });
     },
@@ -438,6 +454,15 @@ const handleScroll = useCallback(
       handleChangeTab(value);
     },
     [handleChangeTab],
+  );
+
+  const handleChangeDiscussionSubTab = useCallback(
+    (subTab: DiscussionSubTab) => {
+      if (subTab === discussionSubTab) return;
+      setDiscussionSubTab(subTab);
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    },
+    [discussionSubTab],
   );
 
   const handleVotePostPoll = useCallback(
@@ -621,7 +646,7 @@ const handleScroll = useCallback(
     [viewer.visible, commentPost, dislikePostTarget, followModalPost],
   );
 
- const renderPostItem = useCallback(
+  const renderPostItem = useCallback(
     ({ item }: { item: CommunityPost }) => (
       <HomePostItem
         item={item}
@@ -658,9 +683,29 @@ const handleScroll = useCallback(
     [],
   );
 
+  // ------------------------------------------------------------
+  // NEW: split the raw discussions list by whether they have a
+  // liveChat relation at all. A discussion keeps its liveChat
+  // record forever once created (status just changes to ENDED /
+  // CANCELLED), so "Live" always shows LIVE, SCHEDULED, ENDED, and
+  // CANCELLED discussions, while "Discussion" shows pure forum
+  // posts that never had a live session attached.
+  // ------------------------------------------------------------
+  const filteredDiscussions = useMemo(() => {
+    if (discussionSubTab === "LIVE") {
+      return discussions.filter((d) => Boolean(d.liveChat));
+    }
+    return discussions.filter((d) => !d.liveChat);
+  }, [discussions, discussionSubTab]);
+
   const listData = useMemo<HomeListItem[]>(
-    () => (isDiscussionTab ? discussions : activeTab === "COMMUNITY" ? communityPosts : forYouPosts),
-    [isDiscussionTab, discussions, activeTab, communityPosts, forYouPosts],
+    () =>
+      isDiscussionTab
+        ? filteredDiscussions
+        : activeTab === "COMMUNITY"
+          ? communityPosts
+          : forYouPosts,
+    [isDiscussionTab, filteredDiscussions, activeTab, communityPosts, forYouPosts],
   );
 
   const activeLoading = isDiscussionTab
@@ -783,11 +828,24 @@ const handleScroll = useCallback(
             ? "No public posts to discover yet."
             : activeTab === "COMMUNITY"
               ? "No posts from your communities yet."
-              : "No discussions to show yet."}
+              : discussionSubTab === "LIVE"
+                ? "No live discussions right now."
+                : "No discussions to show yet."}
         </Text>
       </View>
     );
-  }, [activeTab, activeLoading, activeFetching, activeError, listData.length, isDiscussionTab, colors.accent, colors.danger, colors.muted]);
+  }, [
+    activeTab,
+    activeLoading,
+    activeFetching,
+    activeError,
+    listData.length,
+    isDiscussionTab,
+    discussionSubTab,
+    colors.accent,
+    colors.danger,
+    colors.muted,
+  ]);
 
   const footerComponent = useMemo(() => {
     if (activeFetching && listData.length > 0) {
@@ -835,63 +893,122 @@ const handleScroll = useCallback(
 
   return (
     <>
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={[]}>
-      <View
-        style={{
-          minHeight: OPTIONS_HEADER_HEIGHT,
-          backgroundColor: colors.background,
-          justifyContent: "center",
-        }}
-      >
-        <Tabs value={activeTab} onValueChange={handleTabValueChange} variant="secondary" style={{ width: "100%" }}>
-          <Tabs.List
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={[]}>
+        <View
+          style={{
+            minHeight: OPTIONS_HEADER_HEIGHT,
+            backgroundColor: colors.background,
+            justifyContent: "center",
+          }}
+        >
+          <Tabs value={activeTab} onValueChange={handleTabValueChange} variant="secondary" style={{ width: "100%" }}>
+            <Tabs.List
+              style={{
+                width: "100%",
+                minHeight: OPTIONS_HEADER_HEIGHT,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: colors.background,
+              }}
+            >
+              <Tabs.Indicator />
+              {HOME_TABS.map((tab) => (
+                <Tabs.Trigger key={tab.value} value={tab.value}>
+                  {({ isSelected }) => (
+                    <Tabs.Label
+                      style={{
+                        color: isSelected ? colors.foreground : colors.muted,
+                        fontSize: 15,
+                        fontFamily: isSelected ? "Poppins_700Bold" : "Poppins_500Medium",
+                      }}
+                    >
+                      {tab.label}
+                    </Tabs.Label>
+                  )}
+                </Tabs.Trigger>
+              ))}
+            </Tabs.List>
+          </Tabs>
+        </View>
+
+        {/* NEW: Discussion / Live sub-tab bar, only visible on the Discussions tab */}
+        {isDiscussionTab ? (
+          <View
             style={{
-              width: "100%",
-              minHeight: OPTIONS_HEADER_HEIGHT,
-              alignItems: "center",
-              justifyContent: "center",
+              flexDirection: "row",
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              gap: 8,
               backgroundColor: colors.background,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
             }}
           >
-            <Tabs.Indicator />
-            {HOME_TABS.map((tab) => (
-              <Tabs.Trigger key={tab.value} value={tab.value}>
-                {({ isSelected }) => (
-                  <Tabs.Label
-                    style={{
-                      color: isSelected ? colors.foreground : colors.muted,
-                      fontSize: 15,
-                      fontFamily: isSelected ? "Poppins_700Bold" : "Poppins_500Medium",
-                    }}
-                  >
-                    {tab.label}
-                  </Tabs.Label>
-                )}
-              </Tabs.Trigger>
-            ))}
-          </Tabs.List>
-        </Tabs>
-      </View>
+            <Pressable
+              onPress={() => handleChangeDiscussionSubTab("DISCUSSION")}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 7,
+                borderRadius: 999,
+                backgroundColor:
+                  discussionSubTab === "DISCUSSION" ? colors.accent : colors.surfaceSecondary,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontFamily: "Poppins_600SemiBold",
+                  color:
+                    discussionSubTab === "DISCUSSION"
+                      ? colors.accentForeground
+                      : colors.muted,
+                }}
+              >
+                Discussion
+              </Text>
+            </Pressable>
 
-      <FlashList
-        ref={listRef}
-        data={listData}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        getItemType={getItemType}
-        contentContainerStyle={{ paddingBottom: 120 }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={refreshControl}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        onEndReached={loadMoreFeed}
-        onEndReachedThreshold={0.7}
-        ListEmptyComponent={emptyComponent}
-        ListFooterComponent={footerComponent}
-        keyboardShouldPersistTaps="handled"
-      />
-    </SafeAreaView>
+            <Pressable
+              onPress={() => handleChangeDiscussionSubTab("LIVE")}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 7,
+                borderRadius: 999,
+                backgroundColor:
+                  discussionSubTab === "LIVE" ? colors.danger : colors.surfaceSecondary,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontFamily: "Poppins_600SemiBold",
+                  color: discussionSubTab === "LIVE" ? "#FFFFFF" : colors.muted,
+                }}
+              >
+                Live
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
+        <FlashList
+          ref={listRef}
+          data={listData}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          getItemType={getItemType}
+          contentContainerStyle={{ paddingBottom: 120 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={refreshControl}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          onEndReached={loadMoreFeed}
+          onEndReachedThreshold={0.7}
+          ListEmptyComponent={emptyComponent}
+          ListFooterComponent={footerComponent}
+          keyboardShouldPersistTaps="handled"
+        />
+      </SafeAreaView>
 
       <CommentPostModal
         visible={!!commentPost}
@@ -934,7 +1051,7 @@ const handleScroll = useCallback(
         }}
       />
 
-   <FollowCommunityModal
+      <FollowCommunityModal
         visible={!!followModalPost}
         communityName={followModalCommunityName}
         isRestricted={followModalPost ? getPostVisibility(followModalPost) === "RESTRICTED" : false}
@@ -942,11 +1059,11 @@ const handleScroll = useCallback(
         onFollow={handleFollowCommunityFromModal}
       />
 
-   <ShareBottomSheet
+      <ShareBottomSheet
         ref={shareSheetRef}
         onShareExternal={handleSharePost}
         onShareToFriends={handleShareToFriends}
-        onShareToFeed={handleShareToFeed}   // NEW
+        onShareToFeed={handleShareToFeed}
         onLinkCopied={() => {
           // e.g. Toast.show({ type: "success", text1: "Link copied" })
         }}

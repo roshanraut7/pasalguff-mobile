@@ -162,7 +162,7 @@ const isJoined =
    * This slug page is now only a viewing page.
    * Admin/moderator actions are handled in the dedicated manage pages.
    */
-  const canOpenManagePage = isOwner || isModerator;
+  const canOpenManagePage =isModerator;
   
 
   const canLoadMembers =
@@ -245,11 +245,13 @@ const showLeaveButton =
 
   const totalPostCount = community?.postCount ?? postItems.length;
 const roleLabel = useMemo(() => {
-  if (isOwner) return "Owner";
+  if (isOwner) {
+    return community?.visibility === "PUBLIC" ? "Super Mod" : "Admin";
+  }
   if (isModerator) return "Moderator";
   if (isJoined) return "Joined";
   return null;
-}, [isOwner, isModerator, isJoined]);
+}, [isOwner, isModerator, isJoined, community?.visibility]);
 
   const aboutRoleLabel = isJoinRequestPending
     ? "Pending"

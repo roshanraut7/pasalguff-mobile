@@ -1,5 +1,6 @@
 
 import { baseApi } from "./baseApi";
+import { VerificationTrack } from "./verificationApi";
 
 export type DiscussionVisibility = "PUBLIC" | "COMMUNITY";
 
@@ -56,6 +57,8 @@ export type DiscussionAuthor = {
   lastName?: string | null;
   image?: string | null;
   businessName?: string | null;
+  isVerified?: boolean;
+  verificationTrack?: VerificationTrack | null;
 };
 
 export type DiscussionCommunity = {

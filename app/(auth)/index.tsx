@@ -51,22 +51,18 @@ export default function AuthPage() {
       </SafeAreaView>
     );
   }
+if (session?.user) {
+  const role = session.user.role;
+  const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+  const onboardingCompleted = session.user.onboardingCompleted;
 
-  if (session?.user) {
-    const role = session.user.role;
-    const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
-    const onboardingCompleted = session.user.onboardingCompleted;
-
-    if (isAdmin) {
-      return <Redirect href="/admin" />;
-    }
-
-    if (!onboardingCompleted) {
-      return <Redirect href="/onboarding" />;
-    }
-
-    return <Redirect href="/(tabs)" />;
+  if (!session.user.emailVerified) {
+    return <Redirect href={{ pathname: "/pages/verify-otp", params: { email: session.user.email } }} />;
   }
+  if (isAdmin) return <Redirect href="/admin" />;
+  if (!onboardingCompleted) return <Redirect href="/onboarding" />;
+  return <Redirect href="/(tabs)" />;
+}
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>

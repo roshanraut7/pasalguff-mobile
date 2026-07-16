@@ -1,9 +1,13 @@
 // lib/saveToGallery.ts
 import * as MediaLibrary from "expo-media-library";
 import { File, Paths } from "expo-file-system";
+// import { Toast, useToast } from 'heroui-native';
 
 export async function saveImageToGallery(remoteUrl: string) {
   // Permission handling
+
+  // const { toast } = useToast();
+  
   const current = await MediaLibrary.getPermissionsAsync(true);
   let status = current.status;
   let canAskAgain = current.canAskAgain;
@@ -30,7 +34,13 @@ export async function saveImageToGallery(remoteUrl: string) {
   try {
     // Download
     const downloadResult = await File.downloadFileAsync(remoteUrl, tempFile);
-
+    // toast.show({ message: "Image downloaded successfully", type: "success" });
+//     toast.show({
+//   variant: 'success',
+//   label: 'Image',
+//   description: 'Image downloaded successfully',
+//   animation: 'disable-all',
+// });
     if (!downloadResult.exists) {
       throw new Error("Download failed");
     }

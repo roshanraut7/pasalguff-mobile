@@ -1,4 +1,5 @@
 import { baseApi } from "./baseApi";
+import type { VerificationTrack } from "./verificationApi";
 
 export type FollowSortBy = "newest" | "oldest" | "name_asc" | "name_desc";
 
@@ -19,6 +20,8 @@ export type FollowUser = {
   businessType?: string | null;
   displayName: string;
   createdAt: string;
+   isVerified: boolean;                          // add
+  verificationTrack: VerificationTrack | null;  
 };
 
 export type FollowRelationship = {

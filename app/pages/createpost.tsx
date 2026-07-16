@@ -6,6 +6,7 @@
     ScrollView,
     Text,
     View,
+  ActivityIndicator
   } from "react-native";
   import { KeyboardAvoidingView } from "react-native-keyboard-controller";
   import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -235,6 +236,58 @@
       </Modal>
     );
   }
+
+  function UploadingModal({
+  visible,
+  isDark,
+  accentColor,
+  label,
+}: {
+  visible: boolean;
+  isDark: boolean;
+  accentColor: string;
+  label: string;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.45)",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: 24,
+        }}
+      >
+        <View
+          style={{
+            width: "100%",
+            maxWidth: 300,
+            borderRadius: 24,
+            padding: 28,
+            backgroundColor: isDark ? "#020617" : "#FFFFFF",
+            alignItems: "center",
+            gap: 14,
+          }}
+        >
+          <ActivityIndicator size="large" color={accentColor} />
+          <Text
+            style={{
+              color: isDark ? "#F9FAFB" : "#111827",
+              fontSize: 15,
+              fontWeight: "700",
+              textAlign: "center",
+            }}
+          >
+            {label}
+          </Text>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+
 
   /* ──────────────────────────────────────────────────────────────
     Start Discussion card
@@ -521,6 +574,13 @@
       isUpdatingPost ||
       isPublishingDraft;
 
+      const uploadingLabel = isUploadingMedia
+  ? "Uploading images..."
+  : isCreatingPost || isPublishingDraft
+  ? "Publishing your post..."
+  : isCreatingDraft || isUpdatingPost
+  ? "Saving draft..."
+  : "Please wait...";
     /* ──────────────────────────────────────────────────────────────
       Editor
     ────────────────────────────────────────────────────────────── */
@@ -1154,21 +1214,26 @@
         if (isMountedRef.current) {
           clearComposerAfterPost();
 
-          showStatusModal(
-            "success",
-            "Post posted",
-            targetCommunityName
-              ? `Your post has been posted successfully in ${targetCommunityName}.`
-              : "Your post has been posted successfully.",
-          );
+  showStatusModal(
+    "success",
+    "Post posted",
+    targetCommunityName
+      ? `Your post has been posted successfully in ${targetCommunityName}.`
+      : "Your post has been posted successfully.",
+    () => router.replace("/(tabs)"),   // ← navigates when user taps OK
+  );
         }
       } catch (error: any) {
-        if (isMountedRef.current) {
-          showStatusModal(
-            "danger",
-            "Could not post",
-            error?.data?.message ?? "Please try again.",
-          );
+        console.log("PUBLISH ERROR — status:", error?.status);
+  console.log("PUBLISH ERROR — data:", JSON.stringify(error?.data));
+  console.log("PUBLISH ERROR — full:", JSON.stringify(error, null, 2));
+
+  if (isMountedRef.current) {
+    showStatusModal(
+      "danger",
+      "Could not post",
+      error?.data?.message ?? "Please try again.",
+    );
         }
       }
     };
@@ -1667,6 +1732,12 @@
           successColor={colors.success}
           dangerColor={colors.danger}
         />
+        <UploadingModal
+  visible={busy}
+  isDark={isDark}
+  accentColor={colors.accent}
+  label={uploadingLabel}
+/>
       </SafeAreaView>
     );
   }

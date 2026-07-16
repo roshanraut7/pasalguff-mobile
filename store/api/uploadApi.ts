@@ -8,6 +8,21 @@ export type UploadResponse = {
   size: number;
   originalSize?: number;
 };
+export type UploadedFileResponse = {
+  url: string;
+  filename: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+  originalSize: number;
+};
+ 
+export type UploadVerificationDocumentArgs = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  side: "front" | "back";
+};
 
 export type UploadPostMediaItem = {
   index: number;
@@ -113,6 +128,26 @@ export const uploadApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Community", "AdminCommunities"],
     }),
+    uploadVerificationDocument: builder.mutation<
+  UploadedFileResponse,
+  UploadVerificationDocumentArgs
+>({
+  query: ({ uri, fileName, mimeType, side }) => {
+    const formData = new FormData();
+ 
+    formData.append("file", {
+      uri,
+      name: fileName ?? `verification-${side}-${Date.now()}.jpg`,
+      type: mimeType ?? "image/jpeg",
+    } as any);
+ 
+    return {
+      url: `/uploads/verification?side=${side}`,
+      method: "POST",
+      body: formData,
+    };
+  },
+}),
 
     uploadPostMedia: builder.mutation<
       UploadPostMediaResponse,
@@ -134,4 +169,5 @@ export const {
   useUploadCommunityAvatarMutation,
   useUploadCommunityCoverMutation,
   useUploadPostMediaMutation,
+  useUploadVerificationDocumentMutation 
 } = uploadApi;

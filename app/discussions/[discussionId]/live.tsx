@@ -16,6 +16,7 @@ import {
   Pressable,
   Text,
   TextInput,
+  Modal,
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -104,7 +105,10 @@ export default function LiveDiscussionPage() {
   const [joinLeaveNotices, setJoinLeaveNotices] = useState<JoinLeaveNotice[]>(
     [],
   );
-  const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
+const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
+const [showEndLiveModal, setShowEndLiveModal] = useState(false);   // NEW
+const [highlightDraft, setHighlightDraft] = useState("");           // NEW
+const [showResultModal, setShowResultModal] = useState(false);      // NEW
 
   const scrollToBottom = useCallback((animated = true) => {
     requestAnimationFrame(() => {
@@ -925,36 +929,36 @@ export default function LiveDiscussionPage() {
     });
   }, []);
 
-  const handleEndLive = useCallback(() => {
-    if (!communityId || !discussionId) return;
+const handleEndLive = useCallback(() => {
+  if (!communityId || !discussionId) return;
+  setHighlightDraft("");
+  setShowEndLiveModal(true);
+}, [communityId, discussionId]);
 
-    Alert.alert(
-      "End live discussion",
-      "Are you sure you want to end this live discussion?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "End Live",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await endLiveDiscussion({
-                communityId,
-                discussionId,
-              }).unwrap();
+const handleConfirmEndLive = useCallback(async () => {
+  if (!communityId || !discussionId) return;
 
-              await refreshLivePage();
-            } catch (error) {
-              Alert.alert("Could not end live", getErrorMessage(error));
-            }
-          },
-        },
-      ],
-    );
-  }, [communityId, discussionId, endLiveDiscussion, refreshLivePage]);
+  try {
+    setShowEndLiveModal(false);
+
+    await endLiveDiscussion({
+      communityId,
+      discussionId,
+      highlightBody: highlightDraft.trim() || undefined,
+    }).unwrap();
+
+    await refreshLivePage();
+    setShowResultModal(true);
+  } catch (error) {
+    Alert.alert("Could not end live", getErrorMessage(error));
+  }
+}, [
+  communityId,
+  discussionId,
+  highlightDraft,
+  endLiveDiscussion,
+  refreshLivePage,
+]);
 
   const emptyMessageText = isLive
     ? canSendFromPermission
@@ -1781,6 +1785,137 @@ export default function LiveDiscussionPage() {
           }
         }}
       />
+  <Modal
+  visible={showEndLiveModal}
+  transparent
+  animationType="fade"
+  statusBarTranslucent
+  onRequestClose={() => setShowEndLiveModal(false)}
+>
+  <KeyboardAvoidingView
+    behavior={Platform.OS === "ios" ? "padding" : "height"}
+    style={{ flex: 1 }}
+  >
+    <Pressable
+      style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 }}
+      onPress={() => setShowEndLiveModal(false)}
+    >
+      <Pressable
+        onPress={() => {}}
+        style={{
+          borderRadius: 20,
+          padding: 20,
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        <Text style={{ fontSize: 17, fontFamily: "Poppins_700Bold", color: colors.foreground, marginBottom: 4 }}>
+          End live discussion
+        </Text>
+
+        <Text style={{ fontSize: 13, fontFamily: "Poppins_400Regular", color: colors.muted, marginBottom: 14 }}>
+          Write a short recap to post in the community. Leave blank to use a default summary.
+        </Text>
+
+        <TextInput
+          value={highlightDraft}
+          onChangeText={setHighlightDraft}
+          multiline
+          placeholder="e.g. Great turnout today! We covered..."
+          placeholderTextColor={colors.placeholder}
+          style={{
+            minHeight: 100,
+            maxHeight: 160,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 12,
+            fontSize: 14,
+            color: colors.foreground,
+            textAlignVertical: "top",
+            marginBottom: 16,
+          }}
+        />
+
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <Pressable
+            onPress={() => setShowEndLiveModal(false)}
+            style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: colors.border }}
+          >
+            <Text style={{ color: colors.foreground, fontSize: 14, fontFamily: "Poppins_600SemiBold" }}>
+              Cancel
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleConfirmEndLive}
+            disabled={isEndingLive}
+            style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: colors.danger, opacity: isEndingLive ? 0.6 : 1 }}
+          >
+            {isEndingLive ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={{ color: "#fff", fontSize: 14, fontFamily: "Poppins_600SemiBold" }}>
+                End & Post
+              </Text>
+            )}
+          </Pressable>
+        </View>
+      </Pressable>
+    </Pressable>
+  </KeyboardAvoidingView>
+</Modal>
+
+<Modal
+  visible={showResultModal}
+  transparent
+  animationType="fade"
+  statusBarTranslucent
+  onRequestClose={() => setShowResultModal(false)}
+>
+  <Pressable
+    style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 24 }}
+    onPress={() => setShowResultModal(false)}
+  >
+    <Pressable
+      onPress={() => {}}
+      style={{ width: "100%", maxWidth: 400, borderRadius: 20, padding: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+    >
+      <Text style={{ fontSize: 17, fontFamily: "Poppins_700Bold", color: colors.foreground, marginBottom: 6 }}>
+        Live discussion ended
+      </Text>
+      <Text style={{ fontSize: 14, fontFamily: "Poppins_400Regular", color: colors.muted, marginBottom: 18 }}>
+        Your highlight has been posted to {communityName}.
+      </Text>
+
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <Pressable
+          onPress={() => setShowResultModal(false)}
+          style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: colors.border }}
+        >
+          <Text style={{ color: colors.foreground, fontSize: 14, fontFamily: "Poppins_600SemiBold" }}>
+            Stay here
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            setShowResultModal(false);
+            router.push({
+              pathname: "/user/community/[slug]",
+              params: { slug: communityId },
+            });
+          }}
+          style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: colors.accent }}
+        >
+          <Text style={{ color: colors.accentForeground, fontSize: 14, fontFamily: "Poppins_600SemiBold" }}>
+            View in Community
+          </Text>
+        </Pressable>
+      </View>
+    </Pressable>
+  </Pressable>
+</Modal>
     </SafeAreaView>
   );
 }

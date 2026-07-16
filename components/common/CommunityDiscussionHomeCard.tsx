@@ -7,7 +7,7 @@ import {
   View,
 } from "react-native";
 import { Avatar, Surface } from "heroui-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -15,6 +15,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import type { CommunityDiscussion } from "@/store/api/communityDiscussionApi";
+import VerifiedBadge from "@/components/common/verifiedBadge";
 
 dayjs.extend(relativeTime);
 
@@ -172,104 +173,54 @@ export default function CommunityDiscussionHomeCard({
               <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
             </Avatar>
 
-            <View style={styles.authorMeta}>
-              <Text numberOfLines={1} style={styles.authorName}>
-                {authorName}
-              </Text>
+        <View style={styles.authorMeta}>
+  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+    <Text numberOfLines={1} style={styles.authorName}>
+      {authorName}
+    </Text>
+    {discussion.author.isVerified ? (
+      <VerifiedBadge track={discussion.author.verificationTrack} size={13} />
+    ) : null}
+  </View>
 
-              <Text numberOfLines={1} style={styles.subMeta}>
-                {discussion.community.name} · {dayjs(discussion.createdAt).fromNow()}
-              </Text>
-            </View>
+  <Text numberOfLines={1} style={styles.subMeta}>
+    {discussion.community.name} · {dayjs(discussion.createdAt).fromNow()}
+  </Text>
+</View>
           </View>
 
-          {isLiveNow ? (
-            <View style={styles.liveSmallBadge}>
-              <View style={styles.liveSmallDot} />
-              <Text style={styles.liveSmallText}>LIVE</Text>
-            </View>
-          ) : (
-            <View style={styles.discussionBadge}>
-              <Ionicons
-                name="chatbubbles-outline"
-                size={13}
-                color={colors.accent}
-              />
-
-              <Text style={styles.discussionBadgeText}>Discussion</Text>
-            </View>
-          )}
+        {isLiveNow ? (
+  <View style={styles.liveSmallBadge}>
+    <View style={styles.liveSmallDot} />
+    <Text style={styles.liveSmallText}>LIVE</Text>
+  </View>
+) : (
+  <Pressable
+    onPress={(event) => {
+      event.stopPropagation();
+      openPrimary();
+    }}
+    style={[
+      styles.openButton,
+      { backgroundColor: hasLiveChat ? colors.success : colors.success },
+    ]}
+  >
+    <Text style={styles.openButtonText}>Enter</Text>
+    <Ionicons name="enter-outline" size={14} color={colors.accentForeground} />
+  </Pressable>
+)}
         </View>
 
-        <View style={styles.statusRow}>
-          <View
-            style={[
-              styles.statusPill,
-              {
-                borderColor: statusColor,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.statusDot,
-                {
-                  backgroundColor: statusColor,
-                },
-              ]}
-            />
-
-            <Text
-              style={[
-                styles.statusText,
-                {
-                  color: statusColor,
-                },
-              ]}
-            >
-              {discussion.status}
-            </Text>
-          </View>
-
-          <View style={styles.visibilityPill}>
-            <Ionicons
-              name={
-                discussion.visibility === "COMMUNITY"
-                  ? "people-outline"
-                  : "earth-outline"
-              }
-              size={12}
-              color={colors.muted}
-            />
-
-            <Text style={styles.visibilityText}>{discussion.visibility}</Text>
-          </View>
-
-          {hasLiveChat ? (
-            <View
-              style={[
-                styles.liveStatusPill,
-                {
-                  borderColor: liveColor,
-                },
-              ]}
-            >
-              <Ionicons name={liveIcon} size={12} color={liveColor} />
-
-              <Text
-                style={[
-                  styles.liveStatusText,
-                  {
-                    color: liveColor,
-                  },
-                ]}
-              >
-                {liveLabel}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-
+        {hasLiveChat ? (
+  <View style={styles.statusRow}>
+    <View style={[styles.liveStatusPill, { borderColor: liveColor }]}>
+      <Ionicons name={liveIcon} size={12} color={liveColor} />
+      <Text style={[styles.liveStatusText, { color: liveColor }]}>
+        {liveLabel}
+      </Text>
+    </View>
+  </View>
+) : null}
         <Text numberOfLines={2} style={styles.title}>
           {discussion.title}
         </Text>
@@ -366,39 +317,6 @@ export default function CommunityDiscussionHomeCard({
               {formatCount(discussion.followerCount)} followers
             </Text>
           </View>
-        </View>
-
-        <View style={styles.footerRow}>
-          <Text style={styles.footerHint}>
-            {hasLiveChat
-              ? isLiveNow
-                ? "Tap Join to enter live chat"
-                : "Tap Open Live to view live page"
-              : "Tap Open to join the discussion"}
-          </Text>
-
-          <Pressable
-            onPress={(event) => {
-              event.stopPropagation();
-              openPrimary();
-            }}
-            style={[
-              styles.openButton,
-              {
-                backgroundColor: hasLiveChat && isLiveNow
-                  ? colors.danger
-                  : colors.accent,
-              },
-            ]}
-          >
-            <Text style={styles.openButtonText}>{primaryButtonLabel}</Text>
-
-            <Ionicons
-              name="arrow-forward"
-              size={15}
-              color={colors.accentForeground}
-            />
-          </Pressable>
         </View>
       </Surface>
     </Pressable>
@@ -638,14 +556,21 @@ function createStyles(colors: AppColors) {
       fontFamily: "Poppins_400Regular",
     },
 
-    openButton: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 999,
-    },
+ openButton: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 5,
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  borderRadius: 999,
+  borderWidth: 0,
+  borderColor: "transparent",
+  shadowOpacity: 0,
+  shadowColor: "transparent",
+  shadowRadius: 0,
+  shadowOffset: { width: 0, height: 0 },
+  elevation: 0,
+},
 
     openButtonText: {
       color: colors.accentForeground,

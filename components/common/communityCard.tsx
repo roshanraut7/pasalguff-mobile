@@ -37,6 +37,10 @@ function isCommunityPending(community: CommunityItem) {
   return community.myJoinRequestStatus === "PENDING";
 }
 
+function ownerLabel(community: CommunityItem) {
+  return community.visibility === "PUBLIC" ? "Super Mod" : "Admin";
+}
+
 export default function CommunityCard({
   community,
   variant = "explore",
@@ -55,24 +59,24 @@ export default function CommunityCard({
   const isPending = isCommunityPending(community);
 
   const resolvedBadgeText =
-    badgeText ??
-    (isOwner
-      ? "Owner"
-      : isJoined
-        ? "Joined"
-        : isPending
-          ? "Pending"
-          : undefined);
+  badgeText ??
+  (isOwner
+    ?  ownerLabel(community)
+    : isJoined
+      ? "Joined"
+      : isPending
+        ? "Pending"
+        : undefined);
 
   const actionLabel = isActionLoading
-    ? ""
-    : isOwner
-      ? "Owner"
-      : isJoined
-        ? "Joined"
-        : isPending
-          ? "Cancel Request"
-          : "Join";
+  ? ""
+  : isOwner
+    ? ownerLabel(community)
+    : isJoined
+      ? "Joined"
+      : isPending
+        ? "Cancel Request"
+        : "Join";
 
   const actionBackgroundColor = isPending
     ? colors.surfaceSecondary

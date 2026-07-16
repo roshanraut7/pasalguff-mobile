@@ -69,7 +69,16 @@ const baseQueryWithAuth: BaseQueryFn<
 
   normalizedArgs.headers = headers;
 
-  return rawBaseQuery(normalizedArgs, api, extraOptions);
+let result = await rawBaseQuery(normalizedArgs, api, extraOptions);
+
+  // First multipart/network request after app launch can fail with
+  // FETCH_ERROR on RN even though the server never received it — retry once.
+  if (result.error && (result.error as any).status === "FETCH_ERROR") {
+    console.log("Network request failed — retrying once:", normalizedArgs.url);
+    result = await rawBaseQuery(normalizedArgs, api, extraOptions);
+  }
+
+  return result;
 };
 
 export const baseApi = createApi({
@@ -120,6 +129,7 @@ export const baseApi = createApi({
     "CommunityDiscussionAnswer",
     "CommunityDiscussionLive",
     "CommunityDiscussionLiveMessage",
+   "Verification"
   ],
 
   refetchOnFocus: true,

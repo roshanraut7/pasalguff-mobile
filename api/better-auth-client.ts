@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 import { expoClient } from "@better-auth/expo/client";
+import { emailOTPClient } from "better-auth/client/plugins";
 import { inferAdditionalFields } from "better-auth/client/plugins";
 import * as SecureStore from "expo-secure-store";
 import { getDistrictKey } from "@/constants/nepalDistricts";
@@ -34,7 +35,15 @@ export const authClient = createAuthClient({
           type: "string",
           required: false,
         },
-        registrationNo: {
+           registrationNo: {
+          type: "string",
+          required: false,
+        },
+        businessEmail: {
+          type: "string",
+          required: false,
+        },
+        businessPhoneNo: {
           type: "string",
           required: false,
         },
@@ -66,6 +75,7 @@ export const authClient = createAuthClient({
         },
       },
     }),
+      emailOTPClient(), 
    expoClient({
   scheme: "kamkuro",
   storagePrefix: "kamkuro",
@@ -144,4 +154,45 @@ export async function changeMyPassword(data: {
   }
 
   return result;
+}
+
+export async function sendSignupOTP(email: string) {
+  const { data, error } = await authClient.emailOtp.sendVerificationOtp({
+    email,
+    type: "email-verification",
+  });
+  if (error) throw new Error(error.message || "Failed to send code");
+  return data;
+}
+
+export async function verifySignupOTP(email: string, otp: string) {
+  const { data, error } = await authClient.emailOtp.verifyEmail({
+    email,
+    otp,
+  });
+  if (error) throw new Error(error.message || "Invalid or expired code");
+  return data;
+}
+
+export async function sendForgotPasswordOTP(email: string) {
+  const { data, error } = await authClient.emailOtp.sendVerificationOtp({
+    email,
+    type: "forget-password",
+  });
+  if (error) throw new Error(error.message || "Failed to send code");
+  return data;
+}
+
+export async function resetPasswordWithOTP(input: {
+  email: string;
+  otp: string;
+  newPassword: string;
+}) {
+  const { data, error } = await authClient.emailOtp.resetPassword({
+    email: input.email,
+    otp: input.otp,
+    password: input.newPassword,
+  });
+  if (error) throw new Error(error.message || "Reset failed");
+  return data;
 }

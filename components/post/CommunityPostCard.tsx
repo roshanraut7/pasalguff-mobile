@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -27,6 +28,7 @@ import { toAbsoluteFileUrl } from "@/lib/file-url";
 import YouTubeEmbedPlayer from "./YouTubeEmbedPlayer";
 import type { CommunityPost, PostMedia, PostPoll } from "@/types/post";
 import { useJoinCommunityMutation, useLeaveCommunityMutation } from "@/store/api/communityApi";
+import VerifiedBadge from "@/components/common/verifiedBadge";
 import { router } from "expo-router";
 
 const systemFonts = [
@@ -39,6 +41,11 @@ const systemFonts = [
 ];
 
 dayjs.extend(relativeTime);
+
+// how long the "Joined" pill stays visible before it collapses away,
+// same idea as Reddit/TikTok — flash confirmation, then disappear for good
+// (until the user leaves, at which point "Join" reappears normally).
+const JOIN_PILL_COLLAPSE_DELAY_MS = 1500;
 
 type AppColors = ReturnType<typeof useAppTheme>["colors"];
 
@@ -371,15 +378,6 @@ const PostMediaCarousel = memo(function PostMediaCarousel({
 // Renders the quoted/original post inside a "SHARE" type post.
 // Shows a placeholder if the original post is no longer available
 // (deleted/unpublished) instead of erroring or showing blank data.
-//
-// CHANGE 3 + 4:
-//  - Now accepts `onPressMedia` and wires it to the embed's Pressable
-//    so tapping the shared post's image opens the full-screen viewer,
-//    same as it does on a normal (non-shared) post.
-//  - Now uses the same `PostMediaCarousel` component the original post
-//    uses (instead of a single static <ExpoImage>), so a reposted
-//    multi-image post shows the same swipeable carousel + dots inline,
-//    matching how the original post itself would render.
 // ------------------------------------------------------------
 const SharedPostEmbed = memo(function SharedPostEmbed({
   sharedPost,
@@ -413,11 +411,16 @@ const SharedPostEmbed = memo(function SharedPostEmbed({
           ) : null}
           <Avatar.Fallback>{getInitials(authorName)}</Avatar.Fallback>
         </Avatar>
-        <View style={{ marginLeft: 8, flex: 1 }}>
-          <Text numberOfLines={1} style={styles.embedAuthorName}>
-            {authorName}
-          </Text>
-          {!!sharedPost.community?.name && (
+       <View style={{ marginLeft: 8, flex: 1 }}>
+  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+    <Text numberOfLines={1} style={styles.embedAuthorName}>
+      {authorName}
+    </Text>
+    {sharedPost.author?.isVerified ? (
+      <VerifiedBadge track={sharedPost.author.verificationTrack} size={12} />
+    ) : null}
+  </View>
+  {!!sharedPost.community?.name && (
             <Text numberOfLines={1} style={styles.embedCommunityName}>
               {sharedPost.community.name}
             </Text>
@@ -476,6 +479,7 @@ function CommunityPostCard({
   const tagLabel = getPostTagLabel(post.tag);
   const isOwnerOfCommunity = Boolean(post.community?.id && ownedCommunityIds?.has(post.community.id));
   const isSharePost = post.type === "SHARE" && Boolean(post.sharedPost);
+  const isLiveHighlightPost = Boolean(post.isLiveHighlight && post.highlightDiscussionId);
 
   const hasYouTubeEmbed =
     !hasMedia && post.linkType === "VIDEO" && post.linkProvider === "YOUTUBE" && Boolean(post.linkExternalId);
@@ -484,7 +488,6 @@ function CommunityPostCard({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [joinCommunity, { isLoading: isJoining }] = useJoinCommunityMutation();
   const [leaveCommunity, { isLoading: isLeaving }] = useLeaveCommunityMutation();
-  const [isJoined, setIsJoined] = useState(false);
 
   const liked = Boolean(post.isLikedByMe);
   const disliked = Boolean(post.isDislikedByMe);
@@ -506,6 +509,18 @@ function CommunityPostCard({
   const handleDislike = useCallback(() => {
     onPressDislike?.(post);
   }, [onPressDislike, post]);
+  const handleOpenLiveHighlight = useCallback(() => {
+  if (!post.highlightDiscussionId) return;
+
+  router.push({
+    pathname: "/discussions/[discussionId]/live",
+    params: {
+      slug: post.communityId,          // or post.community?.slug if your route reads a slug
+      discussionId: post.highlightDiscussionId,
+      communityId: post.communityId,   // send both in case your live screen reads communityId directly
+    },
+  });
+}, [post]);
 
   const handleShare = useCallback(() => {
     onPressShare?.(post);
@@ -568,17 +583,69 @@ function CommunityPostCard({
     );
   };
 
-  useEffect(() => {
-    const joined =
-      post.isJoinedByMe ??
-      post.isCommunityFollowedByMe ??
-      post.community?.isJoinedByMe ??
-      post.community?.isMember ??
-      post.community?.isCommunityFollowedByMe ??
-      false;
+  // ------------------------------------------------------------
+  // JOIN / JOINED behaviour
+  //
+  // derivedJoined = "what the server currently says is true" for
+  // this post's community, read fresh from props every render.
+  //
+  // isJoined = local optimistic copy, so a tap flips the button
+  // instantly instead of waiting on the network round trip.
+  //
+  // FIX (previous bug): this used to only re-sync on [post.id],
+  // so if the same post object later arrived with an updated
+  // isJoinedByMe (e.g. after a refetch/cache patch), the card
+  // never picked it up. Now it re-syncs whenever the actual
+  // derived server value changes, not just when the post's id
+  // changes — so stale/one-off mismatches self-heal.
+  // ------------------------------------------------------------
+  const derivedJoined =
+    post.isJoinedByMe ??
+    post.isCommunityFollowedByMe ??
+    post.community?.isJoinedByMe ??
+    post.community?.isMember ??
+    post.community?.isCommunityFollowedByMe ??
+    false;
 
-    setIsJoined(joined);
-  }, [post.id]);
+  const [isJoined, setIsJoined] = useState(derivedJoined);
+
+  useEffect(() => {
+    setIsJoined(derivedJoined);
+  }, [derivedJoined]);
+
+  // ------------------------------------------------------------
+  // showJoinPill controls whether the Join/Joined button is
+  // rendered at all — this is what gives the Reddit/TikTok feel:
+  // tap Join -> "Joined" flashes briefly -> button collapses and
+  // stays gone. It only reappears if the user actually leaves
+  // (isJoined flips back to false), never "forever stuck" either way.
+  // ------------------------------------------------------------
+  const [showJoinPill, setShowJoinPill] = useState(!derivedJoined);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (collapseTimerRef.current) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
+    }
+
+    if (isJoined) {
+      // flash "Joined" immediately, then collapse after a short delay
+      setShowJoinPill(true);
+      collapseTimerRef.current = setTimeout(() => {
+        setShowJoinPill(false);
+      }, JOIN_PILL_COLLAPSE_DELAY_MS);
+    } else {
+      // not joined (or just left) -> always show "Join"
+      setShowJoinPill(true);
+    }
+
+    return () => {
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+      }
+    };
+  }, [isJoined]);
 
   const performJoin = useCallback(async () => {
     const communityId = post.community?.id || post.communityId;
@@ -612,6 +679,7 @@ function CommunityPostCard({
     const communityName = post.community?.name ?? "this community";
 
     if (isJoined) {
+      // still joined -> tapping opens the unjoin confirmation modal
       Alert.alert(
         "Leave community",
         `Are you sure you want to leave ${communityName}? You will lose access to its posts and content.`,
@@ -681,9 +749,14 @@ function CommunityPostCard({
       </Avatar>
 
       <View style={styles.authorMeta}>
-        <Text numberOfLines={1} style={styles.authorName}>
-          {authorName}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+    <Text numberOfLines={1} style={styles.authorName}>
+      {authorName}
+    </Text>
+    {post.author.isVerified ? (
+      <VerifiedBadge track={post.author.verificationTrack} size={13} />
+    ) : null}
+  </View>
         <View style={styles.subMetaRow}>
           {!!post.community?.name && (
             <>
@@ -699,19 +772,29 @@ function CommunityPostCard({
     </Pressable>
   )}
 
-  {showCommunityHeader && !isOwnerOfCommunity ? (
-    <Pressable
-      onPress={handleJoinToggle}
-      style={[styles.joinButton, isJoined && styles.joinedButton]}
-      disabled={isJoining || isLeaving}
-    >
-      <Text style={styles.joinButtonText}>{isJoining || isLeaving ? "..." : isJoined ? "Joined" : "Join"}</Text>
-    </Pressable>
-  ) : showCommunityHeader && isOwnerOfCommunity ? (
-    <View style={styles.ownerBadge}>
-      <Ionicons name="shield-checkmark-outline" size={12} color={colors.accent} />
-      <Text style={styles.ownerBadgeText}>Owner</Text>
-    </View>
+  {/* ------------------------------------------------------------
+      Header right-side action slot.
+
+      - showCommunityHeader (FOR_YOU feed) + owner of that community
+        -> render nothing at all (no "Owner" badge anymore).
+      - showCommunityHeader + not owner + showJoinPill
+        -> Join / Joined pill (collapses on its own after a flash).
+      - showCommunityHeader + not owner + pill collapsed
+        -> render nothing (button has already done its job).
+      - not showCommunityHeader (own profile / community feed) with
+        edit/delete permission -> the "..." menu, same as before.
+      - otherwise -> plain ellipsis placeholder, same as before.
+     ------------------------------------------------------------ */}
+  {showCommunityHeader ? (
+    isOwnerOfCommunity ? null : showJoinPill ? (
+      <Pressable
+        onPress={handleJoinToggle}
+        style={[styles.joinButton, isJoined && styles.joinedButton]}
+        disabled={isJoining || isLeaving}
+      >
+        <Text style={styles.joinButtonText}>{isJoining || isLeaving ? "..." : isJoined ? "Joined" : "Join"}</Text>
+      </Pressable>
+    ) : null
   ) : canDelete || canEdit ? (
     <View style={styles.moreWrap}>
       <Menu>
@@ -760,6 +843,9 @@ function CommunityPostCard({
     <Pressable onPress={() => onPressAuthor?.(post.author.id)} hitSlop={6}>
       <Text style={styles.authorLinkText}>{post.author.name}</Text>
     </Pressable>
+    {post.author.isVerified ? (
+      <VerifiedBadge track={post.author.verificationTrack} size={12} />
+    ) : null}
   </View>
 ) : null}
 
@@ -809,8 +895,6 @@ function CommunityPostCard({
   </View>
 ) : null}
 
-      {/* CHANGE 3: onPressMedia is now passed down so tapping the shared
-          post's image opens the full-screen media viewer. */}
       {isSharePost && post.sharedPost ? (
         <SharedPostEmbed
           sharedPost={post.sharedPost}
@@ -820,35 +904,56 @@ function CommunityPostCard({
         />
       ) : null}
 
-      {hasYouTubeEmbed && post.linkExternalId ? (
-        <YouTubeEmbedPlayer
-          videoId={post.linkExternalId}
-          thumbnailUrl={post.linkThumbnailUrl}
-          title={post.linkTitle ?? post.title ?? "YouTube video"}
-          sourceUrl={post.linkUrl}
-          playbackDisabled={disableMediaPlayback}
-        />
-      ) : !!post.linkUrl && !hasMedia ? (
-        <Pressable style={styles.linkCard} onPress={() => handleOpenLink(null, post.linkUrl ?? undefined)}>
-          <View style={styles.linkIconWrap}>
-            <Ionicons name="link-outline" size={18} color={colors.link} />
-          </View>
+   {isLiveHighlightPost ? (
+  <Pressable onPress={handleOpenLiveHighlight} style={styles.linkCard}>
+    <View style={styles.linkIconWrap}>
+      <Ionicons name="radio-outline" size={18} color={colors.danger} />
+    </View>
 
-          <View style={styles.linkContent}>
-            <Text numberOfLines={1} style={styles.linkTitle}>
-              {post.linkTitle?.trim() || "Shared link"}
-            </Text>
-            {!!post.linkDescription?.trim() && (
-              <Text numberOfLines={2} style={styles.linkDescription}>
-                {post.linkDescription}
-              </Text>
-            )}
-            <Text numberOfLines={1} style={styles.linkText}>
-              {post.linkUrl}
-            </Text>
-          </View>
-        </Pressable>
-      ) : null}
+    <View style={styles.linkContent}>
+      <Text numberOfLines={1} style={styles.linkTitle}>
+        Live discussion ended
+      </Text>
+
+      <Text numberOfLines={2} style={styles.linkDescription}>
+        {post.highlightParticipantCount ?? 0} watched · {post.highlightMessageCount ?? 0} messages
+        {post.highlightDurationMinutes ? ` · ${post.highlightDurationMinutes} min` : ""}
+      </Text>
+
+      <Text numberOfLines={1} style={styles.linkText}>
+        Tap to view the discussion
+      </Text>
+    </View>
+  </Pressable>
+) : hasYouTubeEmbed && post.linkExternalId ? (
+  <YouTubeEmbedPlayer
+    videoId={post.linkExternalId}
+    thumbnailUrl={post.linkThumbnailUrl}
+    title={post.linkTitle ?? post.title ?? "YouTube video"}
+    sourceUrl={post.linkUrl}
+    playbackDisabled={disableMediaPlayback}
+  />
+) : !!post.linkUrl && !hasMedia ? (
+  <Pressable style={styles.linkCard} onPress={() => handleOpenLink(null, post.linkUrl ?? undefined)}>
+    <View style={styles.linkIconWrap}>
+      <Ionicons name="link-outline" size={18} color={colors.link} />
+    </View>
+
+    <View style={styles.linkContent}>
+      <Text numberOfLines={1} style={styles.linkTitle}>
+        {post.linkTitle?.trim() || "Shared link"}
+      </Text>
+      {!!post.linkDescription?.trim() && (
+        <Text numberOfLines={2} style={styles.linkDescription}>
+          {post.linkDescription}
+        </Text>
+      )}
+      <Text numberOfLines={1} style={styles.linkText}>
+        {post.linkUrl}
+      </Text>
+    </View>
+  </Pressable>
+) : null}
 
       {hasMedia ? <PostMediaCarousel media={post.media ?? []} onPressMedia={onPressMedia} styles={styles} /> : null}
 
@@ -1638,7 +1743,7 @@ function createStyles(colors: AppColors) {
       color: colors.foreground,
       fontFamily: "Poppins_400Regular",
     },
-    // CHANGE 4: wraps the reused PostMediaCarousel inside the embed card.
+    // wraps the reused PostMediaCarousel inside the embed card.
     // The carousel itself is full-bleed (screen-width) by design, so this
     // wrapper clips it to the embed card's rounded corners; adjust height
     // here if the carousel looks oversized inside the smaller embed box.

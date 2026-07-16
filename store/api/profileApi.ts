@@ -32,6 +32,8 @@ export type ProfileItem = {
   lastName: string | null;
   businessName: string | null;
   businessType: string | null;
+  businessEmail?: string | null;
+businessPhoneNo?: string | null;
   address: string | null;
   image?: string | null;
   coverImage?: string | null;
@@ -45,14 +47,15 @@ export type ProfileItem = {
    */
   privacy?: PrivacySettings;
 };
-
 export type UpdateProfilePayload = {
   name?: string;
   firstName?: string;
   lastName?: string;
-  businessName?: string;
-  businessType?: string;
-  address?: string;
+  businessName?: string | null;
+  businessType?: string | null;
+  address?: string | null;
+  businessEmail?: string | null;
+  businessPhoneNo?: string | null;
   image?: string | null;
   coverImage?: string | null;
 };

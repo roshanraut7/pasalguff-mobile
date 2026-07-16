@@ -186,6 +186,10 @@ export default function PrivacySettingsScreen() {
     router.replace("/(tabs)/profile");
   };
 
+  const handleOpenVerification = () => {
+  router.push("/pages/verification");
+};
+
   const handleEditProfile = () => {
     router.push("/pages/editprofile");
   };
@@ -396,6 +400,32 @@ const handleOpenPostInsights = () => {
     color={colors.muted}
   />
 </Pressable>  
+ 
+<View style={styles.divider} />
+ 
+<Pressable
+  onPress={handleOpenVerification}
+  style={({ pressed }) => [
+    styles.compactRow,
+    {
+      opacity: pressed ? 0.75 : 1,
+    },
+  ]}
+>
+  <View style={styles.rowLeft}>
+    <View style={styles.iconWrap}>
+      <Ionicons
+        name="shield-checkmark-outline"
+        size={19}
+        color={colors.accent}
+      />
+    </View>
+ 
+    <Text style={styles.rowTitle}>Get Verified</Text>
+  </View>
+ 
+  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+</Pressable>
 
               <View style={styles.divider} />
 
