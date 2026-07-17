@@ -1,243 +1,244 @@
-  import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-  import { router } from "expo-router";
-  import {
-    Modal,
-    Pressable,
-    ScrollView,
-    Text,
-    View,
-  ActivityIndicator
-  } from "react-native";
-  import { KeyboardAvoidingView } from "react-native-keyboard-controller";
-  import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-  import * as ImagePicker from "expo-image-picker";
-  import { Ionicons } from "@expo/vector-icons";
-  import { Tabs } from "heroui-native";
-  import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { router } from "expo-router";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  ActivityIndicator,
+} from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import { Ionicons } from "@expo/vector-icons";
+import { Tabs } from "heroui-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 
-  import {
-    useCreateDraftPostMutation,
-    useCreatePublishedPostMutation,
-    useDeletePostMutation,
-    useGetMyDraftsQuery,
-    usePublishDraftMutation, 
-    useUpdatePostMutation,
-  } from "@/store/api/postApi";
-  import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
-  import { useUploadPostMediaMutation } from "@/store/api/uploadApi";
-  import { useCreateEditor } from "@/components/editor/editor";
-  import { DraftPostsPanel } from "@/components/post/DraftPostsPanel";
-  import {
-    draftPostSchema,
-    publishPostSchema,
-    stripHtml,
-  } from "@/schema/post.schema";
-  import {
-    createCreatePostStyles,
-    getCreatePostPalette,
-  } from "@/constants/styles/create-post.styles";
-  import { useAppTheme } from "@/hooks/useAppTheme";
+import {
+  useCreateDraftPostMutation,
+  useCreatePublishedPostMutation,
+  useDeletePostMutation,
+  useGetMyDraftsQuery,
+  usePublishDraftMutation,
+  useUpdatePostMutation,
+} from "@/store/api/postApi";
+import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
+import { useUploadPostMediaMutation } from "@/store/api/uploadApi";
+import { useCreateEditor } from "@/components/editor/editor";
+import { DraftPostsPanel } from "@/components/post/DraftPostsPanel";
+import {
+  draftPostSchema,
+  publishPostSchema,
+  stripHtml,
+} from "@/schema/post.schema";
+import {
+  createCreatePostStyles,
+  getCreatePostPalette,
+} from "@/constants/styles/create-post.styles";
+import { useAppTheme } from "@/hooks/useAppTheme";
 
-  import type {
-    CommunityPost,
-    CommunityPostMedia,
-    ComposerAttachment,
-    PostPollPayload,
-    PostTab,
-    PostTag,
-    PostVisibility,
-    UploadPostMediaResponse,
-    UploadPostMediaItem,
-  } from "@/components/post/Post.types";
-  import {
-    flattenErrors,
-    makeId,
-    parseLinkInput,
-    POST_VISIBILITY_OPTIONS,
-    TAG_OPTIONS,
-    FOOTER_RESERVED_SPACE,
-    MAX_ATTACHMENTS,
-  } from "@/utils/post.utils";
-  import {
-    CommunityPickerSheet,
-    TagPickerModal,
-    VisibilityPickerModal,
-  } from "@/components/post/Postpickermodals";
-  import {
-    ComposerPostTab,
-    LinkTab,
-    PollTab,
-  } from "@/components/post/Postcomposertabs";
+import type {
+  CommunityPost,
+  CommunityPostMedia,
+  ComposerAttachment,
+  PostPollPayload,
+  PostTab,
+  PostTag,
+  PostVisibility,
+  UploadPostMediaResponse,
+  UploadPostMediaItem,
+} from "@/components/post/Post.types";
+import {
+  flattenErrors,
+  makeId,
+  parseLinkInput,
+  POST_VISIBILITY_OPTIONS,
+  TAG_OPTIONS,
+  FOOTER_RESERVED_SPACE,
+  MAX_ATTACHMENTS,
+} from "@/utils/post.utils";
+import {
+  CommunityPickerSheet,
+  TagPickerModal,
+  VisibilityPickerModal,
+} from "@/components/post/Postpickermodals";
+import {
+  ComposerPostTab,
+  LinkTab,
+  PollTab,
+} from "@/components/post/Postcomposertabs";
 
-  /* ──────────────────────────────────────────────────────────────
-    Types
-  ────────────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────
+  Types
+────────────────────────────────────────────────────────────── */
 
-  type StatusModalVariant = "success" | "danger";
+type StatusModalVariant = "success" | "danger";
 
-  type StatusModalState = {
-    visible: boolean;
-    variant: StatusModalVariant;
-    title: string;
-    message: string;
-  };
+type StatusModalState = {
+  visible: boolean;
+  variant: StatusModalVariant;
+  title: string;
+  message: string;
+};
 
-  type CommunityWithPurpose = {
-    id: string;
-    name: string;
-    visibility?: string;
-    purpose?: string;
-  };
+type CommunityWithPurpose = {
+  id: string;
+  name: string;
+  visibility?: string;
+  purpose?: string;
+};
 
-  /* ──────────────────────────────────────────────────────────────
-    Action Button
-  ────────────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────
+  Action Button
+────────────────────────────────────────────────────────────── */
 
-  function ComposerActionButton({
-    label,
-    variant,
-    disabled,
-    onPress,
-    styles,
-  }: {
-    label: string;
-    variant: "outline" | "secondary" | "primary";
-    disabled?: boolean;
-    onPress?: () => void;
-    styles: ReturnType<typeof createCreatePostStyles>;
-  }) {
-    return (
-      <Pressable
-        onPress={onPress}
-        disabled={disabled}
+function ComposerActionButton({
+  label,
+  variant,
+  disabled,
+  onPress,
+  styles,
+}: {
+  label: string;
+  variant: "outline" | "secondary" | "primary";
+  disabled?: boolean;
+  onPress?: () => void;
+  styles: ReturnType<typeof createCreatePostStyles>;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.footerButton,
+        variant === "outline" && styles.footerButtonOutline,
+        variant === "secondary" && styles.footerButtonSecondary,
+        variant === "primary" && styles.footerButtonPrimary,
+        disabled && styles.buttonDisabled,
+      ]}
+    >
+      <Text
         style={[
-          styles.footerButton,
-          variant === "outline" && styles.footerButtonOutline,
-          variant === "secondary" && styles.footerButtonSecondary,
-          variant === "primary" && styles.footerButtonPrimary,
-          disabled && styles.buttonDisabled,
+          variant === "outline" && styles.footerButtonTextOutline,
+          variant === "secondary" && styles.footerButtonTextSecondary,
+          variant === "primary" && styles.footerButtonTextPrimary,
         ]}
       >
-        <Text
-          style={[
-            variant === "outline" && styles.footerButtonTextOutline,
-            variant === "secondary" && styles.footerButtonTextSecondary,
-            variant === "primary" && styles.footerButtonTextPrimary,
-          ]}
-        >
-          {label}
-        </Text>
-      </Pressable>
-    );
-  }
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
-  /* ──────────────────────────────────────────────────────────────
-    Status Modal
-  ────────────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────
+  Status Modal
+────────────────────────────────────────────────────────────── */
 
-  function StatusModal({
-    visible,
-    variant,
-    title,
-    message,
-    onClose,
-    isDark,
-    successColor,
-    dangerColor,
-  }: {
-    visible: boolean;
-    variant: StatusModalVariant;
-    title: string;
-    message: string;
-    onClose: () => void;
-    isDark: boolean;
-    successColor: string;
-    dangerColor: string;
-  }) {
-    const iconColor = variant === "success" ? successColor : dangerColor;
-    const iconName = variant === "success" ? "checkmark-circle" : "close-circle";
+function StatusModal({
+  visible,
+  variant,
+  title,
+  message,
+  onClose,
+  isDark,
+  successColor,
+  dangerColor,
+}: {
+  visible: boolean;
+  variant: StatusModalVariant;
+  title: string;
+  message: string;
+  onClose: () => void;
+  isDark: boolean;
+  successColor: string;
+  dangerColor: string;
+}) {
+  const iconColor = variant === "success" ? successColor : dangerColor;
+  const iconName = variant === "success" ? "checkmark-circle" : "close-circle";
 
-    return (
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={onClose}
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.45)",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: 24,
+        }}
       >
         <View
           style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.45)",
-            justifyContent: "center",
-            alignItems: "center",
+            width: "100%",
+            maxWidth: 360,
+            borderRadius: 24,
             padding: 24,
+            backgroundColor: isDark ? "#020617" : "#FFFFFF",
+            alignItems: "center",
           }}
         >
-          <View
+          <Ionicons name={iconName} size={56} color={iconColor} />
+
+          <Text
             style={{
-              width: "100%",
-              maxWidth: 360,
-              borderRadius: 24,
-              padding: 24,
-              backgroundColor: isDark ? "#020617" : "#FFFFFF",
-              alignItems: "center",
+              marginTop: 14,
+              fontSize: 20,
+              fontWeight: "800",
+              color: isDark ? "#F9FAFB" : "#111827",
+              textAlign: "center",
             }}
           >
-            <Ionicons name={iconName} size={56} color={iconColor} />
+            {title}
+          </Text>
 
+          <Text
+            style={{
+              marginTop: 8,
+              fontSize: 14,
+              lineHeight: 21,
+              color: isDark ? "#CBD5E1" : "#4B5563",
+              textAlign: "center",
+            }}
+          >
+            {message}
+          </Text>
+
+          <Pressable
+            onPress={onClose}
+            style={{
+              marginTop: 22,
+              width: "100%",
+              height: 48,
+              borderRadius: 16,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: iconColor,
+            }}
+          >
             <Text
               style={{
-                marginTop: 14,
-                fontSize: 20,
+                color: "#FFFFFF",
+                fontSize: 15,
                 fontWeight: "800",
-                color: isDark ? "#F9FAFB" : "#111827",
-                textAlign: "center",
               }}
             >
-              {title}
+              OK
             </Text>
-
-            <Text
-              style={{
-                marginTop: 8,
-                fontSize: 14,
-                lineHeight: 21,
-                color: isDark ? "#CBD5E1" : "#4B5563",
-                textAlign: "center",
-              }}
-            >
-              {message}
-            </Text>
-
-            <Pressable
-              onPress={onClose}
-              style={{
-                marginTop: 22,
-                width: "100%",
-                height: 48,
-                borderRadius: 16,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: iconColor,
-              }}
-            >
-              <Text
-                style={{
-                  color: "#FFFFFF",
-                  fontSize: 15,
-                  fontWeight: "800",
-                }}
-              >
-                OK
-              </Text>
-            </Pressable>
-          </View>
+          </Pressable>
         </View>
-      </Modal>
-    );
-  }
+      </View>
+    </Modal>
+  );
+}
 
-  function UploadingModal({
+function UploadingModal({
   visible,
   isDark,
   accentColor,
@@ -287,479 +288,496 @@
   );
 }
 
+/* ──────────────────────────────────────────────────────────────
+  Start Discussion card
+  CHANGED: accepts an `embedded` prop. When rendered floating above the
+  tabs it keeps its own margins; when rendered inside the "Discussion"
+  tab body (inside the scroll content, which already has its own
+  horizontal padding) it drops its own margins so spacing doesn't double up.
+────────────────────────────────────────────────────────────── */
 
+function StartDiscussionButton({
+  disabled,
+  communityName,
+  onPress,
+  isDark,
+  textColor,
+  mutedColor,
+  accentColor,
+  embedded = false,
+}: {
+  disabled?: boolean;
+  communityName?: string;
+  onPress: () => void;
+  isDark: boolean;
+  textColor: string;
+  mutedColor: string;
+  accentColor: string;
+  embedded?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={{
+        marginHorizontal: embedded ? 0 : 16,
+        marginTop: embedded ? 0 : 12,
+        marginBottom: embedded ? 0 : 4,
+        borderRadius: 22,
+        padding: 16,
+        opacity: disabled ? 0.55 : 1,
+        backgroundColor: isDark ? "#0F172A" : "#FFFFFF",
+        borderWidth: 1,
+        borderColor: isDark ? "#1E293B" : "#E2E8F0",
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: isDark
+              ? "rgba(37, 99, 235, 0.18)"
+              : "#DBEAFE",
+          }}
+        >
+          <Ionicons
+            name="chatbubbles-outline"
+            size={22}
+            color={accentColor}
+          />
+        </View>
 
-  /* ──────────────────────────────────────────────────────────────
-    Start Discussion card
-    CHANGED: accepts an `embedded` prop. When rendered floating above the
-    tabs it keeps its own margins; when rendered inside the "Discussion"
-    tab body (inside the scroll content, which already has its own
-    horizontal padding) it drops its own margins so spacing doesn't double up.
-  ────────────────────────────────────────────────────────────── */
-
-  function StartDiscussionButton({
-    disabled,
-    communityName,
-    onPress,
-    isDark,
-    textColor,
-    mutedColor,
-    accentColor,
-    embedded = false,
-  }: {
-    disabled?: boolean;
-    communityName?: string;
-    onPress: () => void;
-    isDark: boolean;
-    textColor: string;
-    mutedColor: string;
-    accentColor: string;
-    embedded?: boolean;
-  }) {
-    return (
-      <Pressable
-        onPress={onPress}
-        disabled={disabled}
-        style={{
-          marginHorizontal: embedded ? 0 : 16,
-          marginTop: embedded ? 0 : 12,
-          marginBottom: embedded ? 0 : 4,
-          borderRadius: 22,
-          padding: 16,
-          opacity: disabled ? 0.55 : 1,
-          backgroundColor: isDark ? "#0F172A" : "#FFFFFF",
-          borderWidth: 1,
-          borderColor: isDark ? "#1E293B" : "#E2E8F0",
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <View
+        <View style={{ flex: 1 }}>
+          <Text
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: isDark
-                ? "rgba(37, 99, 235, 0.18)"
-                : "#DBEAFE",
+              color: textColor,
+              fontSize: 15,
+              fontWeight: "900",
             }}
           >
-            <Ionicons
-              name="chatbubbles-outline"
-              size={22}
-              color={accentColor}
-            />
-          </View>
+            Start Discussion
+          </Text>
 
-          <View style={{ flex: 1 }}>
-            <Text
-              style={{
-                color: textColor,
-                fontSize: 15,
-                fontWeight: "900",
-              }}
-            >
-              Start Discussion
-            </Text>
-
-            <Text
-              style={{
-                marginTop: 3,
-                color: mutedColor,
-                fontSize: 12,
-                lineHeight: 17,
-                fontWeight: "500",
-              }}
-            >
-              Ask a question, get answers, mark solution, and let members join the
-              discussion
-              {communityName ? ` in ${communityName}.` : "."}
-            </Text>
-          </View>
-
-          <Ionicons name="arrow-forward-circle" size={26} color={accentColor} />
+          <Text
+            style={{
+              marginTop: 3,
+              color: mutedColor,
+              fontSize: 12,
+              lineHeight: 17,
+              fontWeight: "500",
+            }}
+          >
+            Ask a question, get answers, mark solution, and let members join the
+            discussion
+            {communityName ? ` in ${communityName}.` : "."}
+          </Text>
         </View>
-      </Pressable>
-    );
-  }
+
+        <Ionicons name="arrow-forward-circle" size={26} color={accentColor} />
+      </View>
+    </Pressable>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+  Screen
+────────────────────────────────────────────────────────────── */
+
+export default function CreatePostScreen() {
+  const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
+
+  const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
+  const styles = useMemo(() => createCreatePostStyles(p), [p]);
+
+  const isMountedRef = useRef(true);
+  const uploadAbortRef = useRef<(() => void) | null>(null);
+  const statusModalCloseActionRef = useRef<(() => void) | null>(null);
+
+  // Background upload tracking
+  // attachmentId -> resolved remote URL (once upload finishes)
+  const uploadResultsRef = useRef<Map<string, string>>(new Map());
+  // attachmentId -> in-flight promise for that attachment's batch upload
+  const uploadPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
+  const abortFnsRef = useRef<Set<() => void>>(new Set());
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      uploadAbortRef.current?.();
+      abortFnsRef.current.forEach((abort) => abort());
+    };
+  }, []);
 
   /* ──────────────────────────────────────────────────────────────
-    Screen
+    Status modal state
   ────────────────────────────────────────────────────────────── */
 
-  export default function CreatePostScreen() {
-    const { colors, isDark } = useAppTheme();
-    const insets = useSafeAreaInsets();
+  const [statusModal, setStatusModal] = useState<StatusModalState>({
+    visible: false,
+    variant: "success",
+    title: "",
+    message: "",
+  });
 
-    const p = useMemo(() => getCreatePostPalette(colors, isDark), [colors, isDark]);
-    const styles = useMemo(() => createCreatePostStyles(p), [p]);
+  // Controls the blocking "Uploading/Publishing..." modal manually —
+  // no longer tied to uploadPostMedia's isLoading, since that would
+  // also fire (and pop the modal) for background uploads-on-pick.
+  const [isPublishBusy, setIsPublishBusy] = useState(false);
 
-    const isMountedRef = useRef(true);
-    const uploadAbortRef = useRef<(() => void) | null>(null);
-    const statusModalCloseActionRef = useRef<(() => void) | null>(null);
+  const showStatusModal = useCallback(
+    (
+      variant: StatusModalVariant,
+      title: string,
+      message: string,
+      onClose?: () => void,
+    ) => {
+      statusModalCloseActionRef.current = onClose ?? null;
 
-    useEffect(() => {
-      isMountedRef.current = true;
+      setStatusModal({
+        visible: true,
+        variant,
+        title,
+        message,
+      });
+    },
+    [],
+  );
 
-      return () => {
-        isMountedRef.current = false;
-        uploadAbortRef.current?.();
-      };
-    }, []);
-
-    /* ──────────────────────────────────────────────────────────────
-      Status modal state
-    ────────────────────────────────────────────────────────────── */
-
-    const [statusModal, setStatusModal] = useState<StatusModalState>({
+  const closeStatusModal = useCallback(() => {
+    setStatusModal((prev) => ({
+      ...prev,
       visible: false,
-      variant: "success",
-      title: "",
-      message: "",
-    });
+    }));
 
-    const showStatusModal = useCallback(
-      (
-        variant: StatusModalVariant,
-        title: string,
-        message: string,
-        onClose?: () => void,
-      ) => {
-        statusModalCloseActionRef.current = onClose ?? null;
+    const action = statusModalCloseActionRef.current;
+    statusModalCloseActionRef.current = null;
 
-        setStatusModal({
-          visible: true,
-          variant,
-          title,
-          message,
-        });
-      },
-      [],
+    action?.();
+  }, []);
+
+  /* ──────────────────────────────────────────────────────────────
+    UI state
+  ────────────────────────────────────────────────────────────── */
+
+  // CHANGED: "text" -> "post" (merged Text + Images tab is now the default)
+  const [postTab, setPostTab] = useState<PostTab>("post");
+  const [draftsTabActive, setDraftsTabActive] = useState(false);
+
+  const [communitySearch, setCommunitySearch] = useState("");
+  // CHANGED: community picker is now an imperative BottomSheetModal ref
+  // instead of a boolean-controlled <Modal visible=.../>.
+  const communityPickerRef = useRef<BottomSheetModal>(null);
+  const [tagModalVisible, setTagModalVisible] = useState(false);
+  const [visibilityModalVisible, setVisibilityModalVisible] = useState(false);
+
+  const openCommunityPicker = useCallback(() => {
+    communityPickerRef.current?.present();
+  }, []);
+
+  const closeCommunityPicker = useCallback(() => {
+    communityPickerRef.current?.dismiss();
+    setCommunitySearch("");
+  }, []);
+
+  /* ──────────────────────────────────────────────────────────────
+    Post form state
+  ────────────────────────────────────────────────────────────── */
+
+  const [selectedCommunityId, setSelectedCommunityId] = useState("");
+  const [selectedTag, setSelectedTag] = useState<PostTag>("GENERAL");
+  const [selectedVisibility, setSelectedVisibility] =
+    useState<PostVisibility>("PUBLIC");
+
+  const [title, setTitle] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [html, setHtml] = useState("<p></p>");
+  const [plainText, setPlainText] = useState("");
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  /* ──────────────────────────────────────────────────────────────
+    Poll state
+  ────────────────────────────────────────────────────────────── */
+
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [pollClosesAt, setPollClosesAt] = useState("");
+
+  const linkPreview = useMemo(() => parseLinkInput(linkUrl), [linkUrl]);
+
+  /* ──────────────────────────────────────────────────────────────
+    APIs
+  ────────────────────────────────────────────────────────────── */
+
+  const { data: communitiesResponse, isLoading: isLoadingCommunities } =
+    useGetMyCommunitiesQuery({ page: 1, limit: 50 });
+
+  const allJoinedCommunities =
+    (communitiesResponse?.data ?? []) as CommunityWithPurpose[];
+
+  /*
+  * Official district community is received from backend.
+  * It is hidden from dropdown, but used automatically as fallback target.
+  */
+  const officialCommunity = useMemo(
+    () =>
+      allJoinedCommunities.find(
+        (community) => community.purpose === "DISTRICT_OFFICIAL",
+      ),
+    [allJoinedCommunities],
+  );
+
+  /*
+  * Only normal communities are visible in select dropdown.
+  */
+  const communities = useMemo(
+    () =>
+      allJoinedCommunities.filter(
+        (community) => community.purpose !== "DISTRICT_OFFICIAL",
+      ),
+    [allJoinedCommunities],
+  );
+
+  const { data: draftsResponse, isLoading: isLoadingDrafts } =
+    useGetMyDraftsQuery({ limit: 50 });
+
+  const allDrafts = (draftsResponse?.data ?? []) as CommunityPost[];
+
+  /*
+  * Drafts from visible communities and hidden official district community are allowed.
+  */
+  const drafts = useMemo(() => {
+    const allowedCommunityIds = new Set(
+      [
+        ...communities.map((community) => community.id),
+        officialCommunity?.id,
+      ].filter(Boolean) as string[],
     );
 
-    const closeStatusModal = useCallback(() => {
-      setStatusModal((prev) => ({
-        ...prev,
-        visible: false,
-      }));
-
-      const action = statusModalCloseActionRef.current;
-      statusModalCloseActionRef.current = null;
-
-      action?.();
-    }, []);
-
-    /* ──────────────────────────────────────────────────────────────
-      UI state
-    ────────────────────────────────────────────────────────────── */
-
-    // CHANGED: "text" -> "post" (merged Text + Images tab is now the default)
-    const [postTab, setPostTab] = useState<PostTab>("post");
-    const [draftsTabActive, setDraftsTabActive] = useState(false);
-
-    const [communitySearch, setCommunitySearch] = useState("");
-    // CHANGED: community picker is now an imperative BottomSheetModal ref
-    // instead of a boolean-controlled <Modal visible=.../>.
-    const communityPickerRef = useRef<BottomSheetModal>(null);
-    const [tagModalVisible, setTagModalVisible] = useState(false);
-    const [visibilityModalVisible, setVisibilityModalVisible] = useState(false);
-
-    const openCommunityPicker = useCallback(() => {
-      communityPickerRef.current?.present();
-    }, []);
-
-    const closeCommunityPicker = useCallback(() => {
-      communityPickerRef.current?.dismiss();
-      setCommunitySearch("");
-    }, []);
-
-    /* ──────────────────────────────────────────────────────────────
-      Post form state
-    ────────────────────────────────────────────────────────────── */
-
-    const [selectedCommunityId, setSelectedCommunityId] = useState("");
-    const [selectedTag, setSelectedTag] = useState<PostTag>("GENERAL");
-    const [selectedVisibility, setSelectedVisibility] =
-      useState<PostVisibility>("PUBLIC");
-
-    const [title, setTitle] = useState("");
-    const [linkUrl, setLinkUrl] = useState("");
-    const [html, setHtml] = useState("<p></p>");
-    const [plainText, setPlainText] = useState("");
-    const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
-    const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
-    const [errors, setErrors] = useState<Record<string, string>>({});
-
-    /* ──────────────────────────────────────────────────────────────
-      Poll state
-    ────────────────────────────────────────────────────────────── */
-
-    const [pollQuestion, setPollQuestion] = useState("");
-    const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
-    const [pollClosesAt, setPollClosesAt] = useState("");
-
-    const linkPreview = useMemo(() => parseLinkInput(linkUrl), [linkUrl]);
-
-    /* ──────────────────────────────────────────────────────────────
-      APIs
-    ────────────────────────────────────────────────────────────── */
-
-    const { data: communitiesResponse, isLoading: isLoadingCommunities } =
-      useGetMyCommunitiesQuery({ page: 1, limit: 50 });
-
-    const allJoinedCommunities =
-      (communitiesResponse?.data ?? []) as CommunityWithPurpose[];
-
-    /*
-    * Official district community is received from backend.
-    * It is hidden from dropdown, but used automatically as fallback target.
-    */
-    const officialCommunity = useMemo(
-      () =>
-        allJoinedCommunities.find(
-          (community) => community.purpose === "DISTRICT_OFFICIAL",
-        ),
-      [allJoinedCommunities],
+    return allDrafts.filter((draft) =>
+      allowedCommunityIds.has(draft.communityId),
     );
+  }, [allDrafts, communities, officialCommunity?.id]);
 
-    /*
-    * Only normal communities are visible in select dropdown.
-    */
-    const communities = useMemo(
-      () =>
-        allJoinedCommunities.filter(
-          (community) => community.purpose !== "DISTRICT_OFFICIAL",
-        ),
-      [allJoinedCommunities],
-    );
+  const [uploadPostMedia] = useUploadPostMediaMutation();
+  const [createPublishedPost, { isLoading: isCreatingPost }] =
+    useCreatePublishedPostMutation();
+  const [createDraftPost, { isLoading: isCreatingDraft }] =
+    useCreateDraftPostMutation();
+  const [updatePost, { isLoading: isUpdatingPost }] =
+    useUpdatePostMutation();
+  const [publishDraft, { isLoading: isPublishingDraft }] =
+    usePublishDraftMutation();
+  const [deletePost] = useDeletePostMutation();
 
-    const { data: draftsResponse, isLoading: isLoadingDrafts } =
-      useGetMyDraftsQuery({ limit: 50 });
+  // CHANGED: isUploadingMedia removed from busy — that flag flips true for
+  // ANY uploadPostMedia call, including the new background upload-on-pick
+  // calls, which would incorrectly pop the blocking modal right after
+  // picking images. isPublishBusy is now the only thing driving the
+  // upload/publish portion of "busy", and it's set manually only around
+  // saveDraft/publish.
+  const busy =
+    isPublishBusy ||
+    isCreatingPost ||
+    isCreatingDraft ||
+    isUpdatingPost ||
+    isPublishingDraft;
 
-    const allDrafts = (draftsResponse?.data ?? []) as CommunityPost[];
+  const uploadingLabel = isPublishBusy
+    ? "Uploading images..."
+    : isCreatingPost || isPublishingDraft
+    ? "Publishing your post..."
+    : isCreatingDraft || isUpdatingPost
+    ? "Saving draft..."
+    : "Please wait...";
 
-    /*
-    * Drafts from visible communities and hidden official district community are allowed.
-    */
-    const drafts = useMemo(() => {
-      const allowedCommunityIds = new Set(
-        [
-          ...communities.map((community) => community.id),
-          officialCommunity?.id,
-        ].filter(Boolean) as string[],
-      );
+  /* ──────────────────────────────────────────────────────────────
+    Editor
+  ────────────────────────────────────────────────────────────── */
 
-      return allDrafts.filter((draft) =>
-        allowedCommunityIds.has(draft.communityId),
-      );
-    }, [allDrafts, communities, officialCommunity?.id]);
+  const editor = useCreateEditor();
+  const isEditorReadyRef = useRef(false);
+  const pendingContentRef = useRef<string | null>(null);
 
-    const [uploadPostMedia, { isLoading: isUploadingMedia }] =
-      useUploadPostMediaMutation();
-    const [createPublishedPost, { isLoading: isCreatingPost }] =
-      useCreatePublishedPostMutation();
-    const [createDraftPost, { isLoading: isCreatingDraft }] =
-      useCreateDraftPostMutation();
-    const [updatePost, { isLoading: isUpdatingPost }] =
-      useUpdatePostMutation();
-    const [publishDraft, { isLoading: isPublishingDraft }] =
-      usePublishDraftMutation();
-    const [deletePost] = useDeletePostMutation();
+  useEffect(() => {
+    isEditorReadyRef.current = true;
 
-    const busy =
-      isUploadingMedia ||
-      isCreatingPost ||
-      isCreatingDraft ||
-      isUpdatingPost ||
-      isPublishingDraft;
+    if (pendingContentRef.current !== null) {
+      editor.setContent(pendingContentRef.current);
+      pendingContentRef.current = null;
+    }
+  }, [editor]);
 
-      const uploadingLabel = isUploadingMedia
-  ? "Uploading images..."
-  : isCreatingPost || isPublishingDraft
-  ? "Publishing your post..."
-  : isCreatingDraft || isUpdatingPost
-  ? "Saving draft..."
-  : "Please wait...";
-    /* ──────────────────────────────────────────────────────────────
-      Editor
-    ────────────────────────────────────────────────────────────── */
-
-    const editor = useCreateEditor();
-    const isEditorReadyRef = useRef(false);
-    const pendingContentRef = useRef<string | null>(null);
-
-    useEffect(() => {
-      isEditorReadyRef.current = true;
-
-      if (pendingContentRef.current !== null) {
-        editor.setContent(pendingContentRef.current);
-        pendingContentRef.current = null;
+  const safeSetContent = useCallback(
+    (content: string) => {
+      if (isEditorReadyRef.current) {
+        editor.setContent(content);
+      } else {
+        pendingContentRef.current = content;
       }
-    }, [editor]);
+    },
+    [editor],
+  );
 
-    const safeSetContent = useCallback(
-      (content: string) => {
-        if (isEditorReadyRef.current) {
-          editor.setContent(content);
-        } else {
-          pendingContentRef.current = content;
-        }
-      },
-      [editor],
-    );
+  /* ──────────────────────────────────────────────────────────────
+    Community state
+  ────────────────────────────────────────────────────────────── */
 
-    /* ──────────────────────────────────────────────────────────────
-      Community state
-    ────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (isLoadingCommunities) return;
 
-    useEffect(() => {
-      if (isLoadingCommunities) return;
-
-      if (communities.length === 0) {
-        if (selectedCommunityId) {
-          setSelectedCommunityId("");
-        }
-
-        return;
+    if (communities.length === 0) {
+      if (selectedCommunityId) {
+        setSelectedCommunityId("");
       }
 
-      const selectedCommunityStillExists = communities.some(
-        (community) => community.id === selectedCommunityId,
-      );
+      return;
+    }
 
-      if (!selectedCommunityId || !selectedCommunityStillExists) {
-        setSelectedCommunityId(communities[0].id);
-      }
-    }, [communities, isLoadingCommunities, selectedCommunityId]);
-
-    const filteredCommunities = useMemo(() => {
-      const q = communitySearch.trim().toLowerCase();
-
-      if (!q) return communities;
-
-      return communities.filter((community) =>
-        community.name.toLowerCase().includes(q),
-      );
-    }, [communities, communitySearch]);
-
-    const selectedCommunity = useMemo(
-      () => communities.find((community) => community.id === selectedCommunityId),
-      [communities, selectedCommunityId],
+    const selectedCommunityStillExists = communities.some(
+      (community) => community.id === selectedCommunityId,
     );
 
-    /*
-    * Target rule:
-    * 1. If normal community selected, post there.
-    * 2. If no normal community selected, post to hidden official district community.
-    */
-    const targetCommunityId = selectedCommunity?.id ?? officialCommunity?.id ?? "";
+    if (!selectedCommunityId || !selectedCommunityStillExists) {
+      setSelectedCommunityId(communities[0].id);
+    }
+  }, [communities, isLoadingCommunities, selectedCommunityId]);
 
-    const targetCommunityName =
-      selectedCommunity?.name ?? officialCommunity?.name ?? "";
+  const filteredCommunities = useMemo(() => {
+    const q = communitySearch.trim().toLowerCase();
 
-    const canCreatePost = Boolean(targetCommunityId);
+    if (!q) return communities;
 
-    const isPrivateCommunity = selectedCommunity?.visibility === "PRIVATE";
-    const isRestrictedCommunity = selectedCommunity?.visibility === "RESTRICTED";
+    return communities.filter((community) =>
+      community.name.toLowerCase().includes(q),
+    );
+  }, [communities, communitySearch]);
+
+  const selectedCommunity = useMemo(
+    () => communities.find((community) => community.id === selectedCommunityId),
+    [communities, selectedCommunityId],
+  );
+
+  /*
+  * Target rule:
+  * 1. If normal community selected, post there.
+  * 2. If no normal community selected, post to hidden official district community.
+  */
+  const targetCommunityId = selectedCommunity?.id ?? officialCommunity?.id ?? "";
+
+  const targetCommunityName =
+    selectedCommunity?.name ?? officialCommunity?.name ?? "";
+
+  const canCreatePost = Boolean(targetCommunityId);
+
+  const isPrivateCommunity = selectedCommunity?.visibility === "PRIVATE";
+  const isRestrictedCommunity = selectedCommunity?.visibility === "RESTRICTED";
 
   const availableVisibilityOptions = useMemo(() => {
-  if (isRestrictedCommunity) {
-    return POST_VISIBILITY_OPTIONS.filter((item) => item.value === "PUBLIC");
-  }
-  if (isPrivateCommunity) {
-    return POST_VISIBILITY_OPTIONS.filter((item) => item.value !== "PUBLIC");
-  }
-  return POST_VISIBILITY_OPTIONS;
-}, [isPrivateCommunity, isRestrictedCommunity]);
+    if (isRestrictedCommunity) {
+      return POST_VISIBILITY_OPTIONS.filter((item) => item.value === "PUBLIC");
+    }
+    if (isPrivateCommunity) {
+      return POST_VISIBILITY_OPTIONS.filter((item) => item.value !== "PUBLIC");
+    }
+    return POST_VISIBILITY_OPTIONS;
+  }, [isPrivateCommunity, isRestrictedCommunity]);
 
-    const selectedTagMeta = useMemo(
-      () => TAG_OPTIONS.find((tag) => tag.value === selectedTag),
-      [selectedTag],
-    );
+  const selectedTagMeta = useMemo(
+    () => TAG_OPTIONS.find((tag) => tag.value === selectedTag),
+    [selectedTag],
+  );
 
-    const selectedVisibilityMeta = useMemo(
-      () =>
-        POST_VISIBILITY_OPTIONS.find(
-          (item) => item.value === selectedVisibility,
-        ),
-      [selectedVisibility],
-    );
+  const selectedVisibilityMeta = useMemo(
+    () =>
+      POST_VISIBILITY_OPTIONS.find(
+        (item) => item.value === selectedVisibility,
+      ),
+    [selectedVisibility],
+  );
 
-    useEffect(() => {
-      if (isPrivateCommunity && selectedVisibility === "PUBLIC") {
-        setSelectedVisibility("COMMUNITY");
-      }
-    }, [isPrivateCommunity, selectedVisibility]);
+  useEffect(() => {
+    if (isPrivateCommunity && selectedVisibility === "PUBLIC") {
+      setSelectedVisibility("COMMUNITY");
+    }
+  }, [isPrivateCommunity, selectedVisibility]);
 
-    useEffect(() => {
-  if (isRestrictedCommunity && selectedVisibility !== "PUBLIC") {
+  useEffect(() => {
+    if (isRestrictedCommunity && selectedVisibility !== "PUBLIC") {
+      setSelectedVisibility("PUBLIC");
+    }
+  }, [isRestrictedCommunity, selectedVisibility]);
+
+  /* ──────────────────────────────────────────────────────────────
+    Helpers
+  ────────────────────────────────────────────────────────────── */
+
+  const resetPoll = useCallback(() => {
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+    setPollClosesAt("");
+  }, []);
+
+  const resetComposer = useCallback(() => {
+    setActiveDraftId(null);
+    setSelectedTag("GENERAL");
     setSelectedVisibility("PUBLIC");
-  }
-}, [isRestrictedCommunity, selectedVisibility]);
+    setTitle("");
+    setLinkUrl("");
+    setHtml("<p></p>");
+    setPlainText("");
+    setAttachments([]);
+    setErrors({});
+    setPostTab("post"); // CHANGED: was "text"
+    resetPoll();
+    safeSetContent("<p></p>");
+  }, [resetPoll, safeSetContent]);
 
-    /* ──────────────────────────────────────────────────────────────
-      Helpers
-    ────────────────────────────────────────────────────────────── */
+  const clearComposerAfterPost = useCallback(() => {
+    setActiveDraftId(null);
 
-    const resetPoll = useCallback(() => {
-      setPollQuestion("");
-      setPollOptions(["", ""]);
-      setPollClosesAt("");
-    }, []);
+    /*
+    * Do not clear selectedCommunityId.
+    * User may want to post again in the same normal community.
+    * If no normal community exists, official district remains automatic fallback.
+    */
+    setSelectedTag("GENERAL");
+    setSelectedVisibility("PUBLIC");
 
-    const resetComposer = useCallback(() => {
-      setActiveDraftId(null);
-      setSelectedTag("GENERAL");
-      setSelectedVisibility("PUBLIC");
-      setTitle("");
-      setLinkUrl("");
-      setHtml("<p></p>");
-      setPlainText("");
-      setAttachments([]);
-      setErrors({});
-      setPostTab("post"); // CHANGED: was "text"
-      resetPoll();
-      safeSetContent("<p></p>");
-    }, [resetPoll, safeSetContent]);
+    setTitle("");
+    setLinkUrl("");
+    setHtml("<p></p>");
+    setPlainText("");
 
-    const clearComposerAfterPost = useCallback(() => {
-      setActiveDraftId(null);
+    setAttachments([]);
+    setErrors({});
+    setPostTab("post"); // CHANGED: was "text"
 
-      /*
-      * Do not clear selectedCommunityId.
-      * User may want to post again in the same normal community.
-      * If no normal community exists, official district remains automatic fallback.
-      */
-      setSelectedTag("GENERAL");
-      setSelectedVisibility("PUBLIC");
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+    setPollClosesAt("");
 
-      setTitle("");
-      setLinkUrl("");
-      setHtml("<p></p>");
-      setPlainText("");
+    setCommunitySearch("");
+    closeCommunityPicker();
+    setTagModalVisible(false);
+    setVisibilityModalVisible(false);
+    setDraftsTabActive(false);
 
-      setAttachments([]);
-      setErrors({});
-      setPostTab("post"); // CHANGED: was "text"
+    safeSetContent("<p></p>");
+  }, [safeSetContent, closeCommunityPicker]);
 
-      setPollQuestion("");
-      setPollOptions(["", ""]);
-      setPollClosesAt("");
-
-      setCommunitySearch("");
-      closeCommunityPicker();
-      setTagModalVisible(false);
-      setVisibilityModalVisible(false);
-      setDraftsTabActive(false);
-
-      safeSetContent("<p></p>");
-    }, [safeSetContent, closeCommunityPicker]);
-
-    const handleHtmlChange = useCallback((value: string) => {
-      setHtml(value);
-      setPlainText(stripHtml(value ?? ""));
-    }, []);
+  const handleHtmlChange = useCallback((value: string) => {
+    setHtml(value);
+    setPlainText(stripHtml(value ?? ""));
+  }, []);
 
   const showNoCommunityModal = useCallback(() => {
     showStatusModal(
@@ -784,101 +802,173 @@
     });
   }, [targetCommunityId, targetCommunityName, showNoCommunityModal]);
 
-    const removeAttachment = useCallback((id: string) => {
-      setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
-    }, []);
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
+    uploadResultsRef.current.delete(id);
+    uploadPromisesRef.current.delete(id);
+  }, []);
 
-    const ensureMediaPermission = useCallback(async () => {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const ensureMediaPermission = useCallback(async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      if (!permission.granted) {
-        showStatusModal(
-          "danger",
-          "Permission required",
-          "Media library permission is required to upload images.",
-        );
+    if (!permission.granted) {
+      showStatusModal(
+        "danger",
+        "Permission required",
+        "Media library permission is required to upload images.",
+      );
 
-        return false;
-      }
+      return false;
+    }
 
-      return true;
-    }, [showStatusModal]);
+    return true;
+  }, [showStatusModal]);
 
-    const pickMedia = useCallback(async () => {
+  // Resizes/compresses on-device before upload so the multipart payload is
+  // smaller (faster network leg) and the server has less work to do.
+  const compressImage = async (uri: string): Promise<string> => {
+    try {
+      const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1400 } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      return result.uri;
+    } catch (error) {
+      console.log("Image compression failed, using original:", error);
+      return uri;
+    }
+  };
+
+  // Kicks off the actual upload immediately (in the background) instead of
+  // waiting until the user taps Post/Save Draft. Results are stashed in
+  // uploadResultsRef, keyed by attachment id, so buildUploadedMediaPayload
+  // can just read them later instead of starting a fresh upload.
+  const startBackgroundUpload = useCallback(
+    (attachmentsToUpload: ComposerAttachment[]) => {
+      if (!attachmentsToUpload.length) return;
+
+      // Clear any stale results for these ids (e.g. replaceAttachment reusing an id)
+      attachmentsToUpload.forEach((a) => uploadResultsRef.current.delete(a.id));
+
+      const trigger = uploadPostMedia({
+        files: attachmentsToUpload.map((a) => ({
+          uri: a.uri,
+          name: a.name,
+          mimeType: a.mimeType,
+        })),
+      });
+
+      abortFnsRef.current.add(() => trigger.abort());
+
+      const promise = trigger
+        .unwrap()
+        .then((response: UploadPostMediaResponse) => {
+          response.items.forEach((item, idx) => {
+            const attachment = attachmentsToUpload[idx];
+            if (attachment) {
+              uploadResultsRef.current.set(attachment.id, item.url);
+            }
+          });
+        })
+        .catch((error) => {
+          console.log(
+            "Background upload failed, will retry at publish time:",
+            error,
+          );
+        });
+
+      attachmentsToUpload.forEach((a) => {
+        uploadPromisesRef.current.set(a.id, promise);
+      });
+    },
+    [uploadPostMedia],
+  );
+
+  const pickMedia = useCallback(async () => {
+    const hasPermission = await ensureMediaPermission();
+    if (!hasPermission) return;
+
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      showStatusModal(
+        "danger",
+        "Limit reached",
+        `You can upload up to ${MAX_ATTACHMENTS} images only.`,
+      );
+
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_ATTACHMENTS - attachments.length,
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets?.length) return;
+
+    const mapped: ComposerAttachment[] = await Promise.all(
+      result.assets.map(async (asset, index) => {
+        const compressedUri = await compressImage(asset.uri);
+
+        return {
+          id: makeId(`local-${index}`),
+          source: "local",
+          uri: compressedUri,
+          mediaType: "IMAGE",
+          name: asset.fileName ?? `post-image-${Date.now()}-${index}.jpg`,
+          mimeType: "image/jpeg",
+        };
+      }),
+    );
+
+    setAttachments((prev) => [...prev, ...mapped].slice(0, MAX_ATTACHMENTS));
+    startBackgroundUpload(mapped);
+  }, [
+    attachments.length,
+    ensureMediaPermission,
+    showStatusModal,
+    startBackgroundUpload,
+  ]);
+
+  const replaceAttachment = useCallback(
+    async (id: string) => {
       const hasPermission = await ensureMediaPermission();
       if (!hasPermission) return;
 
-      if (attachments.length >= MAX_ATTACHMENTS) {
-        showStatusModal(
-          "danger",
-          "Limit reached",
-          `You can upload up to ${MAX_ATTACHMENTS} images only.`,
-        );
-
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        allowsMultipleSelection: true,
-        selectionLimit: MAX_ATTACHMENTS - attachments.length,
-        quality: 0.85,
+        allowsMultipleSelection: false,
+        quality: 1,
       });
 
       if (result.canceled || !result.assets?.length) return;
 
-      const mapped: ComposerAttachment[] = result.assets.map((asset, index) => ({
-        id: makeId(`local-${index}`),
+      const asset = result.assets[0];
+      const compressedUri = await compressImage(asset.uri);
+
+      const replaced: ComposerAttachment = {
+        id,
         source: "local",
-        uri: asset.uri,
+        uri: compressedUri,
         mediaType: "IMAGE",
-        name: asset.fileName ?? `post-image-${Date.now()}-${index}.jpg`,
-        mimeType: asset.mimeType ?? "image/jpeg",
-      }));
+        name: asset.fileName ?? `post-image-${Date.now()}.jpg`,
+        mimeType: "image/jpeg",
+      };
 
-      setAttachments((prev) => [...prev, ...mapped].slice(0, MAX_ATTACHMENTS));
-    }, [
-      attachments.length,
-      ensureMediaPermission,
-      showStatusModal,
-    ]);
+      setAttachments((prev) =>
+        prev.map((item) => (item.id === id ? replaced : item)),
+      );
 
-    const replaceAttachment = useCallback(
-      async (id: string) => {
-        const hasPermission = await ensureMediaPermission();
-        if (!hasPermission) return;
+      startBackgroundUpload([replaced]);
+    },
+    [ensureMediaPermission, startBackgroundUpload],
+  );
 
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-          allowsMultipleSelection: false,
-          quality: 1,
-        });
-
-        if (result.canceled || !result.assets?.length) return;
-
-        const asset = result.assets[0];
-
-        setAttachments((prev) =>
-          prev.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  source: "local",
-                  uri: asset.uri,
-                  mediaType: "IMAGE",
-                  name: asset.fileName ?? `post-image-${Date.now()}.jpg`,
-                  mimeType: asset.mimeType ?? "image/jpeg",
-                }
-              : item,
-          ),
-        );
-      },
-      [ensureMediaPermission],
-    );
-
-    /* ──────────────────────────────────────────────────────────────
-      Upload helper
-    ────────────────────────────────────────────────────────────── */
+  /* ──────────────────────────────────────────────────────────────
+    Upload helper
+  ────────────────────────────────────────────────────────────── */
 
   const buildUploadedMediaPayload = async (): Promise<CommunityPostMedia[]> => {
     const remoteMedia: CommunityPostMedia[] = attachments
@@ -890,7 +980,7 @@
       }));
 
     const localMedia = attachments.filter(
-      (attachment) => attachment.source === "local"
+      (attachment) => attachment.source === "local",
     );
 
     if (!localMedia.length) {
@@ -898,846 +988,870 @@
     }
 
     try {
-      const uploadPromise = uploadPostMedia({
-        files: localMedia.map((attachment) => ({
-          uri: attachment.uri,
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-        })),
-      });
+      // Wait for whatever background uploads are already in flight
+      const pending = localMedia
+        .map((a) => uploadPromisesRef.current.get(a.id))
+        .filter((promise): promise is Promise<void> => Boolean(promise));
 
-      uploadAbortRef.current = () => uploadPromise.abort();
-
-      const uploadResponse = (await uploadPromise.unwrap()) as UploadPostMediaResponse;
+      if (pending.length) {
+        await Promise.all(pending);
+      }
 
       if (!isMountedRef.current) {
         throw new Error("UNMOUNTED");
       }
 
-      uploadAbortRef.current = null;
-
-      const uploaded: CommunityPostMedia[] = uploadResponse.items.map(
-        (item: UploadPostMediaItem, index: number) => ({
-          type: "IMAGE",
-          url: item.url,
-          sortOrder: remoteMedia.length + index,
-        })
+      // Fallback: anything that never got a background upload started
+      // (or failed) gets uploaded now, synchronously, as a safety net.
+      const stillNeeded = localMedia.filter(
+        (a) => !uploadResultsRef.current.has(a.id),
       );
+
+      if (stillNeeded.length) {
+        const uploadPromise = uploadPostMedia({
+          files: stillNeeded.map((a) => ({
+            uri: a.uri,
+            name: a.name,
+            mimeType: a.mimeType,
+          })),
+        });
+
+        uploadAbortRef.current = () => uploadPromise.abort();
+
+        const uploadResponse =
+          (await uploadPromise.unwrap()) as UploadPostMediaResponse;
+
+        uploadAbortRef.current = null;
+
+        uploadResponse.items.forEach((item, idx) => {
+          const attachment = stillNeeded[idx];
+          if (attachment) {
+            uploadResultsRef.current.set(attachment.id, item.url);
+          }
+        });
+      }
+
+      const uploaded: CommunityPostMedia[] = localMedia.map((attachment) => ({
+        type: "IMAGE",
+        url: uploadResultsRef.current.get(attachment.id) as string,
+        sortOrder: 0,
+      }));
 
       return [...remoteMedia, ...uploaded].map((media, index) => ({
         ...media,
         sortOrder: index,
       }));
     } catch (error: any) {
-      // IMPORTANT: Clear upload abort
       uploadAbortRef.current = null;
-
-      // Optional: Remove failed local attachments so user can re-pick
-      // setAttachments(prev => prev.filter(a => a.source === "remote"));
-
-      throw error; // re-throw so publish() can catch it
+      throw error; // re-throw so publish()/saveDraft() can catch it
     }
   };
 
-    /* ──────────────────────────────────────────────────────────────
-      Poll helper
-    ────────────────────────────────────────────────────────────── */
+  /* ──────────────────────────────────────────────────────────────
+    Poll helper
+  ────────────────────────────────────────────────────────────── */
 
-    const buildPollPayload = useCallback(
-      (requireValid: boolean): PostPollPayload | undefined => {
-        if (postTab !== "poll") return undefined;
+  const buildPollPayload = useCallback(
+    (requireValid: boolean): PostPollPayload | undefined => {
+      if (postTab !== "poll") return undefined;
 
-        const question = pollQuestion.trim();
-        const options = pollOptions.map((option) => option.trim()).filter(Boolean);
-        const closesAt = pollClosesAt.trim();
+      const question = pollQuestion.trim();
+      const options = pollOptions.map((option) => option.trim()).filter(Boolean);
+      const closesAt = pollClosesAt.trim();
 
-        if (!question && options.length === 0) return undefined;
+      if (!question && options.length === 0) return undefined;
 
-        if (!question) {
+      if (!question) {
+        if (requireValid) {
+          setErrors((prev) => ({
+            ...prev,
+            poll: "Poll question is required.",
+          }));
+        }
+
+        return undefined;
+      }
+
+      if (options.length < 2) {
+        if (requireValid) {
+          setErrors((prev) => ({
+            ...prev,
+            poll: "Poll must have at least 2 options.",
+          }));
+        }
+
+        return undefined;
+      }
+
+      const uniqueOptions = new Set(
+        options.map((option) => option.toLowerCase()),
+      );
+
+      if (uniqueOptions.size !== options.length) {
+        if (requireValid) {
+          setErrors((prev) => ({
+            ...prev,
+            poll: "Poll options must be unique.",
+          }));
+        }
+
+        return undefined;
+      }
+
+      if (closesAt) {
+        const parsedDate = new Date(closesAt);
+
+        if (Number.isNaN(parsedDate.getTime())) {
           if (requireValid) {
             setErrors((prev) => ({
               ...prev,
-              poll: "Poll question is required.",
+              poll: "Poll close date must be valid.",
             }));
           }
 
           return undefined;
-        }
-
-        if (options.length < 2) {
-          if (requireValid) {
-            setErrors((prev) => ({
-              ...prev,
-              poll: "Poll must have at least 2 options.",
-            }));
-          }
-
-          return undefined;
-        }
-
-        const uniqueOptions = new Set(
-          options.map((option) => option.toLowerCase()),
-        );
-
-        if (uniqueOptions.size !== options.length) {
-          if (requireValid) {
-            setErrors((prev) => ({
-              ...prev,
-              poll: "Poll options must be unique.",
-            }));
-          }
-
-          return undefined;
-        }
-
-        if (closesAt) {
-          const parsedDate = new Date(closesAt);
-
-          if (Number.isNaN(parsedDate.getTime())) {
-            if (requireValid) {
-              setErrors((prev) => ({
-                ...prev,
-                poll: "Poll close date must be valid.",
-              }));
-            }
-
-            return undefined;
-          }
-
-          return {
-            question,
-            options,
-            closesAt: parsedDate.toISOString(),
-          };
         }
 
         return {
           question,
           options,
+          closesAt: parsedDate.toISOString(),
         };
-      },
-      [pollClosesAt, pollOptions, pollQuestion, postTab],
-    );
+      }
 
-    /* ──────────────────────────────────────────────────────────────
-      Save draft
-    ────────────────────────────────────────────────────────────── */
+      return {
+        question,
+        options,
+      };
+    },
+    [pollClosesAt, pollOptions, pollQuestion, postTab],
+  );
 
-    const saveDraft = async () => {
-      try {
-        setErrors({});
+  /* ──────────────────────────────────────────────────────────────
+    Save draft
+  ────────────────────────────────────────────────────────────── */
 
-        if (!targetCommunityId) {
-          showNoCommunityModal();
-          return;
+  const saveDraft = async () => {
+    setIsPublishBusy(true);
+    try {
+      setErrors({});
+
+      if (!targetCommunityId) {
+        showNoCommunityModal();
+        return;
+      }
+
+      const media = postTab === "post" ? await buildUploadedMediaPayload() : [];
+      const poll = buildPollPayload(false);
+      const cleanLinkUrl =
+        postTab === "link" ? linkPreview?.cleanUrl ?? linkUrl.trim() : "";
+
+      const parsed = draftPostSchema.safeParse({
+        communityId: targetCommunityId,
+        title,
+        tag: selectedTag,
+        visibility: selectedVisibility,
+        html,
+        plainText,
+        linkUrl: cleanLinkUrl,
+        media,
+        poll,
+      });
+
+      if (!parsed.success) {
+        if (isMountedRef.current) {
+          setErrors(flattenErrors(parsed.error.issues));
         }
 
-        const media = postTab === "post" ? await buildUploadedMediaPayload() : [];
-        const poll = buildPollPayload(false);
-        const cleanLinkUrl =
-          postTab === "link" ? linkPreview?.cleanUrl ?? linkUrl.trim() : "";
+        return;
+      }
 
-        const parsed = draftPostSchema.safeParse({
+      const createBody = {
+        title: title.trim() || undefined,
+        tag: parsed.data.tag,
+        visibility: selectedVisibility,
+        content: plainText.trim() ? parsed.data.html : undefined,
+        linkUrl:
+          postTab === "link"
+            ? parsed.data.linkUrl?.trim() || undefined
+            : undefined,
+        media: postTab === "post" ? media : [],
+        poll: postTab === "poll" ? poll : undefined,
+      };
+
+      const updateBody = {
+        title: title.trim() || null,
+        tag: parsed.data.tag,
+        visibility: selectedVisibility,
+        content: plainText.trim() ? parsed.data.html : null,
+        linkUrl:
+          postTab === "link"
+            ? parsed.data.linkUrl?.trim() || null
+            : null,
+        media: postTab === "post" ? media : [],
+      };
+
+      if (activeDraftId) {
+        await updatePost({
           communityId: targetCommunityId,
-          title,
-          tag: selectedTag,
-          visibility: selectedVisibility,
-          html,
-          plainText,
-          linkUrl: cleanLinkUrl,
-          media,
-          poll,
-        });
-
-        if (!parsed.success) {
-          if (isMountedRef.current) {
-            setErrors(flattenErrors(parsed.error.issues));
-          }
-
-          return;
-        }
-
-        const createBody = {
-          title: title.trim() || undefined,
-          tag: parsed.data.tag,
-          visibility: selectedVisibility,
-          content: plainText.trim() ? parsed.data.html : undefined,
-          linkUrl:
-            postTab === "link"
-              ? parsed.data.linkUrl?.trim() || undefined
-              : undefined,
-          media: postTab === "post" ? media : [],
-          poll: postTab === "poll" ? poll : undefined,
-        };
-
-        const updateBody = {
-          title: title.trim() || null,
-          tag: parsed.data.tag,
-          visibility: selectedVisibility,
-          content: plainText.trim() ? parsed.data.html : null,
-          linkUrl:
-            postTab === "link"
-              ? parsed.data.linkUrl?.trim() || null
-              : null,
-          media: postTab === "post" ? media : [],
-        };
-
-        if (activeDraftId) {
-          await updatePost({
-            communityId: targetCommunityId,
-            postId: activeDraftId,
-            body: updateBody,
-          }).unwrap();
-
-          if (isMountedRef.current) {
-            showStatusModal(
-              "success",
-              "Draft updated",
-              "Your draft has been updated successfully.",
-            );
-          }
-        } else {
-          const created = await createDraftPost({
-            communityId: targetCommunityId,
-            body: createBody,
-          }).unwrap();
-
-          if (isMountedRef.current) {
-            setActiveDraftId(created.id);
-
-            showStatusModal(
-              "success",
-              "Draft saved",
-              "Your draft has been saved successfully.",
-            );
-          }
-        }
+          postId: activeDraftId,
+          body: updateBody,
+        }).unwrap();
 
         if (isMountedRef.current) {
-          setDraftsTabActive(true);
+          showStatusModal(
+            "success",
+            "Draft updated",
+            "Your draft has been updated successfully.",
+          );
         }
+      } else {
+        const created = await createDraftPost({
+          communityId: targetCommunityId,
+          body: createBody,
+        }).unwrap();
+
+        if (isMountedRef.current) {
+          setActiveDraftId(created.id);
+
+          showStatusModal(
+            "success",
+            "Draft saved",
+            "Your draft has been saved successfully.",
+          );
+        }
+      }
+
+      if (isMountedRef.current) {
+        setDraftsTabActive(true);
+      }
+    } catch (error: any) {
+      if (isMountedRef.current) {
+        showStatusModal(
+          "danger",
+          "Could not save draft",
+          error?.data?.message ?? "Please try again.",
+        );
+      }
+    } finally {
+      setIsPublishBusy(false);
+    }
+  };
+
+  /* ──────────────────────────────────────────────────────────────
+    Publish
+  ────────────────────────────────────────────────────────────── */
+
+  const publish = async () => {
+    setIsPublishBusy(true);
+    try {
+      setErrors({});
+
+      if (!targetCommunityId) {
+        showNoCommunityModal();
+        return;
+      }
+
+      const media = postTab === "post" ? await buildUploadedMediaPayload() : [];
+      const poll = buildPollPayload(true);
+
+      if (postTab === "poll" && !poll) return;
+
+      const cleanLinkUrl =
+        postTab === "link" ? linkPreview?.cleanUrl ?? linkUrl.trim() : "";
+
+      const parsed = publishPostSchema.safeParse({
+        communityId: targetCommunityId,
+        title,
+        tag: selectedTag,
+        visibility: selectedVisibility,
+        html,
+        plainText,
+        linkUrl: cleanLinkUrl,
+        media,
+        poll,
+      });
+
+      if (!parsed.success) {
+        if (isMountedRef.current) {
+          setErrors(flattenErrors(parsed.error.issues));
+        }
+
+        return;
+      }
+
+      const createBody = {
+        title: title.trim() || undefined,
+        tag: parsed.data.tag,
+        visibility: selectedVisibility,
+        content: plainText.trim() ? parsed.data.html : undefined,
+        linkUrl:
+          postTab === "link"
+            ? parsed.data.linkUrl?.trim() || undefined
+            : undefined,
+        media: postTab === "post" ? media : [],
+        poll: postTab === "poll" ? poll : undefined,
+      };
+
+      const updateBody = {
+        title: title.trim() || null,
+        tag: parsed.data.tag,
+        visibility: selectedVisibility,
+        content: plainText.trim() ? parsed.data.html : null,
+        linkUrl:
+          postTab === "link"
+            ? parsed.data.linkUrl?.trim() || null
+            : null,
+        media: postTab === "post" ? media : [],
+      };
+
+      if (activeDraftId) {
+        await updatePost({
+          communityId: targetCommunityId,
+          postId: activeDraftId,
+          body: updateBody,
+        }).unwrap();
+
+        await publishDraft({
+          communityId: targetCommunityId,
+          postId: activeDraftId,
+        }).unwrap();
+      } else {
+        await createPublishedPost({
+          communityId: targetCommunityId,
+          body: createBody,
+        }).unwrap();
+      }
+
+      if (isMountedRef.current) {
+        clearComposerAfterPost();
+
+        showStatusModal(
+          "success",
+          "Post posted",
+          targetCommunityName
+            ? `Your post has been posted successfully in ${targetCommunityName}.`
+            : "Your post has been posted successfully.",
+          () => router.replace("/(tabs)"), // ← navigates when user taps OK
+        );
+      }
+    } catch (error: any) {
+      console.log("PUBLISH ERROR — status:", error?.status);
+      console.log("PUBLISH ERROR — data:", JSON.stringify(error?.data));
+      console.log("PUBLISH ERROR — full:", JSON.stringify(error, null, 2));
+
+      if (isMountedRef.current) {
+        showStatusModal(
+          "danger",
+          "Could not post",
+          error?.data?.message ?? "Please try again.",
+        );
+      }
+    } finally {
+      setIsPublishBusy(false);
+    }
+  };
+
+  /* ──────────────────────────────────────────────────────────────
+    Draft management
+  ────────────────────────────────────────────────────────────── */
+
+  const openDraft = useCallback(
+    (draft: CommunityPost) => {
+      const isVisibleCommunityDraft = communities.some(
+        (community) => community.id === draft.communityId,
+      );
+
+      const isOfficialCommunityDraft =
+        officialCommunity?.id === draft.communityId;
+
+      if (!isVisibleCommunityDraft && !isOfficialCommunityDraft) {
+        showStatusModal(
+          "danger",
+          "Draft unavailable",
+          "This draft belongs to a community that is not available anymore.",
+        );
+
+        return;
+      }
+
+      setActiveDraftId(draft.id);
+      setSelectedCommunityId(isVisibleCommunityDraft ? draft.communityId : "");
+      setSelectedTag(draft.tag);
+      setSelectedVisibility(draft.visibility ?? "PUBLIC");
+      setTitle(draft.title ?? "");
+      setLinkUrl(draft.linkUrl ?? "");
+      setHtml(draft.content ?? "<p></p>");
+      setPlainText(stripHtml(draft.content ?? ""));
+
+      setAttachments(
+        draft.media.map((media) => ({
+          id: media.id ?? makeId("remote"),
+          source: "remote" as const,
+          uri: media.url,
+          mediaType: media.type,
+        })),
+      );
+
+      if (draft.poll) {
+        setPostTab("poll");
+        setPollQuestion(draft.poll.question ?? "");
+        setPollOptions(
+          draft.poll.options?.length
+            ? draft.poll.options.map((option) => option.text)
+            : ["", ""],
+        );
+        setPollClosesAt(draft.poll.closesAt ?? "");
+      } else {
+        resetPoll();
+
+        // CHANGED: "media" and "text" both collapse into the single "post" tab
+        if (draft.media?.length) {
+          setPostTab("post");
+        } else if (draft.linkUrl) {
+          setPostTab("link");
+        } else {
+          setPostTab("post");
+        }
+      }
+
+      setErrors({});
+      setDraftsTabActive(false);
+      safeSetContent(draft.content ?? "<p></p>");
+    },
+    [
+      communities,
+      officialCommunity?.id,
+      resetPoll,
+      safeSetContent,
+      showStatusModal,
+    ],
+  );
+
+  const deleteDraft = useCallback(
+    async (draft: CommunityPost) => {
+      try {
+        await deletePost({
+          communityId: draft.communityId,
+          postId: draft.id,
+        }).unwrap();
+
+        if (!isMountedRef.current) return;
+
+        if (activeDraftId === draft.id) {
+          resetComposer();
+        }
+
+        showStatusModal(
+          "success",
+          "Draft deleted",
+          "The selected draft has been removed.",
+        );
       } catch (error: any) {
         if (isMountedRef.current) {
           showStatusModal(
             "danger",
-            "Could not save draft",
+            "Could not delete draft",
             error?.data?.message ?? "Please try again.",
           );
         }
       }
-    };
-
-    /* ──────────────────────────────────────────────────────────────
-      Publish
-    ────────────────────────────────────────────────────────────── */
-
-    const publish = async () => {
-      try {
-        setErrors({});
-
-        if (!targetCommunityId) {
-          showNoCommunityModal();
-          return;
-        }
-
-        const media = postTab === "post" ? await buildUploadedMediaPayload() : [];
-        const poll = buildPollPayload(true);
-
-        if (postTab === "poll" && !poll) return;
-
-        const cleanLinkUrl =
-          postTab === "link" ? linkPreview?.cleanUrl ?? linkUrl.trim() : "";
-
-        const parsed = publishPostSchema.safeParse({
-          communityId: targetCommunityId,
-          title,
-          tag: selectedTag,
-          visibility: selectedVisibility,
-          html,
-          plainText,
-          linkUrl: cleanLinkUrl,
-          media,
-          poll,
-        });
-
-        if (!parsed.success) {
-          if (isMountedRef.current) {
-            setErrors(flattenErrors(parsed.error.issues));
-          }
-
-          return;
-        }
-
-        const createBody = {
-          title: title.trim() || undefined,
-          tag: parsed.data.tag,
-          visibility: selectedVisibility,
-          content: plainText.trim() ? parsed.data.html : undefined,
-          linkUrl:
-            postTab === "link"
-              ? parsed.data.linkUrl?.trim() || undefined
-              : undefined,
-          media: postTab === "post" ? media : [],
-          poll: postTab === "poll" ? poll : undefined,
-        };
-
-        const updateBody = {
-          title: title.trim() || null,
-          tag: parsed.data.tag,
-          visibility: selectedVisibility,
-          content: plainText.trim() ? parsed.data.html : null,
-          linkUrl:
-            postTab === "link"
-              ? parsed.data.linkUrl?.trim() || null
-              : null,
-          media: postTab === "post" ? media : [],
-        };
-
-        if (activeDraftId) {
-          await updatePost({
-            communityId: targetCommunityId,
-            postId: activeDraftId,
-            body: updateBody,
-          }).unwrap();
-
-          await publishDraft({
-            communityId: targetCommunityId,
-            postId: activeDraftId,
-          }).unwrap();
-        } else {
-          await createPublishedPost({
-            communityId: targetCommunityId,
-            body: createBody,
-          }).unwrap();
-        }
-
-        if (isMountedRef.current) {
-          clearComposerAfterPost();
-
-  showStatusModal(
-    "success",
-    "Post posted",
-    targetCommunityName
-      ? `Your post has been posted successfully in ${targetCommunityName}.`
-      : "Your post has been posted successfully.",
-    () => router.replace("/(tabs)"),   // ← navigates when user taps OK
+    },
+    [
+      activeDraftId,
+      deletePost,
+      resetComposer,
+      showStatusModal,
+    ],
   );
-        }
-      } catch (error: any) {
-        console.log("PUBLISH ERROR — status:", error?.status);
-  console.log("PUBLISH ERROR — data:", JSON.stringify(error?.data));
-  console.log("PUBLISH ERROR — full:", JSON.stringify(error, null, 2));
 
-  if (isMountedRef.current) {
-    showStatusModal(
-      "danger",
-      "Could not post",
-      error?.data?.message ?? "Please try again.",
-    );
-        }
-      }
-    };
+  /* ──────────────────────────────────────────────────────────────
+    Derived
+  ────────────────────────────────────────────────────────────── */
 
-    /* ──────────────────────────────────────────────────────────────
-      Draft management
-    ────────────────────────────────────────────────────────────── */
+  const titleRequired = false;
 
-    const openDraft = useCallback(
-      (draft: CommunityPost) => {
-        const isVisibleCommunityDraft = communities.some(
-          (community) => community.id === draft.communityId,
-        );
+  const sharedTabProps = {
+    p,
+    styles,
+    title,
+    setTitle,
+    titleRequired,
+    errors,
+    editor,
+    onChangeHtml: handleHtmlChange,
+  };
 
-        const isOfficialCommunityDraft =
-          officialCommunity?.id === draft.communityId;
+  /* ──────────────────────────────────────────────────────────────
+    Render
+  ────────────────────────────────────────────────────────────── */
 
-        if (!isVisibleCommunityDraft && !isOfficialCommunityDraft) {
-          showStatusModal(
-            "danger",
-            "Draft unavailable",
-            "This draft belongs to a community that is not available anymore.",
-          );
-
-          return;
-        }
-
-        setActiveDraftId(draft.id);
-        setSelectedCommunityId(isVisibleCommunityDraft ? draft.communityId : "");
-        setSelectedTag(draft.tag);
-        setSelectedVisibility(draft.visibility ?? "PUBLIC");
-        setTitle(draft.title ?? "");
-        setLinkUrl(draft.linkUrl ?? "");
-        setHtml(draft.content ?? "<p></p>");
-        setPlainText(stripHtml(draft.content ?? ""));
-
-        setAttachments(
-          draft.media.map((media) => ({
-            id: media.id ?? makeId("remote"),
-            source: "remote" as const,
-            uri: media.url,
-            mediaType: media.type,
-          })),
-        );
-
-        if (draft.poll) {
-          setPostTab("poll");
-          setPollQuestion(draft.poll.question ?? "");
-          setPollOptions(
-            draft.poll.options?.length
-              ? draft.poll.options.map((option) => option.text)
-              : ["", ""],
-          );
-          setPollClosesAt(draft.poll.closesAt ?? "");
-        } else {
-          resetPoll();
-
-          // CHANGED: "media" and "text" both collapse into the single "post" tab
-          if (draft.media?.length) {
-            setPostTab("post");
-          } else if (draft.linkUrl) {
-            setPostTab("link");
-          } else {
-            setPostTab("post");
-          }
-        }
-
-        setErrors({});
-        setDraftsTabActive(false);
-        safeSetContent(draft.content ?? "<p></p>");
-      },
-      [
-        communities,
-        officialCommunity?.id,
-        resetPoll,
-        safeSetContent,
-        showStatusModal,
-      ],
-    );
-
-    const deleteDraft = useCallback(
-      async (draft: CommunityPost) => {
-        try {
-          await deletePost({
-            communityId: draft.communityId,
-            postId: draft.id,
-          }).unwrap();
-
-          if (!isMountedRef.current) return;
-
-          if (activeDraftId === draft.id) {
-            resetComposer();
-          }
-
-          showStatusModal(
-            "success",
-            "Draft deleted",
-            "The selected draft has been removed.",
-          );
-        } catch (error: any) {
-          if (isMountedRef.current) {
-            showStatusModal(
-              "danger",
-              "Could not delete draft",
-              error?.data?.message ?? "Please try again.",
-            );
-          }
-        }
-      },
-      [
-        activeDraftId,
-        deletePost,
-        resetComposer,
-        showStatusModal,
-      ],
-    );
-
-    /* ──────────────────────────────────────────────────────────────
-      Derived
-    ────────────────────────────────────────────────────────────── */
-
-  const titleRequired = false;     
-
-    const sharedTabProps = {
-      p,
-      styles,
-      title,
-      setTitle,
-      titleRequired,
-      errors,
-      editor,
-      onChangeHtml: handleHtmlChange,
-    };
-
-    /* ──────────────────────────────────────────────────────────────
-      Render
-    ────────────────────────────────────────────────────────────── */
-
-    return (
-      <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
-        {/*
-          CHANGED:
-          KeyboardAvoidingView now comes from react-native-keyboard-controller
-          instead of react-native. behavior="padding" is used on BOTH iOS and
-          Android (the old code passed `undefined` on Android, so the screen
-          never pushed up there when the keyboard opened).
-        */}
-        <KeyboardAvoidingView
-          style={styles.contentWrap}
-          behavior="padding"
-        >
-          <View style={styles.contentWrap}>
-            {/* Top bar */}
-            <View style={styles.topBar}>
-              <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                <Pressable onPress={() => router.push("/")} style={styles.backButton}>
-                  <Ionicons name="chevron-back" size={22} color={p.text} />
-                </Pressable>
-
-                <Text style={styles.screenTitle}>
-                  {activeDraftId ? "Edit draft" : "Create post"}
-                </Text>
-              </View>
-
-              <Pressable
-                onPress={() => setDraftsTabActive((value) => !value)}
-                style={styles.draftsChip}
-              >
-                <Text style={styles.draftsChipText}>Drafts</Text>
-
-                {drafts.length > 0 && (
-                  <View style={styles.draftsCount}>
-                    <Text style={styles.draftsCountText}>{drafts.length}</Text>
-                  </View>
-                )}
+  return (
+    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+      {/*
+        CHANGED:
+        KeyboardAvoidingView now comes from react-native-keyboard-controller
+        instead of react-native. behavior="padding" is used on BOTH iOS and
+        Android (the old code passed `undefined` on Android, so the screen
+        never pushed up there when the keyboard opened).
+      */}
+      <KeyboardAvoidingView
+        style={styles.contentWrap}
+        behavior="padding"
+      >
+        <View style={styles.contentWrap}>
+          {/* Top bar */}
+          <View style={styles.topBar}>
+            <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+              <Pressable onPress={() => router.push("/")} style={styles.backButton}>
+                <Ionicons name="chevron-back" size={22} color={p.text} />
               </Pressable>
+
+              <Text style={styles.screenTitle}>
+                {activeDraftId ? "Edit draft" : "Create post"}
+              </Text>
             </View>
 
-            {draftsTabActive ? (
-              <View style={styles.draftsContainer}>
-                <View style={styles.draftsHeader}>
-                  <Text style={styles.draftPanelTitle}>Your drafts</Text>
+            <Pressable
+              onPress={() => setDraftsTabActive((value) => !value)}
+              style={styles.draftsChip}
+            >
+              <Text style={styles.draftsChipText}>Drafts</Text>
 
-                  <Pressable onPress={() => setDraftsTabActive(false)}>
-                    <Ionicons name="close" size={22} color={p.muted} />
-                  </Pressable>
+              {drafts.length > 0 && (
+                <View style={styles.draftsCount}>
+                  <Text style={styles.draftsCountText}>{drafts.length}</Text>
                 </View>
+              )}
+            </Pressable>
+          </View>
 
-                <Text style={styles.draftPanelSub}>
-                  Open a draft to continue editing or delete the ones you do not need.
-                </Text>
+          {draftsTabActive ? (
+            <View style={styles.draftsContainer}>
+              <View style={styles.draftsHeader}>
+                <Text style={styles.draftPanelTitle}>Your drafts</Text>
 
-                <View style={{ flex: 1, marginTop: 16 }}>
-                  <DraftPostsPanel
-                    drafts={drafts}
-                    activeDraftId={activeDraftId}
-                    isLoading={isLoadingDrafts}
-                    onOpenDraft={openDraft}
-                    onDeleteDraft={deleteDraft}
-                  />
-                </View>
+                <Pressable onPress={() => setDraftsTabActive(false)}>
+                  <Ionicons name="close" size={22} color={p.muted} />
+                </Pressable>
               </View>
-            ) : (
-              <View style={styles.contentWrap}>
-                {/*
-                  Community selector.
-                  CHANGED: opens the bottom sheet (openCommunityPicker) instead
-                  of setting a boolean.
-                */}
-                <View style={styles.communityBar}>
-                    <Text style={styles.sectionLabel}>Please select community</Text>
-                  <Pressable
-                    onPress={() => {
-                      if (communities.length === 0) {
-                        if (officialCommunity) {
-                          showStatusModal(
-                            "success",
-                            "Auto district community",
-                            "Your official district community is hidden from the selector but will be used automatically.",
-                          );
-                          return;
-                        }
 
-                        showNoCommunityModal();
+              <Text style={styles.draftPanelSub}>
+                Open a draft to continue editing or delete the ones you do not need.
+              </Text>
+
+              <View style={{ flex: 1, marginTop: 16 }}>
+                <DraftPostsPanel
+                  drafts={drafts}
+                  activeDraftId={activeDraftId}
+                  isLoading={isLoadingDrafts}
+                  onOpenDraft={openDraft}
+                  onDeleteDraft={deleteDraft}
+                />
+              </View>
+            </View>
+          ) : (
+            <View style={styles.contentWrap}>
+              {/*
+                Community selector.
+                CHANGED: opens the bottom sheet (openCommunityPicker) instead
+                of setting a boolean.
+              */}
+              <View style={styles.communityBar}>
+                <Text style={styles.sectionLabel}>Please select community</Text>
+                <Pressable
+                  onPress={() => {
+                    if (communities.length === 0) {
+                      if (officialCommunity) {
+                        showStatusModal(
+                          "success",
+                          "Auto district community",
+                          "Your official district community is hidden from the selector but will be used automatically.",
+                        );
                         return;
                       }
 
-                      openCommunityPicker();
-                    }}
-                    style={styles.communityBtn}
-                  >
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.communityBtnText,
-                        !selectedCommunity && { color: p.placeholder },
-                      ]}
-                    >
-                      {isLoadingCommunities
-                        ? "Loading..."
-                        : selectedCommunity?.name ??
-                          (officialCommunity ? "Auto district community" : "Select Community")}
-                    </Text>
+                      showNoCommunityModal();
+                      return;
+                    }
 
-                    <Ionicons name="chevron-down" size={16} color={p.muted} />
-                  </Pressable>
-                </View>
-
-                {!isLoadingCommunities && communities.length === 0 && officialCommunity && (
-                  <Text style={styles.visibilityHintText}>
-                    Official district community is hidden but selected automatically.
-                  </Text>
-                )}
-
-                {!isLoadingCommunities && !canCreatePost && (
-                  <Text style={styles.visibilityHintText}>
-                    You need to join a community before creating a post.
-                  </Text>
-                )}
-
-                {/* Post type tabs */}
-                {/*
-                  CHANGED: 4 tabs -> Post (text+images merged), Discussion,
-                  Link, Poll. "Start Discussion" is no longer a floating card
-                  above the tabs — it now lives inside the "Discussion" tab body.
-                */}
-                <View style={styles.postTypeTabsWrap}>
-                  <Tabs
-                    value={postTab}
-                    onValueChange={(value) => setPostTab(value as PostTab)}
-                    variant="secondary"
-                    style={{ width: "100%" }}
-                  >
-                    <Tabs.List>
-                      <Tabs.ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        scrollAlign="start"
-                        contentContainerStyle={styles.postTypeTabsListContent}
-                      >
-                        <Tabs.Indicator />
-
-                        <Tabs.Trigger value="post">
-                          <Tabs.Label>Post</Tabs.Label>
-                        </Tabs.Trigger>
-
-                        <Tabs.Trigger value="discussion">
-                          <Tabs.Label>Discussion</Tabs.Label>
-                        </Tabs.Trigger>
-
-                        <Tabs.Trigger value="link">
-                          <Tabs.Label>Link</Tabs.Label>
-                        </Tabs.Trigger>
-
-                        <Tabs.Trigger value="poll">
-                          <Tabs.Label>Poll</Tabs.Label>
-                        </Tabs.Trigger>
-                      </Tabs.ScrollView>
-                    </Tabs.List>
-                  </Tabs>
-                </View>
-
-                {/* Composer */}
-                <ScrollView
-                  style={styles.composerScroll}
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="on-drag"
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={[
-                    styles.scrollContent,
-                    { paddingBottom: insets.bottom + FOOTER_RESERVED_SPACE },
-                  ]}
+                    openCommunityPicker();
+                  }}
+                  style={styles.communityBtn}
                 >
-                  {postTab !== "discussion" && (
-                    <View style={styles.tagsRow}>
-                      <Pressable
-                        onPress={() => setTagModalVisible(true)}
-                        style={styles.tagChip}
-                      >
-                        <Ionicons name="pricetag-outline" size={14} color={p.muted} />
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.communityBtnText,
+                      !selectedCommunity && { color: p.placeholder },
+                    ]}
+                  >
+                    {isLoadingCommunities
+                      ? "Loading..."
+                      : selectedCommunity?.name ??
+                        (officialCommunity ? "Auto district community" : "Select Community")}
+                  </Text>
 
-                        <Text style={styles.tagChipText}>
-                          {selectedTagMeta ? selectedTagMeta.label : "Add tags"}
-                        </Text>
-
-                        <Ionicons name="chevron-down" size={14} color={p.muted} />
-                      </Pressable>
-
-                      <Pressable
-                        onPress={() => setVisibilityModalVisible(true)}
-                        style={styles.tagChip}
-                      >
-                        <Ionicons
-                          name={(selectedVisibilityMeta?.icon ?? "earth-outline") as any}
-                          size={14}
-                          color={p.muted}
-                        />
-
-                        <Text style={styles.tagChipText}>
-                          {selectedVisibilityMeta?.label ?? "Visibility"}
-                        </Text>
-
-                        <Ionicons name="chevron-down" size={14} color={p.muted} />
-                      </Pressable>
-                    </View>
-                  )}
-
-                  {isPrivateCommunity && postTab !== "discussion" && (
-                    <Text style={styles.visibilityHintText}>
-                      Public visibility is disabled in private communities.
-                    </Text>
-                  )}
-                  {isRestrictedCommunity && postTab !== "discussion" && (
-  <Text style={styles.visibilityHintText}>
-    Posts in restricted communities must be public.
-  </Text>
-)}
-
-                  {postTab === "post" && (
-                    <ComposerPostTab
-                      {...sharedTabProps}
-                      attachments={attachments}
-                      onPickMedia={pickMedia}
-                      onReplaceAttachment={replaceAttachment}
-                      onRemoveAttachment={removeAttachment}
-                    />
-                  )}
-
-                  {postTab === "discussion" && (
-                    <View style={styles.sectionCard}>
-                      <StartDiscussionButton
-                        embedded
-                        disabled={busy || isLoadingCommunities || !canCreatePost}
-                        communityName={targetCommunityName}
-                        onPress={handleStartDiscussion}
-                        isDark={isDark}
-                        textColor={p.text}
-                        mutedColor={p.muted}
-                        accentColor={colors.accent}
-                      />
-                    </View>
-                  )}
-
-                  {postTab === "link" && (
-                    <LinkTab
-                      {...sharedTabProps}
-                      linkUrl={linkUrl}
-                      setLinkUrl={setLinkUrl}
-                      linkPreview={linkPreview}
-                      setErrors={setErrors}
-                    />
-                  )}
-
-                  {postTab === "poll" && (
-                    <PollTab
-                      {...sharedTabProps}
-                      pollQuestion={pollQuestion}
-                      setPollQuestion={setPollQuestion}
-                      pollOptions={pollOptions}
-                      setPollOptions={setPollOptions}
-                      pollClosesAt={pollClosesAt}
-                      setPollClosesAt={setPollClosesAt}
-                    />
-                  )}
-                </ScrollView>
+                  <Ionicons name="chevron-down" size={16} color={p.muted} />
+                </Pressable>
               </View>
-            )}
-          </View>
-        </KeyboardAvoidingView>
 
-        {/*
-          CHANGED: footer moved OUTSIDE the KeyboardAvoidingView entirely.
-          Before, it was an absolutely-positioned child inside the padded
-          container, so every time the keyboard opened, the padding pushed
-          the whole container up and dragged the footer along with it —
-          the "footer pops up" glitch. Now it's a plain sibling pinned to
-          the real bottom of the screen: it never moves when the keyboard
-          opens or closes, it just stays put (and gets covered by the
-          keyboard like any normal fixed bottom bar would).
-        */}
-        {!draftsTabActive && postTab !== "discussion" && (
-          <View
-            style={[
-              styles.footerWrap,
-              { paddingBottom: Math.max(insets.bottom, 10) },
-            ]}
-          >
-            <View style={styles.footerRow}>
-              {activeDraftId && (
-                <ComposerActionButton
-                  label="New post"
-                  variant="outline"
-                  disabled={busy}
-                  onPress={resetComposer}
-                  styles={styles}
-                />
+              {!isLoadingCommunities && communities.length === 0 && officialCommunity && (
+                <Text style={styles.visibilityHintText}>
+                  Official district community is hidden but selected automatically.
+                </Text>
               )}
 
-              <ComposerActionButton
-                label="Save Draft"
-                variant="secondary"
-                disabled={busy || isLoadingCommunities || !canCreatePost}
-                onPress={saveDraft}
-                styles={styles}
-              />
+              {!isLoadingCommunities && !canCreatePost && (
+                <Text style={styles.visibilityHintText}>
+                  You need to join a community before creating a post.
+                </Text>
+              )}
 
-              <ComposerActionButton
-                label="Post"
-                variant="primary"
-                disabled={busy || isLoadingCommunities || !canCreatePost}
-                onPress={publish}
-                styles={styles}
-              />
+              {/* Post type tabs */}
+              {/*
+                CHANGED: 4 tabs -> Post (text+images merged), Discussion,
+                Link, Poll. "Start Discussion" is no longer a floating card
+                above the tabs — it now lives inside the "Discussion" tab body.
+              */}
+              <View style={styles.postTypeTabsWrap}>
+                <Tabs
+                  value={postTab}
+                  onValueChange={(value) => setPostTab(value as PostTab)}
+                  variant="secondary"
+                  style={{ width: "100%" }}
+                >
+                  <Tabs.List>
+                    <Tabs.ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      scrollAlign="start"
+                      contentContainerStyle={styles.postTypeTabsListContent}
+                    >
+                      <Tabs.Indicator />
+
+                      <Tabs.Trigger value="post">
+                        <Tabs.Label>Post</Tabs.Label>
+                      </Tabs.Trigger>
+
+                      <Tabs.Trigger value="discussion">
+                        <Tabs.Label>Discussion</Tabs.Label>
+                      </Tabs.Trigger>
+
+                      <Tabs.Trigger value="link">
+                        <Tabs.Label>Link</Tabs.Label>
+                      </Tabs.Trigger>
+
+                      <Tabs.Trigger value="poll">
+                        <Tabs.Label>Poll</Tabs.Label>
+                      </Tabs.Trigger>
+                    </Tabs.ScrollView>
+                  </Tabs.List>
+                </Tabs>
+              </View>
+
+              {/* Composer */}
+              <ScrollView
+                style={styles.composerScroll}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  { paddingBottom: insets.bottom + FOOTER_RESERVED_SPACE },
+                ]}
+              >
+                {postTab !== "discussion" && (
+                  <View style={styles.tagsRow}>
+                    <Pressable
+                      onPress={() => setTagModalVisible(true)}
+                      style={styles.tagChip}
+                    >
+                      <Ionicons name="pricetag-outline" size={14} color={p.muted} />
+
+                      <Text style={styles.tagChipText}>
+                        {selectedTagMeta ? selectedTagMeta.label : "Add tags"}
+                      </Text>
+
+                      <Ionicons name="chevron-down" size={14} color={p.muted} />
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => setVisibilityModalVisible(true)}
+                      style={styles.tagChip}
+                    >
+                      <Ionicons
+                        name={(selectedVisibilityMeta?.icon ?? "earth-outline") as any}
+                        size={14}
+                        color={p.muted}
+                      />
+
+                      <Text style={styles.tagChipText}>
+                        {selectedVisibilityMeta?.label ?? "Visibility"}
+                      </Text>
+
+                      <Ionicons name="chevron-down" size={14} color={p.muted} />
+                    </Pressable>
+                  </View>
+                )}
+
+                {isPrivateCommunity && postTab !== "discussion" && (
+                  <Text style={styles.visibilityHintText}>
+                    Public visibility is disabled in private communities.
+                  </Text>
+                )}
+                {isRestrictedCommunity && postTab !== "discussion" && (
+                  <Text style={styles.visibilityHintText}>
+                    Posts in restricted communities must be public.
+                  </Text>
+                )}
+
+                {postTab === "post" && (
+                  <ComposerPostTab
+                    {...sharedTabProps}
+                    attachments={attachments}
+                    onPickMedia={pickMedia}
+                    onReplaceAttachment={replaceAttachment}
+                    onRemoveAttachment={removeAttachment}
+                  />
+                )}
+
+                {postTab === "discussion" && (
+                  <View style={styles.sectionCard}>
+                    <StartDiscussionButton
+                      embedded
+                      disabled={busy || isLoadingCommunities || !canCreatePost}
+                      communityName={targetCommunityName}
+                      onPress={handleStartDiscussion}
+                      isDark={isDark}
+                      textColor={p.text}
+                      mutedColor={p.muted}
+                      accentColor={colors.accent}
+                    />
+                  </View>
+                )}
+
+                {postTab === "link" && (
+                  <LinkTab
+                    {...sharedTabProps}
+                    linkUrl={linkUrl}
+                    setLinkUrl={setLinkUrl}
+                    linkPreview={linkPreview}
+                    setErrors={setErrors}
+                  />
+                )}
+
+                {postTab === "poll" && (
+                  <PollTab
+                    {...sharedTabProps}
+                    pollQuestion={pollQuestion}
+                    setPollQuestion={setPollQuestion}
+                    pollOptions={pollOptions}
+                    setPollOptions={setPollOptions}
+                    pollClosesAt={pollClosesAt}
+                    setPollClosesAt={setPollClosesAt}
+                  />
+                )}
+              </ScrollView>
             </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+
+      {/*
+        CHANGED: footer moved OUTSIDE the KeyboardAvoidingView entirely.
+        Before, it was an absolutely-positioned child inside the padded
+        container, so every time the keyboard opened, the padding pushed
+        the whole container up and dragged the footer along with it —
+        the "footer pops up" glitch. Now it's a plain sibling pinned to
+        the real bottom of the screen: it never moves when the keyboard
+        opens or closes, it just stays put (and gets covered by the
+        keyboard like any normal fixed bottom bar would).
+      */}
+      {!draftsTabActive && postTab !== "discussion" && (
+        <View
+          style={[
+            styles.footerWrap,
+            { paddingBottom: Math.max(insets.bottom, 10) },
+          ]}
+        >
+          <View style={styles.footerRow}>
+            {activeDraftId && (
+              <ComposerActionButton
+                label="New post"
+                variant="outline"
+                disabled={busy}
+                onPress={resetComposer}
+                styles={styles}
+              />
+            )}
+
+            <ComposerActionButton
+              label="Save Draft"
+              variant="secondary"
+              disabled={busy || isLoadingCommunities || !canCreatePost}
+              onPress={saveDraft}
+              styles={styles}
+            />
+
+            <ComposerActionButton
+              label="Post"
+              variant="primary"
+              disabled={busy || isLoadingCommunities || !canCreatePost}
+              onPress={publish}
+              styles={styles}
+            />
           </View>
-        )}
+        </View>
+      )}
 
-        {/*
-          CHANGED: CommunityPickerSheet is a BottomSheetModal — always mounted,
-          opened/closed imperatively via communityPickerRef. Must render
-          outside the KeyboardAvoidingView so it isn't affected by screen
-          padding shifts.
-        */}
-        <CommunityPickerSheet
-          ref={communityPickerRef}
-          communities={filteredCommunities}
-          selectedId={selectedCommunityId}
-          searchValue={communitySearch}
-          onSearchChange={setCommunitySearch}
-          onSelect={setSelectedCommunityId}
-          onClose={closeCommunityPicker}
-        />
+      {/*
+        CHANGED: CommunityPickerSheet is a BottomSheetModal — always mounted,
+        opened/closed imperatively via communityPickerRef. Must render
+        outside the KeyboardAvoidingView so it isn't affected by screen
+        padding shifts.
+      */}
+      <CommunityPickerSheet
+        ref={communityPickerRef}
+        communities={filteredCommunities}
+        selectedId={selectedCommunityId}
+        searchValue={communitySearch}
+        onSearchChange={setCommunitySearch}
+        onSelect={setSelectedCommunityId}
+        onClose={closeCommunityPicker}
+      />
 
-        <TagPickerModal
-          visible={tagModalVisible}
-          selectedTag={selectedTag}
-          onSelect={setSelectedTag}
-          onClose={() => setTagModalVisible(false)}
-        />
+      <TagPickerModal
+        visible={tagModalVisible}
+        selectedTag={selectedTag}
+        onSelect={setSelectedTag}
+        onClose={() => setTagModalVisible(false)}
+      />
 
-        <VisibilityPickerModal
-          visible={visibilityModalVisible}
-          selectedVisibility={selectedVisibility}
-          options={availableVisibilityOptions}
-          onSelect={setSelectedVisibility}
-          onClose={() => setVisibilityModalVisible(false)}
-        />
+      <VisibilityPickerModal
+        visible={visibilityModalVisible}
+        selectedVisibility={selectedVisibility}
+        options={availableVisibilityOptions}
+        onSelect={setSelectedVisibility}
+        onClose={() => setVisibilityModalVisible(false)}
+      />
 
-        <StatusModal
-          visible={statusModal.visible}
-          variant={statusModal.variant}
-          title={statusModal.title}
-          message={statusModal.message}
-          onClose={closeStatusModal}
-          isDark={isDark}
-          successColor={colors.success}
-          dangerColor={colors.danger}
-        />
-        <UploadingModal
-  visible={busy}
-  isDark={isDark}
-  accentColor={colors.accent}
-  label={uploadingLabel}
-/>
-      </SafeAreaView>
-    );
-  }
+      <StatusModal
+        visible={statusModal.visible}
+        variant={statusModal.variant}
+        title={statusModal.title}
+        message={statusModal.message}
+        onClose={closeStatusModal}
+        isDark={isDark}
+        successColor={colors.success}
+        dangerColor={colors.danger}
+      />
+      <UploadingModal
+        visible={busy}
+        isDark={isDark}
+        accentColor={colors.accent}
+        label={uploadingLabel}
+      />
+    </SafeAreaView>
+  );
+}

@@ -599,6 +599,8 @@ function CommunityPostCard({
   // derived server value changes, not just when the post's id
   // changes — so stale/one-off mismatches self-heal.
   // ------------------------------------------------------------
+ const communityId = post.community?.id || post.communityId;
+
   const derivedJoined =
     post.isJoinedByMe ??
     post.isCommunityFollowedByMe ??
@@ -608,72 +610,85 @@ function CommunityPostCard({
     false;
 
   const [isJoined, setIsJoined] = useState(derivedJoined);
-
-  useEffect(() => {
-    setIsJoined(derivedJoined);
-  }, [derivedJoined]);
-
-  // ------------------------------------------------------------
-  // showJoinPill controls whether the Join/Joined button is
-  // rendered at all — this is what gives the Reddit/TikTok feel:
-  // tap Join -> "Joined" flashes briefly -> button collapses and
-  // stays gone. It only reappears if the user actually leaves
-  // (isJoined flips back to false), never "forever stuck" either way.
-  // ------------------------------------------------------------
   const [showJoinPill, setShowJoinPill] = useState(!derivedJoined);
-  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // justJoined = true ONLY right after the user actually taps "Join"
+  // in this session. This is what earns the flash-then-collapse
+  // animation. Any other reason isJoined changes — FlashList
+  // recycling this card into a different post, a background
+  // refetch, a resync from fresh props — must NOT replay the
+  // animation, or the button appears to flash/disappear randomly
+  // while scrolling.
+  const [justJoined, setJustJoined] = useState(false);
+
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevCommunityIdRef = useRef(communityId);
+
+  // Silent resync: fires whenever this cell now represents a
+  // different community (recycling) or the server value changed
+  // under the same post (refetch/cache patch). No flash, no timer.
   useEffect(() => {
+    prevCommunityIdRef.current = communityId;
+
     if (collapseTimerRef.current) {
       clearTimeout(collapseTimerRef.current);
       collapseTimerRef.current = null;
     }
 
-    if (isJoined) {
-      // flash "Joined" immediately, then collapse after a short delay
-      setShowJoinPill(true);
-      collapseTimerRef.current = setTimeout(() => {
-        setShowJoinPill(false);
-      }, JOIN_PILL_COLLAPSE_DELAY_MS);
-    } else {
-      // not joined (or just left) -> always show "Join"
-      setShowJoinPill(true);
-    }
+    setIsJoined(derivedJoined);
+    setJustJoined(false);
+    // already joined -> render nothing, same as the Community tab
+    // not joined -> show "Join"
+    setShowJoinPill(!derivedJoined);
+  }, [communityId, derivedJoined]);
+
+  // Only the "just tapped Join" flash gets the auto-collapse timer.
+  useEffect(() => {
+    if (!justJoined) return;
+
+    collapseTimerRef.current = setTimeout(() => {
+      setShowJoinPill(false);
+    }, JOIN_PILL_COLLAPSE_DELAY_MS);
 
     return () => {
       if (collapseTimerRef.current) {
         clearTimeout(collapseTimerRef.current);
       }
     };
-  }, [isJoined]);
+  }, [justJoined]);
 
   const performJoin = useCallback(async () => {
-    const communityId = post.community?.id || post.communityId;
     if (!communityId) return;
 
     try {
       setIsJoined(true);
+      setShowJoinPill(true);
+      setJustJoined(true);
       await joinCommunity({ communityId }).unwrap();
     } catch (error) {
       setIsJoined(false);
+      setJustJoined(false);
+      setShowJoinPill(true);
       console.log("Join community failed:", error);
       Alert.alert("Could not join", "Something went wrong while joining this community.");
     }
-  }, [post, joinCommunity]);
+  }, [communityId, joinCommunity]);
 
   const performLeave = useCallback(async () => {
-    const communityId = post.community?.id || post.communityId;
     if (!communityId) return;
 
     try {
       setIsJoined(false);
+      setJustJoined(false);
+      setShowJoinPill(true);
       await leaveCommunity(communityId).unwrap();
     } catch (error) {
       setIsJoined(true);
+      setShowJoinPill(true);
       console.log("Leave community failed:", error);
       Alert.alert("Could not leave", "Something went wrong while leaving this community.");
     }
-  }, [post, leaveCommunity]);
+  }, [communityId, leaveCommunity]);
 
   const handleJoinToggle = useCallback(() => {
     const communityName = post.community?.name ?? "this community";

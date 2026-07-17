@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Text,
   View,
+  Modal
 } from "react-native";
 import { Redirect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -71,7 +72,8 @@ const POSTS_LIMIT = 10;
 // TRAINING_PROFESSIONS in onboarding.tsx.
 const TRAINING_PROFESSIONS = ["Instructor", "Trainer", "Trainee"];
 
-const PROFILE_BANNER_DISMISS_KEY = "profileCompletionBannerDismissedUntil";
+const getBannerDismissKey = (userId: string) =>
+  `profileCompletionBannerDismissedUntil:${userId}`;
 const REMIND_LATER_HOURS = 24;
 
 export default function ProfileScreen() {
@@ -89,6 +91,7 @@ export default function ProfileScreen() {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isBannerDismissed, setIsBannerDismissed] = useState(false);
   const [isBannerCheckDone, setIsBannerCheckDone] = useState(false);
+  const [showRemindLaterModal, setShowRemindLaterModal] = useState(false);
 
   const refreshStartedRef = useRef(false);
 
@@ -293,34 +296,35 @@ export default function ProfileScreen() {
     myPostsFetching,
   ]);
 
-  useEffect(() => {
-    const checkBannerDismissal = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(
-          PROFILE_BANNER_DISMISS_KEY,
-        );
+ useEffect(() => {
+  if (!user?.id) return;
 
-        if (stored) {
-          const dismissedUntil = Number(stored);
+  setIsBannerCheckDone(false);
 
-          if (
-            Number.isFinite(dismissedUntil) &&
-            Date.now() < dismissedUntil
-          ) {
-            setIsBannerDismissed(true);
-          } else {
-            setIsBannerDismissed(false);
-          }
+  const checkBannerDismissal = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(getBannerDismissKey(user.id));
+
+      if (stored) {
+        const dismissedUntil = Number(stored);
+
+        if (Number.isFinite(dismissedUntil) && Date.now() < dismissedUntil) {
+          setIsBannerDismissed(true);
+        } else {
+          setIsBannerDismissed(false);
         }
-      } catch (error) {
-        console.log("Failed to read banner dismissal:", error);
-      } finally {
-        setIsBannerCheckDone(true);
+      } else {
+        setIsBannerDismissed(false);
       }
-    };
+    } catch (error) {
+      console.log("Failed to read banner dismissal:", error);
+    } finally {
+      setIsBannerCheckDone(true);
+    }
+  };
 
-    checkBannerDismissal();
-  }, []);
+  checkBannerDismissal();
+}, [user?.id]);
 
   const loadMorePosts = useCallback(() => {
     if (tab !== "posts") return;
@@ -382,19 +386,21 @@ export default function ProfileScreen() {
     router.push("/pages/privacySetting");
   };
 
-  const handleDismissBanner = async () => {
-    setIsBannerDismissed(true);
+const handleDismissBanner = async () => {
+  if (!user?.id) return;
 
-    try {
-      const remindAt = Date.now() + REMIND_LATER_HOURS * 60 * 60 * 1000;
-      await AsyncStorage.setItem(
-        PROFILE_BANNER_DISMISS_KEY,
-        String(remindAt),
-      );
-    } catch (error) {
-      console.log("Failed to persist banner dismissal:", error);
-    }
-  };
+  setIsBannerDismissed(true);
+
+  try {
+    const remindAt = Date.now() + REMIND_LATER_HOURS * 60 * 60 * 1000;
+    await AsyncStorage.setItem(
+      getBannerDismissKey(user.id),
+      String(remindAt),
+    );
+  } catch (error) {
+    console.log("Failed to persist banner dismissal:", error);
+  }
+};
 
   const openViewer = useCallback((media: PostMedia[], index: number) => {
     setViewer({
@@ -904,19 +910,15 @@ const renderPost = useCallback(
                         {completionPercent}%
                       </Text>
 
-                      <Pressable
-                        hitSlop={8}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleDismissBanner();
-                        }}
-                      >
-                        <Ionicons
-                          name="close"
-                          size={16}
-                          color={colors.muted}
-                        />
-                      </Pressable>
+                   <Pressable
+  hitSlop={8}
+  onPress={(e) => {
+    e.stopPropagation();
+    setShowRemindLaterModal(true);
+  }}
+>
+  <Ionicons name="close" size={16} color={colors.muted} />
+</Pressable>
                     </View>
                   </View>
 
@@ -1235,6 +1237,104 @@ const renderPost = useCallback(
   onCancel={handleCropCancel}
   onConfirm={handleCropConfirm}
 />
+<Modal
+  visible={showRemindLaterModal}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setShowRemindLaterModal(false)}
+>
+  <Pressable
+    style={{
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 32,
+    }}
+    onPress={() => setShowRemindLaterModal(false)}
+  >
+    <Pressable
+      onPress={(e) => e.stopPropagation()}
+      style={{
+        width: "100%",
+        backgroundColor: colors.surface,
+        borderRadius: 22,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <Text
+        style={{
+          color: colors.foreground,
+          fontSize: 16,
+          fontFamily: "Poppins_700Bold",
+        }}
+      >
+        Hide this reminder?
+      </Text>
+
+      <Text
+        style={{
+          color: colors.muted,
+          fontSize: 13,
+          lineHeight: 20,
+          fontFamily: "Poppins_400Regular",
+          marginTop: 8,
+          marginBottom: 20,
+        }}
+      >
+        We'll remind you again in 24 hours to finish your profile.
+      </Text>
+
+      <View style={{ gap: 10 }}>
+        <Pressable
+          onPress={() => {
+            setShowRemindLaterModal(false);
+            handleDismissBanner();
+          }}
+          style={{
+            paddingVertical: 12,
+            borderRadius: 999,
+            backgroundColor: colors.accent,
+            alignItems: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: "#FFFFFF",
+              fontSize: 14,
+              fontFamily: "Poppins_600SemiBold",
+            }}
+          >
+            Remind me later
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => setShowRemindLaterModal(false)}
+          style={{
+            paddingVertical: 12,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: colors.border,
+            alignItems: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: colors.foreground,
+              fontSize: 14,
+              fontFamily: "Poppins_600SemiBold",
+            }}
+          >
+            Cancel
+          </Text>
+        </Pressable>
+      </View>
+    </Pressable>
+  </Pressable>
+</Modal>
     </>
   );
 }

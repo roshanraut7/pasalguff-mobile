@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, FieldError, Input, Label, TextField } from "heroui-native";
+import { BUSINESS_TYPES } from "@/constants/businesstype";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
@@ -35,7 +36,8 @@ export default function EditBusinessProfileScreen() {
   const isTrainingProfession = TRAINING_PROFESSIONS.includes(
     profile?.businessType ?? "",
   );
-
+const [businessType, setBusinessType] = useState(profile?.businessType ?? "");
+const [customBusinessType, setCustomBusinessType] = useState("");
   const [businessName, setBusinessName] = useState(
     profile?.businessName ?? "",
   );
@@ -90,6 +92,7 @@ export default function EditBusinessProfileScreen() {
 
     try {
       await updateMyProfile({
+          businessType: businessType.trim() || null,
         businessName: isTrainingProfession
           ? null
           : businessName.trim() || null,

@@ -60,7 +60,7 @@ export default function SignupForm() {
 
       const email = values.email.trim().toLowerCase();
 
-      await signUpWithEmail({
+    await signUpWithEmail({
         firstName: values.firstName.trim(),
         lastName: values.lastName.trim(),
         email,
@@ -72,6 +72,11 @@ export default function SignupForm() {
       await sendSignupOTP(email);
 
       setPendingPassword(values.password);
+
+      router.replace({
+        pathname: "/pages/verify-otp",
+        params: { email },
+      });
 
       // no router.replace here anymore —
       // AuthPage's session-based <Redirect> handles navigation to verify-otp

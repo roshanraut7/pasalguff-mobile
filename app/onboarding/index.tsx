@@ -10,12 +10,14 @@ import {
   View,
   Platform,
 } from "react-native";
+import { businessProfileSchema } from "@/schema/businessProfile.schema";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import {
+import {BUSINESS_TYPES} from "@/constants/businesstype"
+ import {
   Button,
   FieldError,
   Input,
@@ -57,63 +59,8 @@ const STEPS: StepKey[] = [
   "suggestedCommunities",
   "businessProfile",
 ];
-
-const BUSINESS_TYPES = [
-  // Consumer Electronics & Retail
-  "Smartphone Retailer",
-  "Mobile Phone Dealer",
-  "Laptop & Computer Dealer",
-  "Home Appliance Dealer",
-  "Audio & Video Equipment Seller",
-  "Gaming & Accessories Dealer",
-  "Wearables & Fitness Gadgets Retailer",
-  "Camera & Photography Equipment Dealer",
-  "Car Electronics & Audio Installer",
-  "Ev FourWheelers",
-    "Ev TwoWheelers",
-
-  // B2B, Supply Chain & Distribution
-  "Wholesaler",
-  "Distributor",
-  "Importer",
-  "Mobile & Laptop Spare Parts Supplier",
-  "Electronics Accessories Supplier",
-  "Repair Tools & Dealer",
-  "Parts & Accessories",
-  // Smart Tech, Security & Power
-  "CCTV & Security Systems Vendor",
-  "Smart Home & IoT Devices",
-  "Solar & Power Backup Solutions",
-  "EV Charging Stations & Accessories Dealer",
-  "Drone & UAV Seller",
-
-  // Enterprise & Office IT
-  "IT Infrastructure & Networking Vendor",
-  "POS & Billing Systems Provider",
-  "Office Automation & Equipment Dealer",
-  "Software & License Reseller",
-
-  // Services & Circular Economy
-  "Electronics Repair Shop",
-  "Service Center (Repair & Installation)",
-  "Refurbished & Second-Hand Electronics Dealer",
-  "E-Waste Recycling & Scrap Buyer",
-  "3D Printing Equipment & Materials Supplier",
-
-  // Training & Education
-  "Instructor",
-  "Trainer",
-  "Trainee",
-
-  "Other",
-];
-
-// Profession types that only need Professional Email + Phone
 // (no business name / address required)
 const TRAINING_PROFESSIONS = ["Instructor", "Trainer", "Trainee"];
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_REGEX = /^\+?[0-9\s-]{7,15}$/;
 
 export default function OnboardingScreen() {
   const { colors, isDark } = useAppTheme();
@@ -134,7 +81,11 @@ export default function OnboardingScreen() {
   const [businessEmail, setBusinessEmail] = useState("");
   const [businessPhoneNo, setBusinessPhoneNo] = useState("");
   const [serverError, setServerError] = useState("");
-  const { refetch: refetchSession } = useSession();
+const {
+  data: session,
+  isPending: isSessionPending,
+  refetch: refetchSession,
+} = useSession();
 
   const { refetch: refetchMyOnboarding } = useGetMyOnboardingQuery();
 
@@ -173,13 +124,15 @@ export default function OnboardingScreen() {
     selectedBusinessType,
   );
 
-  const isBusinessProfileValid = isTrainingProfession
-    ? EMAIL_REGEX.test(businessEmail.trim()) &&
-      PHONE_REGEX.test(businessPhoneNo.trim())
-    : businessName.trim().length > 0 &&
-      address.trim().length > 0 &&
-      EMAIL_REGEX.test(businessEmail.trim()) &&
-      PHONE_REGEX.test(businessPhoneNo.trim());
+const businessProfileValidation = businessProfileSchema.safeParse({
+  isTrainingProfession,
+  businessName,
+  address,
+  businessEmail,
+  businessPhoneNo,
+});
+
+const isBusinessProfileValid = businessProfileValidation.success;
 
   const toggleCategory = (categoryId: string) => {
     setSelectedCategoryIds((prev) => {
@@ -224,14 +177,13 @@ export default function OnboardingScreen() {
         await savePartialOnboarding();
       }
 
-      if (currentStep === "businessProfile" && !isBusinessProfileValid) {
-        setServerError(
-          isTrainingProfession
-            ? "Please fill in your professional email and professional phone number."
-            : "Please fill in business name, address, business email, and business phone number.",
-        );
-        return;
-      }
+      if (currentStep === "businessProfile" && !businessProfileValidation.success) {
+  setServerError(
+    businessProfileValidation.error.issues[0]?.message ??
+      "Please check your business profile details.",
+  );
+  return;
+}
 
       if (!isLastStep) {
         setStepIndex((prev) => prev + 1);
@@ -493,6 +445,20 @@ export default function OnboardingScreen() {
       </View>
     </View>
   );
+
+  if (isSessionPending) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (session?.user?.onboardingCompleted) {
+    return <Redirect href="/(tabs)" />;
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>

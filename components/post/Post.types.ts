@@ -52,6 +52,7 @@ export type ComposerAttachment = {
   mediaType: PostMediaType;
   name?: string;
   mimeType?: string;
+  uploadStatus?: "pending" | "uploading" | "done" | "error";
 };
 
 export type UploadPostMediaItem = {
