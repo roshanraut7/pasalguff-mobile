@@ -33,6 +33,13 @@ import type {
   PostReactionResponse,
   SharePostToFeedArgs,
   SharePostToFeedResponse,
+  ContributorRequestListResponse,
+      GetContributorRequestsArgs,
+      MyContributorStatusResponse,
+      ContributorRequestItem,
+      ReviewContributorRequestArgs,
+          RequestContributorAccessArgs
+
 } from "@/types/post";
 type CommentReactionArgs = {
   communityId: string;
@@ -526,6 +533,88 @@ getHomeFeedPosts: builder.query<
         ];
   },
 }),
+ /* =========================================================
+       RESTRICTED COMMUNITY — CONTRIBUTOR (POST) REQUESTS
+       ========================================================= */
+
+    requestContributorAccess: builder.mutation<
+      ContributorRequestItem,
+      RequestContributorAccessArgs
+    >({
+      query: ({ communityId, message }) => ({
+        url: `/communities/${communityId}/contributor-requests`,
+        method: "POST",
+        body: { message },
+      }),
+
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "ContributorRequest" as const, id: `STATUS-${arg.communityId}` },
+      ],
+    }),
+
+    cancelContributorRequest: builder.mutation<
+      ContributorRequestItem,
+      { communityId: string }
+    >({
+      query: ({ communityId }) => ({
+        url: `/communities/${communityId}/contributor-requests/me`,
+        method: "DELETE",
+      }),
+
+      invalidatesTags: (_result, _error, arg) => [
+        { type: "ContributorRequest" as const, id: `STATUS-${arg.communityId}` },
+      ],
+    }),
+
+    getMyContributorStatus: builder.query<
+      MyContributorStatusResponse,
+      { communityId: string }
+    >({
+      query: ({ communityId }) => `/communities/${communityId}/contributor-requests/me`,
+
+      providesTags: (_result, _error, arg) => [
+        { type: "ContributorRequest" as const, id: `STATUS-${arg.communityId}` },
+      ],
+    }),
+
+    getContributorRequests: builder.query<
+      ContributorRequestListResponse,
+      GetContributorRequestsArgs
+    >({
+      query: ({ communityId, page = 1, limit = 20, status = "PENDING" }) => ({
+        url: `/communities/${communityId}/contributor-requests`,
+        method: "GET",
+        params: { page, limit, status },
+      }),
+
+      providesTags: (_result, _error, arg) => [
+        {
+          type: "ContributorRequest" as const,
+          id: `LIST-${arg.communityId}-${arg.status ?? "PENDING"}`,
+        },
+      ],
+    }),
+
+    reviewContributorRequest: builder.mutation<
+      ContributorRequestItem,
+      ReviewContributorRequestArgs
+    >({
+      query: ({ communityId, requestId, decision, note }) => ({
+        url: `/communities/${communityId}/contributor-requests/${requestId}`,
+        method: "PATCH",
+        body: { decision, note },
+      }),
+
+      invalidatesTags: (_result, _error, arg) => [
+        {
+          type: "ContributorRequest" as const,
+          id: `LIST-${arg.communityId}-PENDING`,
+        },
+        { type: "ContributorRequest" as const, id: `STATUS-${arg.communityId}` },
+      ],
+    }),
+
+
 
     /* =========================================================
        COMMENTS
@@ -721,4 +810,9 @@ export const {
       useLikeCommentMutation,
       useUnlikeCommentMutation,
         useSharePostToFeedMutation,
+          useRequestContributorAccessMutation,
+  useCancelContributorRequestMutation,
+  useGetMyContributorStatusQuery,
+  useGetContributorRequestsQuery,
+  useReviewContributorRequestMutation,
 } = postApi;

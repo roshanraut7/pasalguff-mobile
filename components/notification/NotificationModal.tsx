@@ -51,6 +51,12 @@ function getNotificationIcon(type?: string) {
 
     case "COMMUNITY_MEMBER_REMOVED":
       return "person-remove-outline";
+      
+        case "STUDENT_VERIFICATION_INVITE":        // ADD
+      return "school-outline";
+
+    case "STUDENT_VERIFICATION_SUBMITTED":     // ADD
+      return "checkmark-done-outline";
 
     default:
       return "notifications-outline";

@@ -176,6 +176,7 @@ export type PostCommunity = {
   isCommunityFollowedByMe?: boolean;
    isOwner?: boolean;
   myRole?: "ADMIN" | "MODERATOR" | "MEMBER" | null;
+  purpose:"BUSINESS" 
 };
 
 export type PostAuthor = {
@@ -187,6 +188,7 @@ export type PostAuthor = {
   businessName: string | null;
   isVerified: boolean;                          // add
   verificationTrack: VerificationTrack | null; 
+    isVerifiedStudentHere?: boolean;
 };
 
 export type CommunityPost = {
@@ -651,4 +653,74 @@ export type CommunityPostsTableQuery = {
   tag?: string;
   visibility?: PostVisibility;
   sortBy?: "newest" | "oldest";
+};
+
+
+export type ContributorRequestStatus =
+  | "NONE"
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "NOT_REQUIRED";
+
+export type ContributorRequestUser = {
+  id: string;
+  name: string | null;
+  image: string | null;
+  email: string | null;
+ avatarImage?:  string | null;
+};
+
+export type ContributorRequestItem = {
+  id: string;
+  communityId: string;
+  userId: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  message: string | null;
+  reviewNote: string | null;
+  reviewedById: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user?: ContributorRequestUser;
+  avatarImage?:  string | null;
+};
+
+export type MyContributorStatusResponse = {
+  status: ContributorRequestStatus;
+  isOwner: boolean;
+  request: ContributorRequestItem | null;
+};
+
+export type ContributorRequestListResponse = {
+  data: ContributorRequestItem[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+  filters: { status: string };
+};
+
+export type RequestContributorAccessArgs = {
+  communityId: string;
+  message?: string;
+};
+
+export type GetContributorRequestsArgs = {
+  communityId: string;
+  page?: number;
+  limit?: number;
+  status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+};
+
+export type ReviewContributorRequestArgs = {
+  communityId: string;
+  requestId: string;
+  decision: "APPROVED" | "REJECTED";
+  note?: string;
 };

@@ -30,6 +30,8 @@ import type { CommunityPost, PostMedia, PostPoll } from "@/types/post";
 import { useJoinCommunityMutation, useLeaveCommunityMutation } from "@/store/api/communityApi";
 import VerifiedBadge from "@/components/common/verifiedBadge";
 import { router } from "expo-router";
+import BusinessCommunityBadge from "../common/BusinessCommunityBadge";
+import StudentBadge from "@/components/common/StudentBadge"; 
 
 const systemFonts = [
   ...defaultSystemFonts,
@@ -413,12 +415,19 @@ const SharedPostEmbed = memo(function SharedPostEmbed({
         </Avatar>
        <View style={{ marginLeft: 8, flex: 1 }}>
   <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-    <Text numberOfLines={1} style={styles.embedAuthorName}>
+ <Text 
+  numberOfLines={2}
+  ellipsizeMode="tail"
+  style={styles.embedAuthorName}
+>
       {authorName}
     </Text>
     {sharedPost.author?.isVerified ? (
       <VerifiedBadge track={sharedPost.author.verificationTrack} size={12} />
     ) : null}
+     {sharedPost.author?.isVerifiedStudentHere ? (
+    <StudentBadge size={12} />
+  ) : null}
   </View>
   {!!sharedPost.community?.name && (
             <Text numberOfLines={1} style={styles.embedCommunityName}>
@@ -735,6 +744,10 @@ function CommunityPostCard({
           <Text numberOfLines={1} style={styles.authorName}>
             {post.community?.name ?? "Community"}
           </Text>
+            {post.community?.purpose === "BUSINESS" ? (
+    <BusinessCommunityBadge label="Business" size={13} />
+  ) : null}
+
 
           {post.community?.visibility === "PUBLIC" && (
             <View style={[styles.restrictedBadge, { borderColor: colors.success }]}>
@@ -765,19 +778,33 @@ function CommunityPostCard({
 
       <View style={styles.authorMeta}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-    <Text numberOfLines={1} style={styles.authorName}>
+    <Text 
+    numberOfLines={2}           // Allow 2 lines
+    ellipsizeMode="tail"
+    style={styles.authorName}
+  >
       {authorName}
     </Text>
     {post.author.isVerified ? (
       <VerifiedBadge track={post.author.verificationTrack} size={13} />
     ) : null}
+     {post.author.isVerifiedStudentHere ? (
+      <StudentBadge size={12} />
+    ) : null}
   </View>
         <View style={styles.subMetaRow}>
           {!!post.community?.name && (
             <>
-              <Text numberOfLines={1} style={styles.communityName}>
+             <Text 
+  numberOfLines={1} 
+  ellipsizeMode="tail"
+  style={styles.communityName}
+>
                 {post.community.name}
               </Text>
+                {post.community?.purpose === "BUSINESS" ? (
+        <BusinessCommunityBadge label="Business" size={12} />
+      ) : null}
               <Text style={styles.subMetaDot}>•</Text>
             </>
           )}
@@ -861,6 +888,10 @@ function CommunityPostCard({
     {post.author.isVerified ? (
       <VerifiedBadge track={post.author.verificationTrack} size={12} />
     ) : null}
+    {post.author.isVerifiedStudentHere ? (
+      <StudentBadge size={12} />
+    ) : null}
+
   </View>
 ) : null}
 
@@ -1130,17 +1161,21 @@ function createStyles(colors: AppColors) {
     authorRow: {
       flex: 1,
       flexDirection: "row",
-      alignItems: "center",
+      // alignItems: "center",
+      alignItems: "flex-start",
       marginRight: 10,
     },
     authorMeta: {
       flexShrink: 1,
       marginLeft: 8,
+      minWidth: 0,
     },
     authorName: {
       fontSize: 15,
       color: colors.foreground,
       fontFamily: "Poppins_600SemiBold",
+      flexShrink: 1,           // ← Very important
+  lineHeight: 20,
     },
     subMetaRow: {
       flexDirection: "row",
@@ -1148,7 +1183,7 @@ function createStyles(colors: AppColors) {
       marginTop: 1,
     },
     communityName: {
-      maxWidth: 130,
+      // maxWidth: 130,
       fontSize: 12,
       color: colors.muted,
       fontFamily: "Poppins_400Regular",

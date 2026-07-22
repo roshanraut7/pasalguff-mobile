@@ -263,6 +263,9 @@ bottom: insets.bottom + 10,
 
     const postId = notification.data?.postId;
     const communityId = notification.data?.communityId;
+      const verificationToken = notification.data?.token
+    ? String(notification.data.token)
+    : undefined;
 
     console.log("Notification pressed:", {
       type: notification.type,
@@ -275,9 +278,20 @@ bottom: insets.bottom + 10,
       router.push(`/messages/${chatId}`);
       return;
     }
+     if (
+    notification.type === "STUDENT_VERIFICATION_INVITE" &&
+    verificationToken
+  ) {
+    router.push({
+      pathname: "/pages/verifyStudent/[token]",
+      params: { token: verificationToken },
+    });
+    return;
+  }
 
     router.push("/(tabs)");
   };
+
 
   if (isPending) {
     return (

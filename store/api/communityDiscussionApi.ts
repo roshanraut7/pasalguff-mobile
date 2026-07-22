@@ -746,7 +746,7 @@ serializeQueryArgs: ({ queryArgs }) => {
     }),
   }),
 
-  overrideExisting: false,
+  overrideExisting: true,
 });
 
 export const {

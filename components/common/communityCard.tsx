@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import type { CommunityItem } from "@/types/community";
+import BusinessCommunityBadge from "./BusinessCommunityBadge";
 
 type CommunityCardVariant = "explore" | "profile";
 
@@ -57,6 +58,7 @@ export default function CommunityCard({
   const isOwner = isCommunityOwner(community);
   const isJoined = isCommunityJoined(community);
   const isPending = isCommunityPending(community);
+  const isBusinessCommunity = community.purpose === "BUSINESS";
 
   const resolvedBadgeText =
   badgeText ??
@@ -166,11 +168,17 @@ export default function CommunityCard({
                 {community.name}
               </Text>
 
+              {isBusinessCommunity ? (
+                <View style={{ marginTop: 4, alignSelf: "flex-start" }}>
+                  <BusinessCommunityBadge label="Business" size={10} />
+                </View>
+              ) : null}
+
               <Text
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 style={{
-                  marginTop: 1,
+                  marginTop: isBusinessCommunity ? 4 : 1,
                   color: colors.muted,
                   fontSize: 12,
                   lineHeight: 18,

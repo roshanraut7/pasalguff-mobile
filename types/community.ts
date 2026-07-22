@@ -21,11 +21,12 @@ export type PaginatedResponse<T> = {
 
 export type CommunityRole = "ADMIN" | "MODERATOR" | "MEMBER";
 
-export type CommunityVisibility = "PUBLIC" | "PRIVATE" | "RESTRICTED";
+export type CommunityVisibility = "PUBLIC" | "PRIVATE" | "RESTRICTED" |"BUSINESS";
 
 export type CommunityStatus = "ACTIVE" | "INACTIVE";
 
 export type CommunityMemberStatus = "ACTIVE" | "LEFT" | "BANNED";
+export type CommunityPurpose = "GENERAL" | "DISTRICT_OFFICIAL" | "BUSINESS";
 
 export type CommunityJoinRequestStatus =
   | "PENDING"
@@ -66,6 +67,7 @@ export type CommunityItem = {
   coverImage?: string | null;
   visibility: CommunityVisibility;
   status: CommunityStatus;
+  purpose: CommunityPurpose; 
   categoryId?: string;
   adminId?: string;
   createdAt?: string;
@@ -73,6 +75,8 @@ export type CommunityItem = {
   myJoinRequestId?: string | null;
 myJoinRequestStatus?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | null;
 isOwner:any;
+  studentBatch?: string | null;
+   isVerifiedStudent?: boolean;
 
   category?: CommunityCategory | null;
 
@@ -82,6 +86,8 @@ isOwner:any;
   isJoined: boolean;
   myRole: CommunityRole | null;
   myMemberStatus: CommunityMemberStatus | null;
+  adminVerificationTrack?: string | null;   // ADD
+  isInstituteCommunity?: boolean;   
 };
 
 export type CommunityAccessItem = {
@@ -120,6 +126,8 @@ export type CommunityMemberItem = {
   userId: string;
 
   role: CommunityRole;
+  isVerifiedStudent?: boolean;
+studentBatch?: string | null;
 
   /**
    * Normal joined members may not receive status.
@@ -327,6 +335,8 @@ export type CommunityDashboardOverviewResponse = {
     name: string;
     slug: string;
     visibility: CommunityVisibility;
+      purpose: "GENERAL" | "DISTRICT_OFFICIAL" | "BUSINESS";        // ADD
+    adminVerificationTrack: "BUSINESS" | "INDIVIDUAL" | "TRAINING" | null; 
 
   };
 
@@ -337,6 +347,7 @@ export type CommunityDashboardOverviewResponse = {
     posts: number;
     banned: number;
     moderators: number;
+       verifiedStudents: number;   
   };
 
   growth: {

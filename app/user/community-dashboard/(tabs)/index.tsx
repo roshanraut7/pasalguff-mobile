@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import BusinessCommunityBadge from "@/components/common/BusinessCommunityBadge";
 import {
   ActivityIndicator,
   Modal,
@@ -12,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 import { BarChart } from "react-native-gifted-charts";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import AdminKpiCard from "@/components/common/Kpi-card";
@@ -113,6 +115,10 @@ export default function CommunityDashboardScreen() {
       refetchOnMountOrArgChange: true,
     },
   );
+  const isInstituteCommunity =
+  dashboard?.community.purpose === "BUSINESS" &&
+  (dashboard?.community as any)?.adminVerificationTrack === "TRAINING";
+  const isBusinessCommunity = dashboard?.community.purpose === "BUSINESS";
 
   const memberGrowthData = useMemo(
     () => cloneGrowthData(dashboard?.growth.members),
@@ -295,19 +301,79 @@ export default function CommunityDashboardScreen() {
           />
         }
       >
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.welcomeText, { color: colors.foreground }]}>
-              Welcome back
-            </Text>
+        <LinearGradient
+          colors={[colors.accent, colors.muted ?? "#0B3D2E"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.heroCard}
+        >
+          <View style={styles.heroTopRow}>
+            <View style={styles.heroAvatar}>
+              <Text style={styles.heroAvatarText}>
+                {(dashboard?.community.name ?? "C").charAt(0).toUpperCase()}
+              </Text>
+            </View>
 
-            <Text style={[styles.welcomeSubText, { color: colors.muted }]}>
-              {dashboard?.community.name
-                ? `Here is ${dashboard.community.name} overview.`
-                : "Here is your community overview."}
-            </Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  minWidth: 0,
+                }}
+              >
+                <Text
+                  style={[styles.heroTitle, { flexShrink: 1, minWidth: 0 }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {dashboard?.community.name ?? "Community Dashboard"}
+                </Text>
+
+                {isBusinessCommunity ? (
+                  <View
+                    style={{
+                      flexShrink: 0,
+                      backgroundColor: "rgba(255,255,255,0.9)",
+                      borderRadius: 999,
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                    }}
+                  >
+                    <BusinessCommunityBadge label="Business" size={12} />
+                  </View>
+                ) : null}
+              </View>
+
+              <Text
+                style={styles.heroSubtitle}
+                numberOfLines={2}
+                ellipsizeMode="tail"
+              >
+                {isInstituteCommunity
+                  ? "Manage students, members, posts and more"
+                  : "Manage members, moderators, posts and more"}
+              </Text>
+            </View>
           </View>
-        </View>
+
+          <View style={styles.heroStatsRow}>
+            <View style={styles.heroStatChip}>
+              <Ionicons name="people-outline" size={14} color="#fff" />
+              <Text style={styles.heroStatText} numberOfLines={1}>
+                {dashboard?.kpis.members ?? 0} members
+              </Text>
+            </View>
+
+            <View style={styles.heroStatChip}>
+              <Ionicons name="newspaper-outline" size={14} color="#fff" />
+              <Text style={styles.heroStatText} numberOfLines={1}>
+                {dashboard?.kpis.posts ?? 0} posts
+              </Text>
+            </View>
+          </View>
+        </LinearGradient>
 
         {error ? (
           <View
@@ -337,31 +403,44 @@ export default function CommunityDashboardScreen() {
           </View>
         ) : null}
 
-        <View style={styles.kpiGrid}>
-          <AdminKpiCard
-            title="Members"
-            value={dashboard?.kpis.members ?? 0}
-            icon="people-outline"
-          />
+       <View style={styles.kpiGrid}>
+  <AdminKpiCard
+    title="Members"
+    value={dashboard?.kpis.members ?? 0}
+    icon="people-outline"
+    tone="accent"
+  />
 
-          <AdminKpiCard
-            title="Posts"
-            value={dashboard?.kpis.posts ?? 0}
-            icon="newspaper-outline"
-          />
+  <AdminKpiCard
+    title="Posts"
+    value={dashboard?.kpis.posts ?? 0}
+    icon="newspaper-outline"
+    tone="success"
+  />
 
-          <AdminKpiCard
-            title="Banned"
-            value={dashboard?.kpis.banned ?? 0}
-            icon="ban-outline"
-          />
+  <AdminKpiCard
+    title="Banned"
+    value={dashboard?.kpis.banned ?? 0}
+    icon="ban-outline"
+    tone="danger"
+  />
 
-          <AdminKpiCard
-            title="Moderators"
-            value={dashboard?.kpis.moderators ?? 0}
-            icon="shield-checkmark-outline"
-          />
-        </View>
+  {isInstituteCommunity ? (
+    <AdminKpiCard
+      title="Verified Students"
+      value={dashboard?.kpis.verifiedStudents ?? 0}
+      icon="school-outline"
+      tone="accent"
+    />
+  ) : (
+    <AdminKpiCard
+      title="Moderators"
+      value={dashboard?.kpis.moderators ?? 0}
+      icon="shield-checkmark-outline"
+      tone="warning"
+    />
+  )}
+</View>
 
         <View
           style={[
@@ -617,22 +696,71 @@ const styles = StyleSheet.create({
     gap: 16,
   },
 
-  headerRow: {
+  heroCard: {
+    borderRadius: 28,
+    padding: 20,
+    paddingTop: 22,
+    gap: 18,
+    overflow: "hidden",
+  },
+
+  heroTopRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    minWidth: 0,
   },
 
-  welcomeText: {
-    fontSize: 24,
+  heroAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+
+  heroAvatarText: {
+    fontSize: 20,
     fontFamily: "Poppins_700Bold",
+    color: "#fff",
   },
 
-  welcomeSubText: {
-    marginTop: 4,
-    fontSize: 14,
-    lineHeight: 20,
+  heroTitle: {
+    fontSize: 20,
+    fontFamily: "Poppins_700Bold",
+    color: "#fff",
+  },
+
+  heroSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
     fontFamily: "Poppins_400Regular",
+    color: "rgba(255,255,255,0.85)",
+  },
+
+  heroStatsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
+  heroStatChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  heroStatText: {
+    fontSize: 12,
+    color: "#fff",
+    fontFamily: "Poppins_500Medium",
   },
 
   errorBox: {

@@ -30,6 +30,8 @@ import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
 import type { CommunityItem } from "@/types/community";
 import VerifiedBadge from "@/components/common/verifiedBadge";
 import { useGetMyVerificationStatusQuery } from "@/store/api/verificationApi";
+import { useGetMyBusinessCommunityStatusQuery } from "@/store/api/businessCommunityApi";
+import StudentBadge from "@/components/common/StudentBadge"; // adjust path if needed
 
 import {
   useGetMyProfileQuery,
@@ -155,6 +157,13 @@ export default function ProfileScreen() {
     },
   );
 
+  const { data: businessCommunityStatus } = useGetMyBusinessCommunityStatusQuery(
+  undefined,
+  { skip: !session?.user },
+);
+
+const hasApprovedBusinessCommunity =
+  businessCommunityStatus?.latestRequest?.status === "APPROVED";
   const myCommunities = (myCommunitiesResponse?.data ?? []) as CommunityItem[];
 
   const hasMorePosts = myPostsResponse?.meta?.hasMore ?? false;
@@ -187,6 +196,9 @@ export default function ProfileScreen() {
     return checks;
   }, [user, isTrainingProfession]);
 
+const verifiedStudentCommunities = useMemo(() => {
+  return myCommunities.filter((community) => community.isVerifiedStudent);
+}, [myCommunities]);
   const completedCount = requiredFieldChecks.filter(Boolean).length;
   const completionPercent = Math.round(
     (completedCount / requiredFieldChecks.length) * 100,
@@ -987,79 +999,92 @@ const renderPost = useCallback(
                     </Tabs.ScrollView>
                   </Tabs.List>
 
-                  {tab === "about" ? (
-                    <View style={styles.paddedPanel}>
-                      <Text style={styles.sectionTitle}>About</Text>
+{tab === "about" ? (
+  <View style={styles.paddedPanel}>
+    <Text style={styles.sectionTitle}>About</Text>
 
-                      <View style={styles.infoList}>
-                        <InfoRow
-                          icon="person-outline"
-                          label="Name"
-                          value={fullName}
-                          colors={colors}
-                          styles={styles}
-                        />
+    <View style={styles.infoList}>
+      <InfoRow
+        icon="person-outline"
+        label="Name"
+        value={fullName}
+        colors={colors}
+        styles={styles}
+      />
 
-                        <InfoRow
-                          icon="mail-outline"
-                          label="Email"
-                          value={user?.email || "-"}
-                          colors={colors}
-                          styles={styles}
-                        />
+      <InfoRow
+        icon="mail-outline"
+        label="Email"
+        value={user?.email || "-"}
+        colors={colors}
+        styles={styles}
+      />
 
-                        <InfoRow
-                          icon="briefcase-outline"
-                          label="Business Type"
-                          value={user?.businessType || "-"}
-                          colors={colors}
-                          styles={styles}
-                        />
+      <InfoRow
+        icon="briefcase-outline"
+        label="Business Type"
+        value={user?.businessType || "-"}
+        colors={colors}
+        styles={styles}
+      />
 
-                        <InfoRow
-                          icon="location-outline"
-                          label="Address"
-                          value={user?.address || "-"}
-                          colors={colors}
-                          styles={styles}
-                        />
+      <InfoRow
+        icon="location-outline"
+        label="Address"
+        value={user?.address || "-"}
+        colors={colors}
+        styles={styles}
+      />
 
-                        {!isTrainingProfession && (
-                          <InfoRow
-                            icon="business-outline"
-                            label="Business Name"
-                            value={user?.businessName || "-"}
-                            colors={colors}
-                            styles={styles}
-                          />
-                        )}
+      {!isTrainingProfession && (
+        <InfoRow
+          icon="business-outline"
+          label="Business Name"
+          value={user?.businessName || "-"}
+          colors={colors}
+          styles={styles}
+        />
+      )}
 
-                        <InfoRow
-                          icon="mail-outline"
-                          label={
-                            isTrainingProfession
-                              ? "Professional Email"
-                              : "Business Email"
-                          }
-                          value={user?.businessEmail || "-"}
-                          colors={colors}
-                          styles={styles}
-                        />
+      <InfoRow
+        icon="call-outline"
+        label={isTrainingProfession ? "Professional Phone" : "Business Phone"}
+        value={user?.businessPhoneNo || "-"}
+        colors={colors}
+        styles={styles}
+      />
 
-                        <InfoRow
-                          icon="call-outline"
-                          label={
-                            isTrainingProfession
-                              ? "Professional Phone"
-                              : "Business Phone"
-                          }
-                          value={user?.businessPhoneNo || "-"}
-                          colors={colors}
-                          styles={styles}
-                        />
-                      </View>
-                    </View>
-                  ) : null}
+      {/* Verified Student Row - Now matches design */}
+      {verifiedStudentCommunities.length > 0 &&
+        verifiedStudentCommunities.map((community) => (
+          <View
+            key={community.id}
+            style={styles.infoRow}
+          >
+            <View style={styles.infoIconWrap}>
+              <StudentBadge size={26} />
+            </View>
+
+            <View style={styles.infoTextWrap}>
+              <Text style={styles.infoLabel}>{community.name}</Text>
+              <Text style={[styles.infoValue, { color: colors.accent, fontFamily: "Poppins_500Medium" }]}>
+                {community.studentBatch 
+                  ? `Batch ${community.studentBatch}` 
+                  : "Verified Student"}
+              </Text>
+            </View>
+
+            <Ionicons
+              name="checkmark-circle"
+              size={22}
+              color="#22C55E"
+              style={{ marginLeft: "auto" }}
+            />
+          </View>
+        ))}
+    </View>
+  </View>
+) : null}
 
                   {tab === "communities" ? (
                     <View style={styles.paddedPanel}>
@@ -1096,7 +1121,7 @@ const renderPost = useCallback(
                                badgeText={community.visibility === "PUBLIC" ? "Super Mod" : "Admin"}
                               onPress={() =>
                                 router.push({
-                                  pathname: "/user/community-dashboard",
+                                   pathname: "/user/community-dashboard/(tabs)",
                                   params: {
                                     communityId: community.id,
                                     communityName: community.name,

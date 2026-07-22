@@ -44,6 +44,7 @@
   "Instructor",
   "Trainer",
   "Trainee",
+  "Teacher",
 
   "Other",
 ];

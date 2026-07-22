@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useGlobalSearchParams, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -15,8 +16,8 @@ import { Ionicons } from "@expo/vector-icons";
 import EvilIcons from "@expo/vector-icons/EvilIcons";
 import { Avatar } from "heroui-native";
 import { Modal, Portal } from "react-native-paper";
-import { useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
@@ -25,11 +26,14 @@ import {
   useRemoveCommunityMemberMutation,
   useUnbanCommunityMemberMutation,
 } from "@/store/api/communityMemberManagementApi";
+import {
+  useSendStudentInviteMutation,
+} from "@/store/api/studentVerificationApi";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import type { CommunityMemberItem } from "@/types/community";
 
 type MemberStatusFilter = "ACTIVE" | "LEFT" | "BANNED";
-type MemberAction = "view" | "ban" | "unban" | "remove";
+type MemberAction = "view" | "ban" | "unban" | "remove" | "invite";
 
 type StatusFilterOption = {
   label: string;
@@ -122,6 +126,7 @@ function formatLabel(value?: string | null, fallback = "Not set") {
 
 export default function MemberScreen() {
   const { colors } = useAppTheme();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -172,7 +177,10 @@ export default function MemberScreen() {
   const [removeCommunityMember, { isLoading: isRemoving }] =
     useRemoveCommunityMemberMutation();
 
-  const isActionLoading = isBanning || isUnbanning || isRemoving;
+    const [sendStudentInvite, { isLoading: isSendingInvite }] =
+  useSendStudentInviteMutation();
+
+const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvite;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -439,6 +447,26 @@ export default function MemberScreen() {
       Alert.alert("Action failed", getErrorMessage(mutationError));
     }
   }
+  
+  async function runSendStudentInvite(member: CommunityMemberItem) {
+  if (!communityId) return;
+
+  const memberName = member.user.name ?? "Unknown User";
+
+  try {
+    await sendStudentInvite({
+      communityId,
+      targetUserId: member.userId,
+    }).unwrap();
+
+    Alert.alert(
+      "Invite sent",
+      `A student verification invite has been sent to ${memberName}.`,
+    );
+  } catch (inviteError) {
+    Alert.alert("Failed to send invite", getErrorMessage(inviteError));
+  }
+}
 
   function confirmMemberAction(
     action: Extract<MemberAction, "ban" | "unban" | "remove">,
@@ -501,10 +529,16 @@ export default function MemberScreen() {
     const memberName = member.user.name ?? "Unknown User";
 
     if (action === "view") {
-      closeActionSheet();
-      Alert.alert("View profile", `View profile: ${memberName}`);
-      return;
-    }
+  closeActionSheet();
+  router.push(`/user/profile/${member.userId}`);
+  return;
+}
+  if (action === "invite") {
+    closeActionSheet();
+    void runSendStudentInvite(member);
+    return;
+  }
+
 
     if (action === "ban" || action === "unban" || action === "remove") {
       confirmMemberAction(action, member);
@@ -803,15 +837,14 @@ export default function MemberScreen() {
               onPress={() => handleMemberAction("view")}
             />
 
-            {canManageMembers && selectedMember?.status === "ACTIVE" ? (
-              <GridAction
-                icon="ban-outline"
-                label={isBanning ? "Banning..." : "Ban"}
-                danger
-                disabled={isActionLoading}
-                onPress={() => handleMemberAction("ban")}
-              />
-            ) : null}
+         {canManageMembers && selectedMember?.status === "ACTIVE" ? (
+  <GridAction
+    icon="school-outline"
+    label={isSendingInvite ? "Sending..." : "Invite as student"}
+    disabled={isActionLoading}
+    onPress={() => handleMemberAction("invite")}
+  />
+) : null}
 
             {canManageMembers && selectedMember?.status === "BANNED" ? (
               <GridAction
@@ -943,84 +976,74 @@ export default function MemberScreen() {
     </SafeAreaView>
   );
 
-  function MemberCard({ member }: { member: CommunityMemberItem }) {
-    const name = member.user.name ?? "Unknown User";
-    const email = member.user.email ?? "No email available";
-    const role = formatLabel(member.role, "Member");
-    const status = formatLabel(member.status, "Active");
-    const statusColor =
-      member.status === "BANNED"
-        ? colors.danger
-        : member.status === "LEFT"
-          ? colors.muted
-          : colors.accent;
+ function MemberCard({ member }: { member: CommunityMemberItem }) {
+  const name = member.user.name ?? "Unknown User";
+  const email = member.user.email ?? "No email available";
+  const role = formatLabel(member.role, "Member");
+  const status = formatLabel(member.status, "Active");
+  const statusColor =
+    member.status === "BANNED"
+      ? colors.danger
+      : member.status === "LEFT"
+        ? colors.muted
+        : colors.accent;
 
-    return (
-      <View style={styles.memberCard}>
-        <View style={styles.cardTopRow}>
-          <MemberAvatar member={member} />
+  return (
+    <Pressable
+      onPress={() => router.push(`/user/profile/${member.userId}`)}
+      style={({ pressed }) => [
+        styles.memberCard,
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <MemberAvatar member={member} />
 
-          <View style={styles.cardMainText}>
-            <Text numberOfLines={1} style={styles.memberName}>
-              {name}
-            </Text>
+      <View style={styles.cardMainText}>
+        <View style={styles.cardNameRow}>
+          <Text numberOfLines={1} style={styles.memberName}>
+            {name}
+          </Text>
 
-            <Text numberOfLines={1} style={styles.memberEmail}>
-              {email}
-            </Text>
-          </View>
-
-          {canManageMembers ? (
-            <Pressable
-              onPress={() => openActionSheet(member)}
-              disabled={isActionLoading}
-              hitSlop={8}
-              style={({ pressed }) => [
-                styles.moreButton,
-                pressed && { opacity: 0.7 },
-                isActionLoading && { opacity: 0.45 },
-              ]}
-            >
-              <Ionicons
-                name="ellipsis-horizontal"
-                size={22}
-                color={colors.foreground}
-              />
-            </Pressable>
-          ) : null}
-        </View>
-
-        <View style={styles.cardDetailRow}>
-          <View style={styles.detailPill}>
-            <Ionicons
-              name="shield-checkmark-outline"
-              size={15}
-              color={colors.muted}
-            />
-
-            <Text numberOfLines={1} style={styles.detailPillText}>
-              {role}
-            </Text>
-          </View>
-
-          <View style={styles.detailPill}>
-            <Ionicons
-              name="radio-button-on-outline"
-              size={15}
-              color={statusColor}
-            />
-
-            <Text
-              numberOfLines={1}
-              style={[styles.detailPillText, { color: statusColor }]}
-            >
+          <View style={styles.statusDotRow}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusDotText, { color: statusColor }]}>
               {status}
             </Text>
           </View>
         </View>
+
+        <Text numberOfLines={1} style={styles.memberEmail}>
+          {email}
+        </Text>
+
+        <Text numberOfLines={1} style={styles.memberRoleText}>
+          {role}
+        </Text>
       </View>
-    );
-  }
+
+      {canManageMembers ? (
+        <Pressable
+          onPress={() => openActionSheet(member)}
+          disabled={isActionLoading}
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.moreButton,
+            pressed && { opacity: 0.7 },
+            isActionLoading && { opacity: 0.45 },
+          ]}
+        >
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={20}
+            color={colors.foreground}
+          />
+        </Pressable>
+      ) : (
+        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+      )}
+    </Pressable>
+  );
+}
 
   function MemberAvatar({ member }: { member: CommunityMemberItem }) {
     const imageUri = toAbsoluteFileUrl(member.user.image);
@@ -1271,14 +1294,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
       height: 12,
     },
 
-    memberCard: {
-      marginHorizontal: 16,
-      borderRadius: 24,
-      padding: 15,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surfaceSecondary,
-    },
+ memberCard: {
+  marginHorizontal: 16,
+  borderRadius: 20,
+  padding: 14,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 12,
+  borderWidth: 1,
+  borderColor: colors.border,
+  backgroundColor: colors.surfaceSecondary,
+},
 
     cardTopRow: {
       flexDirection: "row",
@@ -1287,25 +1313,52 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     },
 
     cardMainText: {
-      flex: 1,
-      minWidth: 0,
-    },
+  flex: 1,
+  minWidth: 0,
+  gap: 2,
+},
+cardNameRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+},
 
     memberName: {
-      color: colors.foreground,
-      fontSize: 16,
-      lineHeight: 22,
-      fontFamily: "Poppins_700Bold",
-    },
+  flexShrink: 1,
+  color: colors.foreground,
+  fontSize: 15,
+  lineHeight: 20,
+  fontFamily: "Poppins_700Bold",
+},
+statusDotRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 5,
+},
+statusDot: {
+  width: 7,
+  height: 7,
+  borderRadius: 4,
+},
+memberEmail: {
+  color: colors.muted,
+  fontSize: 12,
+  lineHeight: 17,
+  fontFamily: "Poppins_400Regular",
+},
 
-    memberEmail: {
-      marginTop: 2,
-      color: colors.muted,
-      fontSize: 12,
-      lineHeight: 18,
-      fontFamily: "Poppins_400Regular",
-    },
-
+memberRoleText: {
+  marginTop: 1,
+  color: colors.muted,
+  fontSize: 11,
+  lineHeight: 16,
+  fontFamily: "Poppins_500Medium",
+},
+statusDotText: {
+  fontSize: 11,
+  fontFamily: "Poppins_600SemiBold",
+},
     moreButton: {
       width: 40,
       height: 40,

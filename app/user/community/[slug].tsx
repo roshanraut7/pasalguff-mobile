@@ -23,6 +23,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { usePostInteractions } from "@/hooks/media/usePostInteractions";
 import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
+import BusinessCommunityBadge from "@/components/common/BusinessCommunityBadge";
 
 import {
   useCancelMyJoinRequestMutation,
@@ -30,7 +31,7 @@ import {
   useGetCommunityBySlugQuery,
   useGetVisibleCommunityMembersQuery,
   useJoinCommunityMutation,
-  useLeaveCommunityMutation
+  useLeaveCommunityMutation,
 } from "@/store/api/communityApi";
 
 import {
@@ -41,16 +42,13 @@ import {
 import {
   useDeletePostMutation,
   useGetCommunityPostsQuery,
+  useGetMyContributorStatusQuery,
 } from "@/store/api/postApi";
 
 import type { CommunityMemberItem } from "@/types/community";
 import type { CommunityPost } from "@/types/post";
 
 function getMemberListKey(member: CommunityMemberItem, index?: number) {
-  /**
-   * Some visible-member APIs return the membership `id` as undefined or duplicated.
-   * React needs a stable unique key, so user.id is the safest first choice.
-   */
   return String(
     member.user?.id ??
       member.id ??
@@ -68,11 +66,8 @@ export default function CommunityDetailScreen() {
   const [isJoining, setIsJoining] = useState(false);
   const [isCancellingRequest, setIsCancellingRequest] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
-const [localJoined, setLocalJoined] = useState(false);
-  /**
-   * Local instant state for private community request.
-   * It prevents the UI from looking unchanged while the API refreshes.
-   */
+  const [localJoined, setLocalJoined] = useState(false);
+
   const [submittedPrivateRequest, setSubmittedPrivateRequest] =
     useState(false);
 
@@ -109,6 +104,7 @@ const [localJoined, setLocalJoined] = useState(false);
     setPosts: setPostItems,
     sessionUser: session?.user,
   });
+
   const {
     data: community,
     isLoading: communityLoading,
@@ -135,12 +131,11 @@ const [localJoined, setLocalJoined] = useState(false);
 
   const isModerator =
     access?.role === "MODERATOR" || community?.myRole === "MODERATOR";
-    
 
-const isJoined =
-  localJoined ||
-  Boolean(access?.isMember) ||
-  Boolean(community?.isJoined);
+  const isJoined =
+    localJoined ||
+    Boolean(access?.isMember) ||
+    Boolean(community?.isJoined);
 
   const isJoinRequestPending =
     !isJoined &&
@@ -159,11 +154,40 @@ const isJoined =
     isModerator;
 
   /**
-   * This slug page is now only a viewing page.
-   * Admin/moderator actions are handled in the dedicated manage pages.
+   * This slug page is purely a viewing page.
+   * Admin/moderator management actions (manage panel) are handled
+   * in the dedicated manage pages, not here.
    */
-  const canOpenManagePage =isModerator;
-  
+  const canOpenManagePage = isModerator;
+
+  /* =========================================================
+     RESTRICTED COMMUNITY — CONTRIBUTOR (POST) REQUEST STATUS
+     ========================================================= */
+
+  const isRestrictedCommunity = community?.visibility === "RESTRICTED";
+
+  // Only a plain joined member needs to request posting access.
+  // Owners and moderators already have posting rights, so we skip the check for them.
+  const needsContributorCheck =
+    isRestrictedCommunity && isJoined && !isOwner && !isModerator;
+
+  const { data: contributorStatus } = useGetMyContributorStatusQuery(
+    { communityId: community?.id ?? "" },
+    {
+      skip: !community?.id || !needsContributorCheck,
+      refetchOnMountOrArgChange: true,
+    },
+  );
+
+  const showRequestToPostBadge =
+    needsContributorCheck &&
+    (!contributorStatus ||
+      contributorStatus.status === "NONE" ||
+      contributorStatus.status === "REJECTED" ||
+      contributorStatus.status === "CANCELLED");
+
+  const showPendingContributorBadge =
+    needsContributorCheck && contributorStatus?.status === "PENDING";
 
   const canLoadMembers =
     !!session?.user &&
@@ -202,7 +226,7 @@ const isJoined =
     {
       skip: !session?.user || !community?.id || !canViewContent,
       refetchOnMountOrArgChange: true,
-    }, 
+    },
   );
 
   const canLoadGuidelines =
@@ -232,26 +256,26 @@ const isJoined =
 
   const showCancelRequestButton =
     !!community && !isOwner && !isJoined && isJoinRequestPending;
-    // Add this new line
-const showLeaveButton = 
-  !!community && 
-  isJoined && 
-  !isOwner && 
-  !isModerator;
 
+  const showLeaveButton =
+    !!community &&
+    isJoined &&
+    !isOwner &&
+    !isModerator;
 
   const memberCount =
     community?.memberCount ?? membersResponse?.meta?.total ?? memberItems.length;
 
   const totalPostCount = community?.postCount ?? postItems.length;
-const roleLabel = useMemo(() => {
-  if (isOwner) {
-    return community?.visibility === "PUBLIC" ? "Super Mod" : "Admin";
-  }
-  if (isModerator) return "Moderator";
-  if (isJoined) return "Joined";
-  return null;
-}, [isOwner, isModerator, isJoined, community?.visibility]);
+
+  const roleLabel = useMemo(() => {
+    if (isOwner) {
+      return community?.visibility === "PUBLIC" ? "Super Mod" : "Admin";
+    }
+    if (isModerator) return "Moderator";
+    if (isJoined) return "Joined";
+    return null;
+  }, [isOwner, isModerator, isJoined, community?.visibility]);
 
   const aboutRoleLabel = isJoinRequestPending
     ? "Pending"
@@ -329,31 +353,53 @@ const roleLabel = useMemo(() => {
       return [...previousItems, ...newItems];
     });
   }, [membersResponse, memberPage]);
- useEffect(() => {
-  if (community || access) {
-    setLocalJoined(
-      Boolean(access?.isMember) || Boolean(community?.isJoined)
-    );
-  }
-}, [community, access]);
 
-  const handleManageCommunity = useCallback(() => {
-    if (!slug) {
-      return;
+  useEffect(() => {
+    if (community || access) {
+      setLocalJoined(
+        Boolean(access?.isMember) || Boolean(community?.isJoined),
+      );
     }
+  }, [community, access]);
+const handleManageCommunity = useCallback(() => {
+  if (!slug || !community?.id) {
+    return;
+  }
 
-    /**
-     * Keep all admin/moderator actions away from this detail page.
-     * If your admin dashboard route is different, change only this pathname.
-     */
+  router.push({
+    pathname: "/user/moderator-panel",
+    params: {
+      slug,
+      mode: isOwner ? "admin" : "moderator",
+      communityId: community.id,
+      communityName: community.name,
+      communityAvatar: community.avatarImage ?? "",
+      communityVisibility: community.visibility,
+      communityCategory: community.category?.name ?? "",
+    },
+  });
+}, [
+  isOwner,
+  slug,
+  community?.id,
+  community?.name,
+  community?.avatarImage,
+  community?.visibility,
+  community?.category?.name,
+]);
+
+  const handleGoToContributorRequest = useCallback(() => {
+    if (!community?.id) return;
+
     router.push({
-      pathname: "/user/moderator-panel",
+      pathname: "/pages/contributor-request",
       params: {
-        slug,
-        mode: isOwner ? "admin" : "moderator",
+        communityId: community.id,
+        communityName: community.name,
+        slug: community.slug,
       },
     });
-  }, [isOwner, slug]);
+  }, [community?.id, community?.name, community?.slug]);
 
   const handleJoin = useCallback(async () => {
     if (!community?.id) {
@@ -402,45 +448,46 @@ const roleLabel = useMemo(() => {
     refetchCommunity,
     refetchAccess,
   ]);
-const [leaveCommunity] = useLeaveCommunityMutation();   // Make sure this is declared
 
-const handleLeaveCommunity = useCallback(async () => {
-  if (!community?.id) return;
+  const [leaveCommunity] = useLeaveCommunityMutation();
 
-  Alert.alert(
-    "Leave Community",
-    "Are you sure you want to leave this community? You will lose access to its posts and content.",
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Leave",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            setIsLeaving(true);
+  const handleLeaveCommunity = useCallback(async () => {
+    if (!community?.id) return;
 
-            await leaveCommunity(community.id).unwrap();
+    Alert.alert(
+      "Leave Community",
+      "Are you sure you want to leave this community? You will lose access to its posts and content.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsLeaving(true);
 
-            await Promise.allSettled([
-              refetchCommunity(),
-              refetchAccess()
-            ]);
+              await leaveCommunity(community.id).unwrap();
 
-            Alert.alert("Success", "You have successfully left the community.");
-          } catch (error: any) {
-            console.log("Leave community failed:", error);
-            Alert.alert(
-              "Could not leave community",
-              error?.data?.message || "Something went wrong. Please try again."
-            );
-          } finally {
-            setIsLeaving(false);
-          }
+              await Promise.allSettled([
+                refetchCommunity(),
+                refetchAccess(),
+              ]);
+
+              Alert.alert("Success", "You have successfully left the community.");
+            } catch (error: any) {
+              console.log("Leave community failed:", error);
+              Alert.alert(
+                "Could not leave community",
+                error?.data?.message || "Something went wrong. Please try again.",
+              );
+            } finally {
+              setIsLeaving(false);
+            }
+          },
         },
-      },
-    ]
-  );
-}, [community?.id, leaveCommunity, refetchCommunity, refetchAccess]);
+      ],
+    );
+  }, [community?.id, leaveCommunity, refetchCommunity, refetchAccess]);
 
   const handleCancelJoinRequest = useCallback(() => {
     if (!community?.id) {
@@ -792,6 +839,11 @@ const handleLeaveCommunity = useCallback(async () => {
                   >
                     {community.name}
                   </Text>
+                  {community.purpose === "BUSINESS" ? (
+                    <View style={{ marginTop: 4, alignSelf: "flex-start" }}>
+                      <BusinessCommunityBadge label="Verified Business" size={13} />
+                    </View>
+                  ) : null}
 
                   <View
                     className="mt-2 flex-row flex-wrap items-center"
@@ -835,35 +887,35 @@ const handleLeaveCommunity = useCallback(async () => {
                     alignItems: "flex-end",
                   }}
                 >
-  {roleLabel && !showLeaveButton ? (
-  <RoleStatusChip
-    icon="shield-checkmark-outline"
-    label={roleLabel}
-    colors={colors}
-  />
-) : null}
+                  {roleLabel && !showLeaveButton ? (
+                    <RoleStatusChip
+                      icon="shield-checkmark-outline"
+                      label={roleLabel}
+                      colors={colors}
+                    />
+                  ) : null}
 
                   {canOpenManagePage ? (
-  <View style={{ marginTop: roleLabel ? 8 : 0 }}>
-    <ManageCommunityButton
-      colors={colors}
-      onPress={handleManageCommunity}
-    />
-  </View>
-) : (
-  <HeaderAction
-    showJoinButton={showJoinButton}
-    showCancelRequestButton={showCancelRequestButton}
-    showLeaveButton={showLeaveButton}        // ← New prop
-    isJoining={isJoining}
-    isCancellingRequest={isCancellingRequest}
-    isLeaving={isLeaving}
-    colors={colors}
-    onJoin={handleJoin}
-    onCancelRequest={handleCancelJoinRequest}
-    onLeave={handleLeaveCommunity}           // ← You need to create this function
-  />
-)}
+                    <View style={{ marginTop: roleLabel ? 8 : 0 }}>
+                      <ManageCommunityButton
+                        colors={colors}
+                        onPress={handleManageCommunity}
+                      />
+                    </View>
+                  ) : (
+                    <HeaderAction
+                      showJoinButton={showJoinButton}
+                      showCancelRequestButton={showCancelRequestButton}
+                      showLeaveButton={showLeaveButton}
+                      isJoining={isJoining}
+                      isCancellingRequest={isCancellingRequest}
+                      isLeaving={isLeaving}
+                      colors={colors}
+                      onJoin={handleJoin}
+                      onCancelRequest={handleCancelJoinRequest}
+                      onLeave={handleLeaveCommunity}
+                    />
+                  )}
                 </View>
               </View>
 
@@ -959,61 +1011,81 @@ const handleLeaveCommunity = useCallback(async () => {
                           isPending={isJoinRequestPending}
                           colors={colors}
                         />
-                      ) : postsLoading && postItems.length === 0 ? (
-                        <LoadingBlock colors={colors} />
-                      ) : postsError ? (
-                        <ErrorText message="Failed to load posts." colors={colors} />
-                      ) : postItems.length === 0 ? (
-                        <EmptyState
-                          icon="document-text-outline"
-                          title="No posts yet"
-                          description="Community posts will appear here."
-                          colors={colors}
-                        />
                       ) : (
-                        <View className="mt-2">
-                          {postItems.map((post) => {
-                            const isOwnPost =
-                              post.author?.id === session?.user?.id;
+                        <>
+                          {showRequestToPostBadge ? (
+                            <ContributorRequestBanner
+                              pending={false}
+                              colors={colors}
+                              onPress={handleGoToContributorRequest}
+                            />
+                          ) : null}
 
-                            return (
-                              <CommunityPostCard
-                                key={post.id}
-                                post={post}
-                                disableMediaPlayback={viewer.visible}
-                                onPressLike={handleLikePost}
-                                onPressComment={openComments}
-                                onPressShare={handleSharePost}
-                                onPressAuthor={handleAuthorPress}
-                                onPressMedia={openViewer}
-                                onPressJoin={handleJoin}
-                                canDelete={isOwnPost}
-                                isDeleting={deletingPostId === post.id}
-                                onDelete={handleDeletePost}
-                              />
-                            );
-                          })}
+                          {showPendingContributorBadge ? (
+                            <ContributorRequestBanner
+                              pending
+                              colors={colors}
+                              onPress={handleGoToContributorRequest}
+                            />
+                          ) : null}
 
-                          {postsFetching && postItems.length > 0 ? (
-                            <View className="py-5">
-                              <ActivityIndicator size="small" color={colors.accent} />
+                          {postsLoading && postItems.length === 0 ? (
+                            <LoadingBlock colors={colors} />
+                          ) : postsError ? (
+                            <ErrorText message="Failed to load posts." colors={colors} />
+                          ) : postItems.length === 0 ? (
+                            <EmptyState
+                              icon="document-text-outline"
+                              title="No posts yet"
+                              description="Community posts will appear here."
+                              colors={colors}
+                            />
+                          ) : (
+                            <View className="mt-2">
+                              {postItems.map((post) => {
+                                const isOwnPost =
+                                  post.author?.id === session?.user?.id;
+
+                                return (
+                                  <CommunityPostCard
+                                    key={post.id}
+                                    post={post}
+                                    disableMediaPlayback={viewer.visible}
+                                    onPressLike={handleLikePost}
+                                    onPressComment={openComments}
+                                    onPressShare={handleSharePost}
+                                    onPressAuthor={handleAuthorPress}
+                                    onPressMedia={openViewer}
+                                    onPressJoin={handleJoin}
+                                    canDelete={isOwnPost}
+                                    isDeleting={deletingPostId === post.id}
+                                    onDelete={handleDeletePost}
+                                  />
+                                );
+                              })}
+
+                              {postsFetching && postItems.length > 0 ? (
+                                <View className="py-5">
+                                  <ActivityIndicator size="small" color={colors.accent} />
+                                </View>
+                              ) : null}
+
+                              {postsResponse &&
+                              postItems.length > 0 &&
+                              !postsResponse.meta.hasMore ? (
+                                <Text
+                                  className="pt-2 pb-1 text-center text-muted"
+                                  style={{
+                                    fontSize: 12,
+                                    fontFamily: "Poppins_400Regular",
+                                  }}
+                                >
+                                  No more posts.
+                                </Text>
+                              ) : null}
                             </View>
-                          ) : null}
-
-                          {postsResponse &&
-                          postItems.length > 0 &&
-                          !postsResponse.meta.hasMore ? (
-                            <Text
-                              className="pt-2 pb-1 text-center text-muted"
-                              style={{
-                                fontSize: 12,
-                                fontFamily: "Poppins_400Regular",
-                              }}
-                            >
-                              No more posts.
-                            </Text>
-                          ) : null}
-                        </View>
+                          )}
+                        </>
                       )}
                     </View>
                   </Tabs.Content>
@@ -1199,7 +1271,7 @@ const handleLeaveCommunity = useCallback(async () => {
         onPressMedia={openViewer}
         onPressPostLike={handleLikePost}
         onPressPostShare={handleSharePost}
-         onPressCommentLike={handleCommentLike}
+        onPressCommentLike={handleCommentLike}
         onRefreshComments={() => {
           void refetchComments();
         }}
@@ -1317,28 +1389,26 @@ function InlineStat({
 function HeaderAction({
   showJoinButton,
   showCancelRequestButton,
-  showLeaveButton,        // ← New
+  showLeaveButton,
   isJoining,
   isCancellingRequest,
-  isLeaving,              // ← New
+  isLeaving,
   colors,
   onJoin,
   onCancelRequest,
-  onLeave,                // ← New
+  onLeave,
 }: {
   showJoinButton: boolean;
   showCancelRequestButton: boolean;
-  showLeaveButton: boolean;           // ← New
+  showLeaveButton: boolean;
   isJoining: boolean;
   isCancellingRequest: boolean;
-  isLeaving: boolean;                 // ← New
+  isLeaving: boolean;
   colors: ReturnType<typeof useAppTheme>["colors"];
   onJoin: () => void;
   onCancelRequest: () => void;
-  onLeave: () => void;                // ← New
+  onLeave: () => void;
 }) {
-  // Leave Button (highest priority for joined users)
-  // Joined Button (tap to leave)
   if (showLeaveButton) {
     return (
       <Pressable
@@ -1374,7 +1444,6 @@ function HeaderAction({
     );
   }
 
-  // Cancel Pending Request
   if (showCancelRequestButton) {
     return (
       <Pressable
@@ -1410,7 +1479,6 @@ function HeaderAction({
     );
   }
 
-  // Join Button
   if (showJoinButton) {
     return (
       <Pressable
@@ -1436,6 +1504,54 @@ function HeaderAction({
   }
 
   return null;
+}
+
+function ContributorRequestBanner({
+  pending,
+  colors,
+  onPress,
+}: {
+  pending: boolean;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={pending ? undefined : onPress}
+      disabled={pending}
+      className="mx-5 mt-2 flex-row items-center rounded-[20px] border border-border bg-surface px-4 py-3"
+    >
+      <View className="mr-3 h-[38px] w-[38px] items-center justify-center rounded-full bg-segment">
+        <Ionicons
+          name={pending ? "time-outline" : "person-add-outline"}
+          size={19}
+          color={colors.accent}
+        />
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text
+          className="text-foreground"
+          style={{ fontSize: 14, fontFamily: "Poppins_700Bold" }}
+        >
+          {pending ? "Request pending" : "Request to post"}
+        </Text>
+
+        <Text
+          className="mt-0.5 text-muted"
+          style={{ fontSize: 12, lineHeight: 18, fontFamily: "Poppins_400Regular" }}
+        >
+          {pending
+            ? "Waiting for admin approval before you can post here."
+            : "This is a restricted community. Ask the admin for permission to post."}
+        </Text>
+      </View>
+
+      {!pending ? (
+        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+      ) : null}
+    </Pressable>
+  );
 }
 
 function PrivateLockedMessage({

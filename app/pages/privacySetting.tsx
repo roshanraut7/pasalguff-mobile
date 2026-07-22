@@ -202,6 +202,10 @@ const handleOpenPostInsights = () => {
   router.push("/pages/postInsight");
 };
 
+const handleOpenBusinessCommunity = () => {
+  router.push("/pages/businessCommunity");
+};
+
   const handleLogout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
       {
@@ -457,7 +461,26 @@ const handleOpenPostInsights = () => {
                 />
               </Pressable>
 
-              <View style={styles.divider} />
+             <View style={styles.divider} />
+
+<Pressable
+  onPress={handleOpenBusinessCommunity}
+  style={({ pressed }) => [
+    styles.compactRow,
+    { opacity: pressed ? 0.75 : 1 },
+  ]}
+>
+  <View style={styles.rowLeft}>
+    <View style={styles.iconWrap}>
+      <Ionicons name="ribbon-outline" size={19} color={colors.accent} />
+    </View>
+
+    <Text style={styles.rowTitle}>Business Community</Text>
+  </View>
+
+  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+</Pressable>
+<View style={styles.divider} />  
 
               <View style={styles.compactRow}>
                 <View style={styles.rowLeft}>

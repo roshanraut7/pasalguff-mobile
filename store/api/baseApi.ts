@@ -129,7 +129,10 @@ export const baseApi = createApi({
     "CommunityDiscussionAnswer",
     "CommunityDiscussionLive",
     "CommunityDiscussionLiveMessage",
-   "Verification"
+   "Verification",
+  "BusinessCommunity",
+  "StudentVerification",
+  "ContributorRequest"
   ],
 
   refetchOnFocus: true,
