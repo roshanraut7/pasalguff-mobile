@@ -1,5 +1,5 @@
   import React, { useMemo, useState } from "react";
-  import { useSession } from "@/api/better-auth-client";
+import { authClient, useSession } from "@/api/better-auth-client";
   import {
     ActivityIndicator,
     Image,
@@ -21,7 +21,7 @@
     Button,
     FieldError,
     Input,
-    Label,
+    Label,  
     Select,
     TextField,
   } from "heroui-native";
@@ -83,8 +83,7 @@
     const [serverError, setServerError] = useState("");
   const {
     data: session,
-    isPending: isSessionPending,
-    refetch: refetchSession,
+    isPending: isSessionPending
   } = useSession();
 
     const { refetch: refetchMyOnboarding } = useGetMyOnboardingQuery();
@@ -248,7 +247,7 @@
         }).unwrap();
 
         await refetchMyOnboarding();
-        await refetchSession();
+        await authClient.getSession({ query: { disableCookieCache: true } });
 
         router.replace("/(tabs)");
       } catch (error) {
@@ -458,7 +457,7 @@
 
     if (session?.user?.onboardingCompleted) {
       return <Redirect href="/(tabs)" />;
-    }
+    } 
 
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>

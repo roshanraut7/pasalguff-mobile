@@ -1,6 +1,6 @@
 import { baseApi } from "./baseApi";
 
-export type MessageType = "TEXT" | "IMAGE" | "FILE" | "AUDIO";
+export type MessageType = "TEXT" | "IMAGE" | "FILE" | "AUDIO" | "POST_SHARE";
 // If you want VIDEO chat messages, also add VIDEO in Prisma MessageType enum first.
 // export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE" | "AUDIO";
 
@@ -32,6 +32,26 @@ export type ChatMember = {
   lastReadAt?: string | null;
   user: ChatUser;
 };
+export type SharedPostSummary = {
+  id: string;
+  title?: string | null;
+  content?: string | null;
+  communityId: string;
+  status: string;
+  author: {
+    id: string;
+    name: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    image?: string | null;
+    businessName?: string | null;
+  };
+  media: { url: string; type: string }[];
+  community?: {
+    id: string;
+    name: string;
+  } | null;
+};
 
 export type ChatMessage = {
   id: string;
@@ -47,6 +67,9 @@ export type ChatMessage = {
   createdAt: string;
   updatedAt: string;
   deliveredAt?: string | null;
+   // NEW — populated only when type === "POST_SHARE"
+  sharedPostId?: string | null;
+  sharedPost?: SharedPostSummary | null;
   editedAt?: string | null;
   deletedAt?: string | null;
   sender?: ChatUser;
@@ -326,6 +349,22 @@ leaveGroup: builder.mutation<{ success: boolean; chatId: string }, string>({
       ],
     }),
 
+    sharePostToChat: builder.mutation<
+  unknown,
+  { chatId: string; postId: string; message?: string }
+>({
+  query: ({ chatId, postId, message }) => ({
+    url: `/chats/${chatId}/share-post`,
+    method: "POST",
+    body: { postId, message },
+  }),
+  invalidatesTags: (_result, _error, arg) => [
+    { type: "Chat", id: "LIST" },
+    { type: "Chat", id: arg.chatId },
+    { type: "Message", id: arg.chatId },
+  ],
+}),
+
 // blockchat 
         blockChat: builder.mutation<unknown, string>({
       query: (chatId) => ({
@@ -378,4 +417,5 @@ export const {
   useLeaveGroupMutation,
   useBlockChatMutation,
   useDeleteMessageMutation,
+  useSharePostToChatMutation
 } = chatApi;

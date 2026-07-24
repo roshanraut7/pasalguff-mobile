@@ -629,6 +629,13 @@ export default function CreatePostScreen() {
 
   /* ──────────────────────────────────────────────────────────────
     Community state
+
+    FIXED: previously this effect auto-selected `communities[0]` the
+    moment the community list loaded, which made the picker button
+    silently default to the first community (e.g. "Go dokan") instead
+    of showing the "Select Community" placeholder. Now it ONLY clears
+    an invalid/stale selection — it never auto-picks one on the user's
+    behalf. The user must explicitly choose a community from the sheet.
   ────────────────────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -646,8 +653,11 @@ export default function CreatePostScreen() {
       (community) => community.id === selectedCommunityId,
     );
 
-    if (!selectedCommunityId || !selectedCommunityStillExists) {
-      setSelectedCommunityId(communities[0].id);
+    // Only reset when the previously selected community is no longer
+    // valid (e.g. user left it, or it's not in the list anymore).
+    // Do NOT default to communities[0] here.
+    if (selectedCommunityId && !selectedCommunityStillExists) {
+      setSelectedCommunityId("");
     }
   }, [communities, isLoadingCommunities, selectedCommunityId]);
 
@@ -1556,6 +1566,11 @@ export default function CreatePostScreen() {
                 Community selector.
                 CHANGED: opens the bottom sheet (openCommunityPicker) instead
                 of setting a boolean.
+
+                FIXED: label now shows "Select Community" whenever the user
+                has normal communities available but hasn't picked one yet,
+                instead of silently falling back to the hidden official
+                district community's label.
               */}
               <View style={styles.communityBar}>
                 <Text style={styles.sectionLabel}>Please select community</Text>
@@ -1589,7 +1604,11 @@ export default function CreatePostScreen() {
                     {isLoadingCommunities
                       ? "Loading..."
                       : selectedCommunity?.name ??
-                        (officialCommunity ? "Auto district community" : "Select Community")}
+                        (communities.length > 0
+                          ? "Select Community"
+                          : officialCommunity
+                          ? "Auto district community"
+                          : "Select Community")}
                   </Text>
 
                   <Ionicons name="chevron-down" size={16} color={p.muted} />

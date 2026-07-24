@@ -1766,6 +1766,10 @@ function renderMessageContent(
     );
   }
 
+   if (item.type === "POST_SHARE") {
+    return <SharedPostMessageBubble item={item} isMe={isMe} styles={styles} colors={colors} />;
+  }
+
   if (item.type === "FILE") {
     const fileUrl = toAbsoluteFileUrl(item.mediaUrl);
 
@@ -1921,6 +1925,78 @@ function AudioMessageBubble({
         </Text>
       </View>
     </Pressable>
+  );
+}
+function SharedPostMessageBubble({
+  item,
+  isMe,
+  styles,
+  colors,
+}: {
+  item: ChatMessage;
+  isMe: boolean;
+  styles: ReturnType<typeof createConversationStyles>;
+  colors: ReturnType<typeof useAppTheme>["colors"];
+}) {
+  const sharedPost = item.sharedPost;
+
+  if (!sharedPost) {
+    return (
+      <View style={styles.fileBubble}>
+        <View style={styles.fileTextWrap}>
+          <Text style={[styles.fileNameText, isMe ? styles.bubbleTextMe : styles.bubbleTextOther]}>
+            Post unavailable
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  const unavailable = sharedPost.status !== "PUBLISHED";
+  const thumb = sharedPost.media?.[0]?.url ? toAbsoluteFileUrl(sharedPost.media[0].url) : null;
+  const authorName =
+    sharedPost.author?.name?.trim() ||
+    `${sharedPost.author?.firstName ?? ""} ${sharedPost.author?.lastName ?? ""}`.trim() ||
+    sharedPost.author?.businessName?.trim() ||
+    "Someone";
+
+  return (
+    <View style={{ gap: 6 }}>
+      <Pressable
+        style={[styles.fileBubble, { padding: 8 }]}
+        disabled={unavailable}
+        onPress={() =>
+          router.push({
+            pathname: "/pages/post-detail",
+            params: { postId: sharedPost.id, communityId: sharedPost.communityId },
+          })
+        }
+      >
+        {thumb ? (
+          <Image source={{ uri: thumb }} style={{ width: 48, height: 48, borderRadius: 8, backgroundColor: colors.surfaceSecondary }} />
+        ) : (
+          <View style={styles.fileIconWrap}>
+            <Ionicons name="albums-outline" size={20} color={isMe ? "#ffffff" : colors.foreground} />
+          </View>
+        )}
+
+        <View style={styles.fileTextWrap}>
+          <Text numberOfLines={1} style={[styles.fileNameText, isMe ? styles.bubbleTextMe : styles.bubbleTextOther]}>
+            {unavailable ? "Post unavailable" : sharedPost.title || `${authorName}'s post`}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={[styles.fileMetaText, isMe ? styles.fileMetaTextMe : styles.fileMetaTextOther]}
+          >
+            {unavailable ? "This post was removed" : "Tap to view post"}
+          </Text>
+        </View>
+      </Pressable>
+
+      {item.content ? (
+        <MessageText text={item.content} isMe={isMe} styles={styles} />
+      ) : null}
+    </View>
   );
 }
 

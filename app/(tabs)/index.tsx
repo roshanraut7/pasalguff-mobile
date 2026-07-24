@@ -31,6 +31,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { usePostMediaViewer } from "@/hooks/media/usePostMediaViewer";
 import { usePostInteractions } from "@/hooks/media/usePostInteractions";
 import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
+import { useSharePostToChatMutation} from "@/store/api/chatApi";
 import {
   useGetHomeFeedPostsQuery,
   useVotePostPollMutation,
@@ -493,6 +494,15 @@ export default function HomeScreen() {
     [canCommentOnPost, openFollowRequiredModal, openComments],
   );
 
+
+  const [sharePostToChat] = useSharePostToChatMutation();
+
+const handleShareToGroup = useCallback(
+  async (post: CommunityPost, chatId: string, message?: string) => {
+    await sharePostToChat({ chatId, postId: post.id, message }).unwrap();
+  },
+  [sharePostToChat],
+);
   const handleProtectedVotePostPoll = useCallback(
     async (post: CommunityPost, optionId: string) => {
       if (!isPostCommunityFollowed(post)) {
@@ -1067,6 +1077,7 @@ export default function HomeScreen() {
         onLinkCopied={() => {
           // e.g. Toast.show({ type: "success", text1: "Link copied" })
         }}
+        onShareToGroup={handleShareToGroup} 
       />
     </>
   );

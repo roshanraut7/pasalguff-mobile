@@ -791,6 +791,9 @@ function getLastMessagePreview(chat: Chat) {
   if (lastMessage.type === "FILE") {
     return `📄 ${lastMessage.fileName || "File"}`;
   }
+  if (lastMessage.type === "POST_SHARE") {          // ← add
+    return "📎 Shared a post";
+  }
 
   return lastMessage.content || "Message";
 }

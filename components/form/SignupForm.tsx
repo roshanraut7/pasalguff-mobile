@@ -24,7 +24,7 @@ import {
   signupSchema,
   type SignupFormValues,
 } from "@/schema/singup.schema";
-import { signUpWithEmail,sendSignupOTP } from "@/api/better-auth-client";
+import { signUpWithEmail } from "@/api/better-auth-client";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { NEPAL_DISTRICTS } from "@/constants/nepalDistricts";
 
@@ -69,7 +69,7 @@ export default function SignupForm() {
         address: values.address?.trim() || "",
       });
 
-      await sendSignupOTP(email);
+      // await sendSignupOTP(email);
 
       setPendingPassword(values.password);
 

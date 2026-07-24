@@ -339,6 +339,7 @@ bottom: insets.bottom + 10,
       >
         <Tabs.Screen
           name="index"
+          
           options={{
             title: "Home",
             tabBarIcon: ({ focused }) =>

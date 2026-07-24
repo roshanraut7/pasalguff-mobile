@@ -36,6 +36,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { useGetMyFollowingQuery, type FollowItem } from "@/store/api/followApi";
 import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
+import { useGetMyChatsQuery, type Chat } from "@/store/api/chatApi";
 import type { CommunityItem } from "@/types/community";
 import type { CommunityPost } from "@/types/post";
 
@@ -55,6 +56,13 @@ type ShareBottomSheetProps = {
     post: CommunityPost,
     targetCommunityId: string,
     content?: string,
+  ) => Promise<unknown>;
+  // NEW — sharing a post directly into an existing group chat.
+  // Optional: if not provided, the "Groups" tab is hidden.
+  onShareToGroup?: (
+    post: CommunityPost,
+    chatId: string,
+    message?: string,
   ) => Promise<unknown>;
   onLinkCopied?: () => void;
 };
@@ -81,6 +89,27 @@ function getInitials(name: string) {
   return `${parts[0]?.charAt(0) ?? ""}${parts[1]?.charAt(0) ?? ""}`.toUpperCase();
 }
 
+// NEW — resolves what to actually display for a group chat.
+// Prefers the explicit group name; if the group was never named,
+// falls back to a comma-joined list of member first names
+// (e.g. "Sam, Priya, Alex" like WhatsApp/Instagram do).
+function getGroupDisplayName(chat: Chat) {
+  if (chat.name?.trim()) return chat.name.trim();
+
+  const memberNames = (chat.members ?? [])
+    .map((member) => {
+      const user = member?.user;
+      if (!user) return null;
+      const full = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+      return getFirstName(full || user.name || user.businessName || "");
+    })
+    .filter(Boolean) as string[];
+
+  if (memberNames.length === 0) return "Group chat";
+  if (memberNames.length <= 3) return memberNames.join(", ");
+  return `${memberNames.slice(0, 3).join(", ")} +${memberNames.length - 3}`;
+}
+
 type ShareAppConfig = {
   id: string;
   label: string;
@@ -96,15 +125,21 @@ const SHARE_APPS: ShareAppConfig[] = [
   { id: "more", label: "More", icon: "ellipsis-horizontal", color: "#8E8E93" },
 ];
 
+// NEW — "groups" added alongside the existing two modes.
+type ShareMode = "friends" | "groups" | "feed";
+
 const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
-  ({ onShareExternal, onShareToFriends, onShareToFeed, onLinkCopied }, ref) => {
+  (
+    { onShareExternal, onShareToFriends, onShareToFeed, onShareToGroup, onLinkCopied },
+    ref,
+  ) => {
     const { colors } = useAppTheme();
     const sheetRef = useRef<BottomSheetModal>(null);
 
     const [post, setPost] = useState<CommunityPost | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSharing, setIsSharing] = useState(false);
-    const [shareMode, setShareMode] = useState<"friends" | "feed">("friends");
+    const [shareMode, setShareMode] = useState<ShareMode>("friends");
 
     const [searchQuery, setSearchQuery] = useState("");
     const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -154,11 +189,11 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
       return () => clearTimeout(timer);
     }, [searchQuery]);
 
-    // FIX (search "auto-appearing text" bug): switching between Friends/Feed
-    // tabs used to leave the previous tab's search text + debounced value in
-    // place, so the newly-shown list would immediately filter against stale
-    // text the user never typed for it. Clear both whenever the mode changes.
-    const handleChangeShareMode = useCallback((mode: "friends" | "feed") => {
+    // FIX (search "auto-appearing text" bug): switching between tabs used to
+    // leave the previous tab's search text + debounced value in place, so
+    // the newly-shown list would immediately filter against stale text the
+    // user never typed for it. Clear both whenever the mode changes.
+    const handleChangeShareMode = useCallback((mode: ShareMode) => {
       setShareMode(mode);
       setSearchQuery("");
       setDebouncedQuery("");
@@ -175,8 +210,28 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
         { skip: !post || shareMode !== "feed" },
       );
 
+    // NEW — group chats to share into. useGetMyChatsQuery doesn't take a
+    // server-side search param, so we filter+search client-side below.
+    const showGroupsTab = Boolean(onShareToGroup);
+    const {
+      data: chatsData,
+      isLoading: isLoadingChats,
+      isFetching: isFetchingChats,
+    } = useGetMyChatsQuery(undefined, {
+      skip: !post || shareMode !== "groups" || !showGroupsTab,
+    });
+
     const followingList = data?.data ?? [];
     const communitiesList = communitiesData?.data ?? [];
+
+    // NEW — group chats, filtered to actual groups and (client-side) search.
+    const groupsList = useMemo(() => {
+      const groups = (chatsData ?? []).filter((chat) => chat.isGroup || chat.type === "GROUP");
+      if (!debouncedQuery) return groups;
+
+      const q = debouncedQuery.toLowerCase();
+      return groups.filter((chat) => getGroupDisplayName(chat).toLowerCase().includes(q));
+    }, [chatsData, debouncedQuery]);
 
     const snapPoints = useMemo(() => ["92%"], []);
 
@@ -251,6 +306,26 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
         }
       },
       [post, isSharing, onShareToFeed],
+    );
+
+    // NEW — one-tap share into a group chat, mirrors the Feed flow.
+    const handleConfirmShareToGroup = useCallback(
+      async (chatId: string) => {
+        if (!post || isSharing || !onShareToGroup) return;
+
+        const caption = captionTextRef.current.trim();
+
+        setIsSharing(true);
+        try {
+          await onShareToGroup(post, chatId, caption || undefined);
+          sheetRef.current?.dismiss();
+        } catch {
+          // error already logged upstream — keep the sheet open so the user can retry
+        } finally {
+          setIsSharing(false);
+        }
+      },
+      [post, isSharing, onShareToGroup],
     );
 
     const handleShareAppPress = useCallback(
@@ -357,6 +432,38 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
       [colors, isSharing, handleConfirmShareToFeed],
     );
 
+    // NEW — renders a group chat cell with the group's name (or the
+    // member-name fallback from getGroupDisplayName) under a group avatar.
+    const renderGroupItem = useCallback(
+      ({ item }: { item: Chat }) => {
+        const displayName = getGroupDisplayName(item);
+
+        return (
+          <Pressable
+            onPress={() => void handleConfirmShareToGroup(item.id)}
+            style={styles.gridCell}
+            disabled={isSharing}
+          >
+            <View style={[styles.avatarRing, { borderColor: "transparent" }]}>
+              <Avatar alt="" size="lg" variant="soft" color="accent">
+                {item.avatarImage ? (
+                  <Avatar.Image
+                    source={{ uri: toAbsoluteFileUrl(item.avatarImage) ?? undefined }}
+                  />
+                ) : null}
+                <Avatar.Fallback>{getInitials(displayName)}</Avatar.Fallback>
+              </Avatar>
+            </View>
+
+            <Text numberOfLines={1} style={[styles.gridName, { color: colors.foreground }]}>
+              {displayName}
+            </Text>
+          </Pressable>
+        );
+      },
+      [colors, isSharing, handleConfirmShareToGroup],
+    );
+
     const renderBackdrop = useCallback(
       (props: any) => (
         <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} />
@@ -390,6 +497,31 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
               </Text>
             </Pressable>
 
+            {/* NEW — Groups tab, only shown when the parent wired up onShareToGroup */}
+            {showGroupsTab ? (
+              <Pressable
+                onPress={() => handleChangeShareMode("groups")}
+                style={[
+                  styles.modeTab,
+                  shareMode === "groups" && { backgroundColor: colors.accent },
+                ]}
+              >
+                <Ionicons
+                  name="people-circle-outline"
+                  size={15}
+                  color={shareMode === "groups" ? "#fff" : colors.muted}
+                />
+                <Text
+                  style={[
+                    styles.modeTabText,
+                    { color: shareMode === "groups" ? "#fff" : colors.muted },
+                  ]}
+                >
+                  Groups
+                </Text>
+              </Pressable>
+            ) : null}
+
             <Pressable
               onPress={() => handleChangeShareMode("feed")}
               style={[
@@ -414,7 +546,11 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
           </View>
 
           <Text style={[styles.sectionLabel, { color: colors.muted }]}>
-            {shareMode === "friends" ? "Share with" : "Post to community"}
+            {shareMode === "friends"
+              ? "Share with"
+              : shareMode === "groups"
+                ? "Share to group"
+                : "Post to community"}
           </Text>
 
           {shareMode === "feed" ? (
@@ -422,9 +558,15 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
               Tap a community below to post with the caption you wrote above.
             </Text>
           ) : null}
+
+          {shareMode === "groups" ? (
+            <Text style={[styles.feedHintText, { color: colors.muted }]}>
+              Tap a group below to send with the caption you wrote above.
+            </Text>
+          ) : null}
         </View>
       ),
-      [colors, shareMode, handleChangeShareMode],
+      [colors, shareMode, handleChangeShareMode, showGroupsTab],
     );
 
     const renderAppsSection = useCallback(
@@ -484,7 +626,11 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
               ) : (
                 <View style={styles.feedFooterHintWrap}>
                   <Text style={[styles.feedFooterHintText, { color: colors.muted }]}>
-                    {isSharing ? "Sharing..." : "Tap a community above to share with this caption"}
+                    {isSharing
+                      ? "Sharing..."
+                      : shareMode === "groups"
+                        ? "Tap a group above to share with this caption"
+                        : "Tap a community above to share with this caption"}
                   </Text>
                 </View>
               )}
@@ -495,8 +641,23 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
       [colors, selectedIds.size, isSharing, handleConfirmShare, shareMode],
     );
 
-    const activeIsLoading = shareMode === "friends" ? isLoading : isLoadingCommunities;
-    const activeIsFetching = shareMode === "friends" ? isFetching : isFetchingCommunities;
+    const activeIsLoading =
+      shareMode === "friends"
+        ? isLoading
+        : shareMode === "groups"
+          ? isLoadingChats
+          : isLoadingCommunities;
+    const activeIsFetching =
+      shareMode === "friends"
+        ? isFetching
+        : shareMode === "groups"
+          ? isFetchingChats
+          : isFetchingCommunities;
+
+    const activeListData =
+      shareMode === "friends" ? followingList : shareMode === "groups" ? groupsList : communitiesList;
+    const activeRenderItem =
+      shareMode === "friends" ? renderItem : shareMode === "groups" ? renderGroupItem : renderCommunityItem;
 
     return (
       <BottomSheetModal
@@ -568,17 +729,9 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
           </View>
         ) : (
           <BottomSheetFlatList
-            data={
-              shareMode === "friends"
-                ? (followingList as any)
-                : (communitiesList as any)
-            }
+            data={activeListData as any}
             keyExtractor={(item: any) => item.id}
-            renderItem={
-              shareMode === "friends"
-                ? (renderItem as any)
-                : (renderCommunityItem as any)
-            }
+            renderItem={activeRenderItem as any}
             numColumns={NUM_COLUMNS}
             contentContainerStyle={styles.gridContent}
             keyboardShouldPersistTaps="handled"
@@ -590,9 +743,13 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
                   ? debouncedQuery
                     ? `No results for "${debouncedQuery}"`
                     : "You are not following anyone yet."
-                  : debouncedQuery
-                    ? `No results for "${debouncedQuery}"`
-                    : "You haven't joined any communities yet."}
+                  : shareMode === "groups"
+                    ? debouncedQuery
+                      ? `No results for "${debouncedQuery}"`
+                      : "You're not in any group chats yet."
+                    : debouncedQuery
+                      ? `No results for "${debouncedQuery}"`
+                      : "You haven't joined any communities yet."}
               </Text>
             }
           />
@@ -655,6 +812,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 8,
+    flexWrap: "wrap",
   },
   modeTab: {
     flexDirection: "row",
