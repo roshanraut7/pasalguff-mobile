@@ -55,7 +55,6 @@ function getTotalUnreadMessages(chats: Chat[]) {
 }
 
 export default function TabLayout() {
-  const [searchValue, setSearchValue] = useState("");
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
 
   const { data: session, isPending } = useSession();
@@ -319,8 +318,6 @@ bottom: insets.bottom + 10,
           headerShown: true,
           header: () => (
             <AppHeader
-              searchValue={searchValue}
-              onSearchChange={setSearchValue}
               userName={headerName}
               avatarUrl={headerAvatar}
               notificationCount={unreadNotificationCount}

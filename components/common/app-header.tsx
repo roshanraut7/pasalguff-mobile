@@ -1,20 +1,12 @@
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 import { Ionicons } from "@expo/vector-icons";
-import { SearchField } from "heroui-native";
+import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type AppHeaderProps = {
-  searchValue: string;
-  onSearchChange: (value: string) => void;
   userName?: string | null;
   avatarUrl?: string | null;
   onAvatarPress?: () => void;
@@ -25,24 +17,14 @@ type AppHeaderProps = {
 
 function getInitials(name?: string | null) {
   if (!name) return "U";
-
   const parts = name.trim().split(" ").filter(Boolean);
-
   if (parts.length === 1) {
     return parts[0]?.charAt(0).toUpperCase() || "U";
   }
-
   return `${parts[0]?.charAt(0) ?? ""}${parts[1]?.charAt(0) ?? ""}`.toUpperCase();
 }
 
-const TIMING_CONFIG = {
-  duration: 220,
-  easing: Easing.out(Easing.cubic),
-};
-
 export default function AppHeader({
-  searchValue,
-  onSearchChange,
   userName,
   avatarUrl,
   onAvatarPress,
@@ -53,37 +35,14 @@ export default function AppHeader({
   const insets = useSafeAreaInsets();
   const { colors } = useAppTheme();
 
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
-
-  const searchFlex = useSharedValue(0);
-  const searchOpacity = useSharedValue(0);
 
   const safeNotificationCount = Math.max(0, notificationCount);
 
   const displayAvatarUrl = useMemo(() => {
     setAvatarLoadFailed(false);
-
     return toAbsoluteFileUrl(avatarUrl);
   }, [avatarUrl]);
-
-  // console.log("APP HEADER RAW AVATAR:", avatarUrl);
-  // console.log("APP HEADER DISPLAY AVATAR:", displayAvatarUrl);
-
-  const toggleSearch = () => {
-    const opening = !isSearchOpen;
-
-    setIsSearchOpen(opening);
-
-    searchFlex.value = withTiming(opening ? 1 : 0, TIMING_CONFIG);
-    searchOpacity.value = withTiming(opening ? 1 : 0, TIMING_CONFIG);
-  };
-
-  const animatedSearchStyle = useAnimatedStyle(() => ({
-    flex: searchFlex.value,
-    opacity: searchOpacity.value,
-    overflow: "hidden",
-  }));
 
   return (
     <View
@@ -96,13 +55,7 @@ export default function AppHeader({
         borderBottomColor: colors.border,
       }}
     >
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Pressable onPress={onAvatarPress}>
           <View
             style={{
@@ -121,15 +74,9 @@ export default function AppHeader({
               <Image
                 key={displayAvatarUrl}
                 source={{ uri: displayAvatarUrl }}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                }}
+                style={{ width: "100%", height: "100%" }}
                 resizeMode="cover"
-                onError={(error) => {
-                  console.log("APP HEADER AVATAR LOAD ERROR:", error.nativeEvent);
-                  setAvatarLoadFailed(true);
-                }}
+                onError={() => setAvatarLoadFailed(true)}
               />
             ) : (
               <Text
@@ -145,64 +92,42 @@ export default function AppHeader({
           </View>
         </Pressable>
 
-        <Animated.View style={[{ minWidth: 0 }, animatedSearchStyle]}>
-          {isSearchOpen ? (
-            <SearchField value={searchValue} onChange={onSearchChange}>
-              <SearchField.Group>
-                <SearchField.SearchIcon />
-                <SearchField.Input autoFocus />
-                <SearchField.ClearButton />
-              </SearchField.Group>
-            </SearchField>
-          ) : null}
-        </Animated.View>
-
-        {!isSearchOpen ? <View style={{ flex: 1 }} /> : null}
-
-        <Pressable onPress={toggleSearch} style={{ padding: 4 }}>
-          <Ionicons
-            name={isSearchOpen ? "close-outline" : "search-outline"}
-            size={22}
-            color={colors.accent}
-          />
-        </Pressable>
-
-        <View
+        {/* ⬇️ NEW — tappable fake search bar that navigates to the search screen */}
+        <Pressable
+          onPress={() => router.push("/search")}
           style={{
-            width: 1,
-            height: 18,
-            backgroundColor: colors.border,
-          }}
-        />
-
-        <View
-          style={{
+            flex: 1,
             flexDirection: "row",
             alignItems: "center",
-            gap: 16,
+            gap: 8,
+            backgroundColor: colors.surface,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: colors.border,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
           }}
         >
+          <Ionicons name="search-outline" size={18} color={colors.muted} />
+          <Text style={{ color: colors.muted, fontSize: 13 }}>Search</Text>
+        </Pressable>
+
+        <View style={{ width: 1, height: 18, backgroundColor: colors.border }} />
+
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
           <Pressable onPress={onFriendsPress} style={{ padding: 4 }}>
             <Ionicons name="people-outline" size={22} color={colors.accent} />
           </Pressable>
 
           <Pressable
             onPress={onNotificationPress}
-            style={{
-              padding: 4,
-              position: "relative",
-            }}
+            style={{ padding: 4, position: "relative" }}
           >
             <Ionicons
-              name={
-                safeNotificationCount > 0
-                  ? "notifications"
-                  : "notifications-outline"
-              }
+              name={safeNotificationCount > 0 ? "notifications" : "notifications-outline"}
               size={22}
               color={colors.accent}
             />
-
             {safeNotificationCount > 0 ? (
               <View
                 style={{
@@ -222,15 +147,9 @@ export default function AppHeader({
               >
                 <Text
                   numberOfLines={1}
-                  style={{
-                    color: "#FFFFFF",
-                    fontSize: 9,
-                    fontFamily: "Poppins_700Bold",
-                  }}
+                  style={{ color: "#FFFFFF", fontSize: 9, fontFamily: "Poppins_700Bold" }}
                 >
-                  {safeNotificationCount > 99
-                    ? "99+"
-                    : String(safeNotificationCount)}
+                  {safeNotificationCount > 99 ? "99+" : String(safeNotificationCount)}
                 </Text>
               </View>
             ) : null}
