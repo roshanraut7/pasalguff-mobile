@@ -1,5 +1,13 @@
 import { baseApi } from "./baseApi";
 
+/**
+ * The three account types available during onboarding.
+ */
+export type UserProfileType =
+  | "BUSINESS"
+  | "INSTITUTE"
+  | "INDIVIDUAL";
+
 export type OnboardingCategory = {
   id: string;
   name: string;
@@ -10,38 +18,88 @@ export type OnboardingCategory = {
 export type UserInterest = {
   category: OnboardingCategory;
 };
+
+/**
+ * Data returned by GET /onboarding/me.
+ */
 export type OnboardingProfile = {
   id: string;
   email: string;
   name: string;
   firstName: string;
   lastName: string;
+
   image?: string | null;
   coverImage?: string | null;
-  businessName?: string | null;
-  businessType?: string | null;
-  panNo?: string | null;
-  registrationNo?: string | null;
-  address?: string | null;
-  businessEmail?: string | null;
-  businessPhoneNo?: string | null;
+
+  /**
+   * Examples:
+   * BUSINESS
+   * INSTITUTE
+   * INDIVIDUAL
+   */
+  profileType?: UserProfileType | null;
+
+  /**
+   * Examples:
+   * Retailer
+   * Manufacturer
+   * Technical Institute
+   * Technical Student
+   * Technician
+   * Content Creator
+   *
+   * This may also contain a custom value when
+   * the user selects Other.
+   */
+  profileRole?: string | null;
+
   onboardingCompleted: boolean;
+
   role: "USER" | "ADMIN" | "SUPER_ADMIN";
-  interests?: UserInterest[];
+
+  interests: UserInterest[];
 };
 
+/**
+ * Information returned after joining communities
+ * during onboarding.
+ */
+export type SelectedCommunityMemberships = {
+  joined: number;
+
+  communities: Array<{
+    id: string;
+    name: string;
+    slug: string;
+  }>;
+};
+
+/**
+ * PATCH /onboarding/me response.
+ */
+export type UpdateOnboardingResponse = OnboardingProfile & {
+  selectedCommunityMemberships?: SelectedCommunityMemberships | null;
+};
+
+/**
+ * PATCH /onboarding/me request body.
+ */
 export type UpdateOnboardingPayload = {
   image?: string | null;
   coverImage?: string | null;
-  businessName?: string | null;
-  businessType?: string | null;
-  panNo?: string | null;
-  registrationNo?: string | null;
-  address?: string | null;
-  businessEmail?: string | null;
-  businessPhoneNo?: string | null;
+
+  profileType?: UserProfileType;
+
+  /**
+   * Send the predefined role or the custom
+   * text entered after selecting Other.
+   */
+  profileRole?: string | null;
+
   categoryIds?: string[];
   communityIds?: string[];
+
   onboardingCompleted?: boolean;
 };
 
@@ -50,16 +108,28 @@ export type SuggestedCommunity = {
   name: string;
   slug: string;
   description?: string | null;
+
   avatarImage?: string | null;
   coverImage?: string | null;
-  visibility: "PUBLIC" | "PRIVATE";
-  purpose?: "GENERAL" | "DISTRICT_OFFICIAL";
+
+  visibility:
+    | "PUBLIC"
+    | "PRIVATE"
+    | "RESTRICTED";
+
+  purpose:
+    | "GENERAL"
+    | "DISTRICT_OFFICIAL"
+    | "BUSINESS";
+
   districtKey?: string | null;
+
   category?: {
     id: string;
     name: string;
     slug: string;
   } | null;
+
   _count?: {
     members: number;
     posts: number;
@@ -68,24 +138,43 @@ export type SuggestedCommunity = {
 
 export const onboardingApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getMyOnboarding: builder.query<OnboardingProfile, void>({
+    /**
+     * GET /onboarding/me
+     */
+    getMyOnboarding: builder.query<
+      OnboardingProfile,
+      void
+    >({
       query: () => ({
         url: "/onboarding/me",
         method: "GET",
       }),
+
       providesTags: ["Onboarding"],
     }),
 
-    getOnboardingCategories: builder.query<OnboardingCategory[], void>({
+    /**
+     * GET /onboarding/categories
+     */
+    getOnboardingCategories: builder.query<
+      OnboardingCategory[],
+      void
+    >({
       query: () => ({
         url: "/onboarding/categories",
         method: "GET",
       }),
-      providesTags: ["OnboardingCategory"],
+
+      providesTags: [
+        "OnboardingCategory",
+      ],
     }),
 
+    /**
+     * PATCH /onboarding/me
+     */
     updateMyOnboarding: builder.mutation<
-      OnboardingProfile,
+      UpdateOnboardingResponse,
       UpdateOnboardingPayload
     >({
       query: (body) => ({
@@ -93,6 +182,7 @@ export const onboardingApi = baseApi.injectEndpoints({
         method: "PATCH",
         body,
       }),
+
       invalidatesTags: [
         "Onboarding",
         "SuggestedCommunity",
@@ -102,12 +192,21 @@ export const onboardingApi = baseApi.injectEndpoints({
       ],
     }),
 
-    getSuggestedCommunities: builder.query<SuggestedCommunity[], void>({
+    /**
+     * GET /onboarding/suggested-communities
+     */
+    getSuggestedCommunities: builder.query<
+      SuggestedCommunity[],
+      void
+    >({
       query: () => ({
         url: "/onboarding/suggested-communities",
         method: "GET",
       }),
-      providesTags: ["SuggestedCommunity"],
+
+      providesTags: [
+        "SuggestedCommunity",
+      ],
     }),
   }),
 

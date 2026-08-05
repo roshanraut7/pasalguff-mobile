@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   Platform,
   Pressable,
@@ -18,6 +19,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import { Menu } from "heroui-native";
 
 import type { FeedComment } from "@/utils/post/comment";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -65,6 +67,18 @@ type CommentPostModalProps = {
   onPressPostShare?: (post: CommunityPost) => void;
   onRefreshComments?: () => void;
   onPressCommentLike?: (comment: FeedComment) => void;
+
+  currentUserId?: string | null;
+  onEditComment?: (
+    comment: FeedComment,
+    content: string,
+  ) => Promise<void> | void;
+  onDeleteComment?: (
+    comment: FeedComment,
+  ) => Promise<void> | void;
+  isUpdatingComment?: boolean;
+  isDeletingComment?: boolean;
+
   canWriteComment?: boolean;
   onRequestFollow?: () => void;
   colors: Colors;
@@ -149,39 +163,273 @@ const CommentAvatar = memo(function CommentAvatar({
   );
 });
 
+type CommentPermissionProps = {
+  currentUserId?: string | null;
+  postAuthorId?: string | null;
+  onEdit?: (comment: FeedComment) => void;
+  onDelete?: (comment: FeedComment) => void;
+};
+
+function canEditComment(
+  comment: FeedComment,
+  currentUserId?: string | null,
+) {
+  const explicitPermission =
+    Boolean(
+      (comment as FeedComment & {
+        canEdit?: boolean;
+      }).canEdit,
+    );
+
+  return (
+    explicitPermission ||
+    Boolean(
+      currentUserId &&
+        comment.authorId === currentUserId,
+    )
+  );
+}
+
+function canDeleteComment(
+  comment: FeedComment,
+  currentUserId?: string | null,
+  postAuthorId?: string | null,
+) {
+  const explicitPermission =
+    Boolean(
+      (comment as FeedComment & {
+        canDelete?: boolean;
+      }).canDelete,
+    );
+
+  return (
+    explicitPermission ||
+    Boolean(
+      currentUserId &&
+        (
+          comment.authorId === currentUserId ||
+          postAuthorId === currentUserId
+        ),
+    )
+  );
+}
+
+const CommentActionMenu = memo(
+  function CommentActionMenu({
+    comment,
+    currentUserId,
+    postAuthorId,
+    onEdit,
+    onDelete,
+    colors,
+  }: CommentPermissionProps & {
+    comment: FeedComment;
+    colors: Colors;
+  }) {
+    const canEdit =
+      Boolean(onEdit) &&
+      canEditComment(
+        comment,
+        currentUserId,
+      );
+
+    const canDelete =
+      Boolean(onDelete) &&
+      canDeleteComment(
+        comment,
+        currentUserId,
+        postAuthorId,
+      );
+
+    if (!canEdit && !canDelete) {
+      return null;
+    }
+
+    return (
+      <Menu>
+        <Menu.Trigger asChild>
+          <Pressable
+            hitSlop={10}
+            style={stylesStatic.commentMenuButton}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={16}
+              color={colors.muted}
+            />
+          </Pressable>
+        </Menu.Trigger>
+
+        <Menu.Portal>
+          <Menu.Overlay />
+
+          <Menu.Content
+            presentation="popover"
+            placement="bottom"
+            align="end"
+            width={180}
+            className="rounded-2xl border border-border bg-surface"
+          >
+            {canEdit ? (
+              <Menu.Item
+                onPress={() =>
+                  onEdit?.(comment)
+                }
+                className="flex-row items-center gap-3"
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={17}
+                  color={colors.accent}
+                />
+
+                <Menu.ItemTitle>
+                  Edit comment
+                </Menu.ItemTitle>
+              </Menu.Item>
+            ) : null}
+
+            {canDelete ? (
+              <Menu.Item
+                onPress={() =>
+                  onDelete?.(comment)
+                }
+                variant="danger"
+                className="flex-row items-center gap-3"
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={17}
+                  color={colors.danger}
+                />
+
+                <Menu.ItemTitle>
+                  Delete comment
+                </Menu.ItemTitle>
+              </Menu.Item>
+            ) : null}
+          </Menu.Content>
+        </Menu.Portal>
+      </Menu>
+    );
+  },
+);
+
 const ReplyItem = memo(function ReplyItem({
   item,
   styles,
   onReply,
   onPressLike,
+  currentUserId,
+  postAuthorId,
+  onEdit,
+  onDelete,
+  colors,
 }: {
   item: FeedComment;
   styles: ReturnType<typeof createStyles>;
   onReply: (comment: FeedComment) => void;
   onPressLike?: (comment: FeedComment) => void;
+  currentUserId?: string | null;
+  postAuthorId?: string | null;
+  onEdit?: (comment: FeedComment) => void;
+  onDelete?: (comment: FeedComment) => void;
+  colors: Colors;
 }) {
-  const replyAuthorName = getCommentAuthorName(item);
-  const likeLabel = formatCount((item as any).likeCount);
-  const liked = isCommentLiked(item);
+  const replyAuthorName =
+    getCommentAuthorName(item);
+
+  const likeLabel =
+    formatCount(
+      (item as any).likeCount,
+    );
+
+  const liked =
+    isCommentLiked(item);
+
   return (
     <View style={styles.replyRow}>
-      <CommentAvatar comment={item} size={26} styles={styles} />
+      <CommentAvatar
+        comment={item}
+        size={26}
+        styles={styles}
+      />
+
       <View style={styles.replyBody}>
         <View style={styles.replyBubble}>
-          <Text style={styles.replyAuthor}>{replyAuthorName}</Text>
-          <Text style={styles.replyText}>{item.content}</Text>
+          <View style={styles.commentTopRow}>
+            <Text style={styles.replyAuthor}>
+              {replyAuthorName}
+            </Text>
+
+            <CommentActionMenu
+              comment={item}
+              currentUserId={currentUserId}
+              postAuthorId={postAuthorId}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              colors={colors}
+            />
+          </View>
+
+          <Text style={styles.replyText}>
+            {item.content}
+          </Text>
         </View>
+
         <View style={styles.replyActions}>
-          <Pressable hitSlop={8} onPress={() => onPressLike?.(item)}>
-            <Text style={[styles.replyActionText, liked && styles.likedActionText]}>
-              {liked ? "Liked" : "Like"}
+          <Pressable
+            hitSlop={8}
+            onPress={() =>
+              onPressLike?.(item)
+            }
+          >
+            <Text
+              style={[
+                styles.replyActionText,
+                liked &&
+                  styles.likedActionText,
+              ]}
+            >
+              {liked
+                ? "Liked"
+                : "Like"}
             </Text>
           </Pressable>
-          <Pressable hitSlop={8} onPress={() => onReply(item)}>
-            <Text style={styles.replyActionText}>Reply</Text>
+
+          <Pressable
+            hitSlop={8}
+            onPress={() =>
+              onReply(item)
+            }
+          >
+            <Text
+              style={
+                styles.replyActionText
+              }
+            >
+              Reply
+            </Text>
           </Pressable>
-          <Text style={styles.replyTime}>{formatCommentTime(item.createdAt)}</Text>
-          {likeLabel ? <Text style={styles.replyReactionCount}>{likeLabel} ♥</Text> : null}
+
+          <Text style={styles.replyTime}>
+            {formatCommentTime(
+              item.createdAt,
+            )}
+            {item.editedAt
+              ? " · edited"
+              : ""}
+          </Text>
+
+          {likeLabel ? (
+            <Text
+              style={
+                styles.replyReactionCount
+              }
+            >
+              {likeLabel} ♥
+            </Text>
+          ) : null}
         </View>
       </View>
     </View>
@@ -195,6 +443,11 @@ const CommentItem = memo(function CommentItem({
   onPressLike,
   isRepliesExpanded,
   onViewReplies,
+  currentUserId,
+  postAuthorId,
+  onEdit,
+  onDelete,
+  colors,
 }: {
   item: FeedComment;
   styles: ReturnType<typeof createStyles>;
@@ -202,68 +455,226 @@ const CommentItem = memo(function CommentItem({
   onPressLike?: (comment: FeedComment) => void;
   isRepliesExpanded: boolean;
   onViewReplies: (comment: FeedComment) => void;
+  currentUserId?: string | null;
+  postAuthorId?: string | null;
+  onEdit?: (comment: FeedComment) => void;
+  onDelete?: (comment: FeedComment) => void;
+  colors: Colors;
 }) {
-  const authorName = getCommentAuthorName(item);
-  const replies = item.replies ?? [];
-  const totalReplyCount = Math.max((item as any).replyCount ?? 0, replies.length);
-  const visibleReplies = isRepliesExpanded ? replies : [];
-  const likeLabel = formatCount((item as any).likeCount);
-  const liked = isCommentLiked(item);
+  const authorName =
+    getCommentAuthorName(item);
+
+  const replies =
+    item.replies ?? [];
+
+  const totalReplyCount =
+    Math.max(
+      (item as any).replyCount ??
+        0,
+      replies.length,
+    );
+
+  const visibleReplies =
+    isRepliesExpanded
+      ? replies
+      : [];
+
+  const likeLabel =
+    formatCount(
+      (item as any).likeCount,
+    );
+
+  const liked =
+    isCommentLiked(item);
 
   return (
     <View style={styles.commentBlock}>
       <View style={styles.commentRow}>
-        <CommentAvatar comment={item} styles={styles} />
+        <CommentAvatar
+          comment={item}
+          styles={styles}
+        />
+
         <View style={styles.commentBody}>
           <View style={styles.commentBubble}>
-            <Text style={styles.commentAuthor}>{authorName}</Text>
-            <Text style={styles.commentText}>{item.content}</Text>
+            <View style={styles.commentTopRow}>
+              <Text style={styles.commentAuthor}>
+                {authorName}
+              </Text>
+
+              <CommentActionMenu
+                comment={item}
+                currentUserId={currentUserId}
+                postAuthorId={postAuthorId}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                colors={colors}
+              />
+            </View>
+
+            <Text style={styles.commentText}>
+              {item.content}
+            </Text>
           </View>
+
           <View style={styles.commentActions}>
-            <Pressable hitSlop={8} onPress={() => onPressLike?.(item)}>
-              <Text style={[styles.commentActionText, liked && styles.likedActionText]}>
-                {liked ? "Liked" : "Like"}
+            <Pressable
+              hitSlop={8}
+              onPress={() =>
+                onPressLike?.(item)
+              }
+            >
+              <Text
+                style={[
+                  styles.commentActionText,
+                  liked &&
+                    styles.likedActionText,
+                ]}
+              >
+                {liked
+                  ? "Liked"
+                  : "Like"}
               </Text>
             </Pressable>
-            <Pressable hitSlop={8} onPress={() => onReply(item)}>
-              <Text style={styles.commentActionText}>Reply</Text>
+
+            <Pressable
+              hitSlop={8}
+              onPress={() =>
+                onReply(item)
+              }
+            >
+              <Text
+                style={
+                  styles.commentActionText
+                }
+              >
+                Reply
+              </Text>
             </Pressable>
-            <Text style={styles.commentTime}>{formatCommentTime(item.createdAt)}</Text>
-            {likeLabel ? <Text style={styles.commentReactionCount}>{likeLabel} ♥</Text> : null}
+
+            <Text
+              style={
+                styles.commentTime
+              }
+            >
+              {formatCommentTime(
+                item.createdAt,
+              )}
+              {item.editedAt
+                ? " · edited"
+                : ""}
+            </Text>
+
+            {likeLabel ? (
+              <Text
+                style={
+                  styles.commentReactionCount
+                }
+              >
+                {likeLabel} ♥
+              </Text>
+            ) : null}
           </View>
         </View>
       </View>
 
       {totalReplyCount > 0 ? (
-        <View style={styles.replyContainer}>
-          {isRepliesExpanded && visibleReplies.length > 0 ? (
-            <View style={styles.replyThreadLine} />
+        <View
+          style={
+            styles.replyContainer
+          }
+        >
+          {isRepliesExpanded &&
+          visibleReplies.length >
+            0 ? (
+            <View
+              style={
+                styles.replyThreadLine
+              }
+            />
           ) : null}
+
           {!isRepliesExpanded ? (
-            <Pressable hitSlop={8} onPress={() => onViewReplies(item)} style={styles.viewRepliesButton}>
-              <Text style={styles.viewMoreReplies}>
-                View {totalReplyCount} {totalReplyCount === 1 ? "reply" : "replies"}
+            <Pressable
+              hitSlop={8}
+              onPress={() =>
+                onViewReplies(item)
+              }
+              style={
+                styles.viewRepliesButton
+              }
+            >
+              <Text
+                style={
+                  styles.viewMoreReplies
+                }
+              >
+                View {totalReplyCount}{" "}
+                {totalReplyCount ===
+                1
+                  ? "reply"
+                  : "replies"}
               </Text>
             </Pressable>
           ) : null}
-          {visibleReplies.map((reply) => (
-            <ReplyItem
-              key={reply.id}
-              item={reply}
-              styles={styles}
-              onReply={onReply}
-              onPressLike={onPressLike}
-            />
-          ))}
-          {isRepliesExpanded && replies.length > 0 ? (
-            <Pressable hitSlop={8} onPress={() => onViewReplies(item)} style={styles.viewRepliesButton}>
-              <Text style={styles.hideReplies}>Hide replies</Text>
+
+          {visibleReplies.map(
+            (reply) => (
+              <ReplyItem
+                key={reply.id}
+                item={reply}
+                styles={styles}
+                onReply={onReply}
+                onPressLike={
+                  onPressLike
+                }
+                currentUserId={
+                  currentUserId
+                }
+                postAuthorId={
+                  postAuthorId
+                }
+                onEdit={onEdit}
+                onDelete={onDelete}
+                colors={colors}
+              />
+            ),
+          )}
+
+          {isRepliesExpanded &&
+          replies.length > 0 ? (
+            <Pressable
+              hitSlop={8}
+              onPress={() =>
+                onViewReplies(item)
+              }
+              style={
+                styles.viewRepliesButton
+              }
+            >
+              <Text
+                style={
+                  styles.hideReplies
+                }
+              >
+                Hide replies
+              </Text>
             </Pressable>
           ) : null}
         </View>
       ) : null}
     </View>
   );
+});
+
+const stylesStatic = StyleSheet.create({
+  commentMenuButton: {
+    width: 26,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
 
 // ─── Main Modal ─────────────────────────────────────────────────────────────
@@ -285,6 +696,11 @@ function CommentPostModal({
   onPressPostShare,
   onRefreshComments,
   onPressCommentLike,
+  currentUserId,
+  onEditComment,
+  onDeleteComment,
+  isUpdatingComment = false,
+  isDeletingComment = false,
   canWriteComment = true,
   onRequestFollow,
   colors,
@@ -296,8 +712,14 @@ function CommentPostModal({
   const listRef = useRef<any>(null);
   const bottomSheetRef = useRef<BottomSheetModal>(null);
 
-  const [replyingTo, setReplyingTo] = useState<FeedComment | null>(null);
-  const [expandedReplyIds, setExpandedReplyIds] = useState<Set<string>>(() => new Set());
+  const [replyingTo, setReplyingTo] =
+    useState<FeedComment | null>(null);
+
+  const [editingComment, setEditingComment] =
+    useState<FeedComment | null>(null);
+
+  const [expandedReplyIds, setExpandedReplyIds] =
+    useState<Set<string>>(() => new Set());
   // const [textInputHeight, setTextInputHeight] = useState(MIN_INPUT_HEIGHT);
 
   // ------------------------------------------------------------
@@ -386,13 +808,51 @@ const handleChangeText = useCallback((text: string) => {
   //   }
   // }, [localInput]);
 
-  const totalComments = post?.commentCount ?? comments.length;
+  const totalComments =
+    post?.commentCount ??
+    comments.length;
 
-  const handleReply = useCallback((comment: FeedComment) => {
-    if (!canWriteComment) { onRequestFollow?.(); return; }
-    setReplyingTo(comment);
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, [canWriteComment, onRequestFollow]);
+  const postAuthorId =
+    post?.authorId ??
+    post?.author?.id ??
+    null;
+
+  const isComposerBusy =
+    isCreating ||
+    isUpdatingComment;
+
+  const resetComposer = useCallback(() => {
+    seedValueRef.current = "";
+    inputTextRef.current = "";
+    setHasText(false);
+    setReplyingTo(null);
+    setEditingComment(null);
+    setResetKey((current) => current + 1);
+  }, []);
+
+  const handleReply = useCallback(
+    (comment: FeedComment) => {
+      if (!canWriteComment) {
+        onRequestFollow?.();
+        return;
+      }
+
+      setEditingComment(null);
+      setReplyingTo(comment);
+      seedValueRef.current = "";
+      inputTextRef.current = "";
+      setHasText(false);
+      setResetKey((current) => current + 1);
+
+      requestAnimationFrame(() =>
+        inputRef.current?.focus(),
+      );
+    },
+    [
+      canWriteComment,
+      onRequestFollow,
+    ],
+  );
 
   const handleViewReplies = useCallback((comment: FeedComment) => {
     setExpandedReplyIds((prev) => {
@@ -403,32 +863,204 @@ const handleChangeText = useCallback((text: string) => {
     onRefreshComments?.();
   }, [onRefreshComments]);
 
- const handleSubmitPress = useCallback(() => {
-  if (!canWriteComment) { onRequestFollow?.(); return; }
+  const handleStartEdit = useCallback(
+    (comment: FeedComment) => {
+      if (
+        !canEditComment(
+          comment,
+          currentUserId,
+        )
+      ) {
+        return;
+      }
 
-  const content = inputTextRef.current.trim();
-  if (!content || isCreating) return;
+      setReplyingTo(null);
+      setEditingComment(comment);
 
-  const selectedReply = replyingTo;
+      seedValueRef.current =
+        comment.content ?? "";
 
-  if (selectedReply?.id) {
-    setExpandedReplyIds((prev) => {
-      const next = new Set(prev);
-      next.add(selectedReply.id);
-      return next;
-    });
-  }
+      inputTextRef.current =
+        comment.content ?? "";
 
-  setReplyingTo(null);
+      setHasText(
+        Boolean(
+          comment.content?.trim(),
+        ),
+      );
 
-  // Clear the native box directly (no React round-trip needed)
-  inputRef.current?.clear();
-  inputTextRef.current = "";
-  setHasText(false);
+      setResetKey(
+        (current) =>
+          current + 1,
+      );
 
-  onChangeInput("");
-  onSubmit(content, selectedReply);
-}, [canWriteComment, onRequestFollow, isCreating, replyingTo, onChangeInput, onSubmit]);
+      requestAnimationFrame(() =>
+        inputRef.current?.focus(),
+      );
+    },
+    [currentUserId],
+  );
+
+  const handleCancelEdit =
+    useCallback(() => {
+      resetComposer();
+    }, [resetComposer]);
+
+  const handleRequestDelete =
+    useCallback(
+      (
+        comment: FeedComment,
+      ) => {
+        if (
+          !canDeleteComment(
+            comment,
+            currentUserId,
+            postAuthorId,
+          ) ||
+          !onDeleteComment
+        ) {
+          return;
+        }
+
+        Alert.alert(
+          "Delete comment?",
+          "This comment will be removed. This action cannot be undone.",
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+            {
+              text: "Delete",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await onDeleteComment(
+                    comment,
+                  );
+
+                  if (
+                    editingComment?.id ===
+                    comment.id
+                  ) {
+                    resetComposer();
+                  }
+                } catch (error) {
+                  console.log(
+                    "Delete comment failed:",
+                    error,
+                  );
+
+                  Alert.alert(
+                    "Unable to delete comment",
+                    "Please try again.",
+                  );
+                }
+              },
+            },
+          ],
+        );
+      },
+      [
+        currentUserId,
+        postAuthorId,
+        onDeleteComment,
+        editingComment?.id,
+        resetComposer,
+      ],
+    );
+
+  const handleSubmitPress = useCallback(async () => {
+    if (!canWriteComment) {
+      onRequestFollow?.();
+      return;
+    }
+
+    const content =
+      inputTextRef.current.trim();
+
+    if (
+      !content ||
+      isComposerBusy
+    ) {
+      return;
+    }
+
+    /*
+     * Edit mode uses the same stable input as comment/reply mode.
+     */
+    if (editingComment) {
+      if (!onEditComment) {
+        return;
+      }
+
+      try {
+        await onEditComment(
+          editingComment,
+          content,
+        );
+
+        resetComposer();
+      } catch (error) {
+        console.log(
+          "Edit comment failed:",
+          error,
+        );
+
+        Alert.alert(
+          "Unable to edit comment",
+          "Please try again.",
+        );
+      }
+
+      return;
+    }
+
+    const selectedReply =
+      replyingTo;
+
+    if (selectedReply?.id) {
+      const rootCommentId =
+        selectedReply.parentId ??
+        selectedReply.id;
+
+      setExpandedReplyIds(
+        (previous) => {
+          const next =
+            new Set(previous);
+
+          next.add(
+            rootCommentId,
+          );
+
+          return next;
+        },
+      );
+    }
+
+    setReplyingTo(null);
+
+    inputRef.current?.clear();
+    inputTextRef.current = "";
+    seedValueRef.current = "";
+    setHasText(false);
+
+    onChangeInput("");
+    onSubmit(
+      content,
+      selectedReply,
+    );
+  }, [
+    canWriteComment,
+    onRequestFollow,
+    isComposerBusy,
+    editingComment,
+    onEditComment,
+    resetComposer,
+    replyingTo,
+    onChangeInput,
+    onSubmit,
+  ]);
 
   const handleInputFocus = useCallback(() => {
     if (!canWriteComment) {
@@ -454,13 +1086,35 @@ const handleChangeText = useCallback((text: string) => {
 // }, []);
 
   const handlePostCardCommentPress = useCallback(() => {
-    if (!canWriteComment) { onRequestFollow?.(); return; }
+    if (!canWriteComment) {
+      onRequestFollow?.();
+      return;
+    }
+
     inputRef.current?.focus();
   }, [canWriteComment, onRequestFollow]);
+
+  /*
+   * Use the same ShareBottomSheet callback that the feed uses.
+   * Dismiss the keyboard first so the share sheet is not covered
+   * or resized by the comment composer keyboard.
+   */
+  const handlePostCardSharePress = useCallback(
+    (targetPost: CommunityPost) => {
+      Keyboard.dismiss();
+      inputRef.current?.blur();
+
+      requestAnimationFrame(() => {
+        onPressPostShare?.(targetPost);
+      });
+    },
+    [onPressPostShare],
+  );
 
   const handleClose = useCallback(() => {
     Keyboard.dismiss();
     setReplyingTo(null);
+    setEditingComment(null);
     setExpandedReplyIds(new Set());
     onClose();
   }, [onClose]);
@@ -479,16 +1133,61 @@ const handleChangeText = useCallback((text: string) => {
     />
   ), []);
 
-  const renderItem = useCallback(({ item }: { item: FeedComment }) => (
-    <CommentItem
-      item={item}
-      styles={styles}
-      onReply={handleReply}
-      onPressLike={onPressCommentLike}
-      isRepliesExpanded={expandedReplyIds.has(item.id)}
-      onViewReplies={handleViewReplies}
-    />
-  ), [styles, handleReply, onPressCommentLike, expandedReplyIds, handleViewReplies]);
+  const renderItem = useCallback(
+    ({
+      item,
+    }: {
+      item: FeedComment;
+    }) => (
+      <CommentItem
+        item={item}
+        styles={styles}
+        onReply={handleReply}
+        onPressLike={
+          onPressCommentLike
+        }
+        isRepliesExpanded={
+          expandedReplyIds.has(
+            item.id,
+          )
+        }
+        onViewReplies={
+          handleViewReplies
+        }
+        currentUserId={
+          currentUserId
+        }
+        postAuthorId={
+          postAuthorId
+        }
+        onEdit={
+          onEditComment
+            ? handleStartEdit
+            : undefined
+        }
+        onDelete={
+          onDeleteComment
+            ? handleRequestDelete
+            : undefined
+        }
+        colors={colors}
+      />
+    ),
+    [
+      styles,
+      handleReply,
+      onPressCommentLike,
+      expandedReplyIds,
+      handleViewReplies,
+      currentUserId,
+      postAuthorId,
+      onEditComment,
+      onDeleteComment,
+      handleStartEdit,
+      handleRequestDelete,
+      colors,
+    ],
+  );
 
   const ListHeader = useMemo(() => (
     <View style={styles.postHeaderWrap}>
@@ -500,7 +1199,7 @@ const handleChangeText = useCallback((text: string) => {
           disableMediaPlayback={false}
           onPressLike={onPressPostLike}
           onPressComment={handlePostCardCommentPress}
-          onPressShare={onPressPostShare}
+          onPressShare={handlePostCardSharePress}
           onPressMedia={onPressMedia}
         />
       ) : null}
@@ -508,7 +1207,16 @@ const handleChangeText = useCallback((text: string) => {
         <Text style={styles.commentSectionTitle}>Comments</Text>
       </View>
     </View>
-  ), [post, onPressPostLike, handlePostCardCommentPress, onPressPostShare, onPressMedia, styles]);
+  ), [
+    post,
+    showCommunityHeader,
+    ownedCommunityIds,
+    onPressPostLike,
+    handlePostCardCommentPress,
+    handlePostCardSharePress,
+    onPressMedia,
+    styles,
+  ]);
 
   const ListEmpty = useMemo(() => (
     isLoading ? (
@@ -583,13 +1291,57 @@ const handleChangeText = useCallback((text: string) => {
 
         {/* Input — always visible above keyboard */}
         <View style={styles.inputContainer}>
-          {replyingTo ? (
+          {editingComment ? (
             <View style={styles.replyingBar}>
-              <Text style={styles.replyingText} numberOfLines={1}>
-                Replying to {getCommentAuthorName(replyingTo)}
+              <View style={styles.composerModeTextWrap}>
+                <Ionicons
+                  name="create-outline"
+                  size={15}
+                  color={colors.accent}
+                />
+
+                <Text
+                  style={styles.replyingText}
+                  numberOfLines={1}
+                >
+                  Editing your comment
+                </Text>
+              </View>
+
+              <Pressable
+                hitSlop={8}
+                onPress={handleCancelEdit}
+              >
+                <Ionicons
+                  name="close"
+                  size={16}
+                  color={colors.muted}
+                />
+              </Pressable>
+            </View>
+          ) : replyingTo ? (
+            <View style={styles.replyingBar}>
+              <Text
+                style={styles.replyingText}
+                numberOfLines={1}
+              >
+                Replying to{" "}
+                {getCommentAuthorName(
+                  replyingTo,
+                )}
               </Text>
-              <Pressable hitSlop={8} onPress={() => setReplyingTo(null)}>
-                <Ionicons name="close" size={16} color={colors.muted} />
+
+              <Pressable
+                hitSlop={8}
+                onPress={() =>
+                  setReplyingTo(null)
+                }
+              >
+                <Ionicons
+                  name="close"
+                  size={16}
+                  color={colors.muted}
+                />
               </Pressable>
             </View>
           ) : null}
@@ -597,19 +1349,22 @@ const handleChangeText = useCallback((text: string) => {
           <View style={styles.inputBar}>
           <View style={[styles.inputWrapper, { height: FIXED_INPUT_HEIGHT }]}>
               <BottomSheetTextInput
+                key={resetKey}
                 ref={inputRef as any}
-                defaultValue=""
+                defaultValue={seedValueRef.current}
                 onChangeText={handleChangeText}
                 onFocus={handleInputFocus}
                 placeholder={
                   !canWriteComment
                     ? "Follow community to comment..."
+                    : editingComment
+                    ? "Edit your comment..."
                     : replyingTo
                     ? `Reply to ${getCommentAuthorName(replyingTo)}...`
                     : "Write a comment..."
                 }
                 placeholderTextColor={colors.muted}
-                editable={!isCreating}
+                editable={!isComposerBusy && !isDeletingComment}
                 multiline
                 scrollEnabled={true}
                 textAlignVertical="top"
@@ -620,10 +1375,20 @@ const handleChangeText = useCallback((text: string) => {
             </View>
             <Pressable
               onPress={handleSubmitPress}
-              disabled={!hasText || isCreating}
-              style={[styles.sendButton, !hasText && styles.sendButtonDisabled]}
+              disabled={
+                !hasText ||
+                isComposerBusy ||
+                isDeletingComment
+              }
+              style={[
+                styles.sendButton,
+                (!hasText ||
+                  isComposerBusy ||
+                  isDeletingComment) &&
+                  styles.sendButtonDisabled,
+              ]}
             >
-              {isCreating ? (
+              {isComposerBusy ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Ionicons
@@ -814,7 +1579,16 @@ function createStyles(
       backgroundColor: colors.surfaceSecondary,
     },
 
+    commentTopRow: {
+      minWidth: 120,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+    },
+
     commentAuthor: {
+      flexShrink: 1,
       color: colors.foreground,
       fontSize: 12,
       fontFamily: "Poppins_700Bold",
@@ -963,6 +1737,13 @@ function createStyles(
       justifyContent: "space-between",
       gap: 10,
       backgroundColor: colors.surface,
+    },
+
+    composerModeTextWrap: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
     },
 
     replyingText: {

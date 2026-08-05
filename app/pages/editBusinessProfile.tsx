@@ -12,8 +12,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, FieldError, Input, Label, TextField } from "heroui-native";
-import { BUSINESS_TYPES } from "@/constants/businesstype";
-
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
   useGetMyProfileQuery,
@@ -38,6 +36,7 @@ export default function EditBusinessProfileScreen() {
   );
 const [businessType, setBusinessType] = useState(profile?.businessType ?? "");
 const [customBusinessType, setCustomBusinessType] = useState("");
+const [certificate,setCertificate] = useState("");
   const [businessName, setBusinessName] = useState(
     profile?.businessName ?? "",
   );
@@ -108,6 +107,7 @@ const [customBusinessType, setCustomBusinessType] = useState("");
       );
     }
   };
+  
 
   const content = (
     <View
@@ -169,6 +169,17 @@ const [customBusinessType, setCustomBusinessType] = useState("");
                   />
                   <FieldError />
                 </TextField>
+                <TextField>x
+                  <Label>Location *</Label>
+                </TextField>
+
+                <TextField>
+                  <Label> Bio</Label>
+                </TextField>
+
+                <TextField>
+                  <Label>Website * </Label>
+                </TextField>
 
                 <TextField>
                   <Label>Address *</Label>
@@ -195,6 +206,7 @@ const [customBusinessType, setCustomBusinessType] = useState("");
               />
               <FieldError />
             </TextField>
+          
 
             <TextField>
               <Label>{phoneLabel} *</Label>

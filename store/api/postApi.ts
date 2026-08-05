@@ -54,6 +54,13 @@ type CommentReactionResponse = {
   liked: boolean;
 };
 
+type UpdateCommentApiResponse =
+  | PostComment
+  | {
+      message?: string;
+      comment: PostComment;
+    };
+
 /* =========================================================
    POST API
    ========================================================= */
@@ -727,10 +734,30 @@ getHomeFeedPosts: builder.query<
         body,
       }),
 
+      /*
+       * Supports both backend response shapes:
+       * 1. direct comment object
+       * 2. { message, comment }
+       */
+      transformResponse: (
+        response: UpdateCommentApiResponse,
+      ): PostComment => {
+        if (
+          response &&
+          typeof response === "object" &&
+          "comment" in response
+        ) {
+          return response.comment;
+        }
+
+        return response;
+      },
+
       invalidatesTags: (_result, _error, arg) => [
         { type: "PostComment" as const, id: arg.commentId },
         { type: "PostComment" as const, id: `POST-${arg.postId}` },
-        { type: "PostReply" as const, id: `COMMENT-${arg.commentId}` },
+        { type: "Post" as const, id: arg.postId },
+        { type: "Post" as const, id: "HOME-FEED" },
       ],
     }),
 

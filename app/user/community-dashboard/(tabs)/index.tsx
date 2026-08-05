@@ -11,7 +11,11 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useGlobalSearchParams, useLocalSearchParams } from "expo-router";
+import {
+  useGlobalSearchParams,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import { BarChart } from "react-native-gifted-charts";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -63,6 +67,7 @@ function formatWholeNumber(value: string) {
 
 export default function CommunityDashboardScreen() {
   const { colors } = useAppTheme();
+  const router = useRouter();
 
   const localParams = useLocalSearchParams<{
     communityId?: string | string[];
@@ -115,10 +120,18 @@ export default function CommunityDashboardScreen() {
       refetchOnMountOrArgChange: true,
     },
   );
-  const isInstituteCommunity =
-  dashboard?.community.purpose === "BUSINESS" &&
-  (dashboard?.community as any)?.adminVerificationTrack === "TRAINING";
-  const isBusinessCommunity = dashboard?.community.purpose === "BUSINESS";
+  const communityKind =
+  dashboard?.community.communityKind;
+
+const isInstituteCommunity =
+  communityKind === "INSTITUTE";
+
+const isBusinessCommunity =
+  communityKind === "BUSINESS";
+
+const canManageCatalog =
+  isBusinessCommunity ||
+  isInstituteCommunity;
 
   const memberGrowthData = useMemo(
     () => cloneGrowthData(dashboard?.growth.members),
@@ -441,6 +454,241 @@ export default function CommunityDashboardScreen() {
     />
   )}
 </View>
+{canManageCatalog ? (
+  <Pressable
+    onPress={() => {
+      router.push({
+        pathname:
+          "/community-catalog",
+
+        params: {
+          communityId,
+
+          communityKind:
+            communityKind!,
+
+          communityName:
+            dashboard?.community
+              .name ??
+            "",
+        },
+      });
+    }}
+    style={({ pressed }) => [
+      styles.catalogNavigationCard,
+      {
+        backgroundColor:
+          colors.surface,
+
+        borderColor:
+          pressed
+            ? colors.accent
+            : colors.border,
+
+        opacity:
+          pressed
+            ? 0.92
+            : 1,
+      },
+    ]}
+  >
+    <LinearGradient
+      colors={[
+        colors.accent,
+        colors.muted ??
+          "#173B36",
+      ]}
+      start={{
+        x: 0,
+        y: 0,
+      }}
+      end={{
+        x: 1,
+        y: 1,
+      }}
+      style={
+        styles.catalogNavigationIcon
+      }
+    >
+      <Ionicons
+        name={
+          isInstituteCommunity
+            ? "school-outline"
+            : "storefront-outline"
+        }
+        size={26}
+        color="#ffffff"
+      />
+    </LinearGradient>
+
+    <View
+      style={{
+        flex: 1,
+        minWidth: 0,
+      }}
+    >
+      <View
+        style={
+          styles.catalogTitleRow
+        }
+      >
+        <Text
+          style={[
+            styles.catalogNavigationTitle,
+            {
+              color:
+                colors.foreground,
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {isInstituteCommunity
+            ? "Course Catalogue"
+            : "Product Catalogue"}
+        </Text>
+
+        <View
+          style={[
+            styles.catalogManageBadge,
+            {
+              backgroundColor:
+                colors.surfaceSecondary,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.catalogManageBadgeText,
+              {
+                color:
+                  colors.accent,
+              },
+            ]}
+          >
+            Manage
+          </Text>
+        </View>
+      </View>
+
+      <Text
+        style={[
+          styles.catalogNavigationSubtitle,
+          {
+            color:
+              colors.muted,
+          },
+        ]}
+        numberOfLines={2}
+      >
+        {isInstituteCommunity
+          ? "Create, edit and delete courses offered by your institute."
+          : "Create, edit and delete products offered by your business."}
+      </Text>
+
+      <View
+        style={
+          styles.catalogFeatureRow
+        }
+      >
+        <View
+          style={
+            styles.catalogFeatureItem
+          }
+        >
+          <Ionicons
+            name="add-circle-outline"
+            size={14}
+            color={
+              colors.accent
+            }
+          />
+
+          <Text
+            style={[
+              styles.catalogFeatureText,
+              {
+                color:
+                  colors.muted,
+              },
+            ]}
+          >
+            Add
+          </Text>
+        </View>
+
+        <View
+          style={
+            styles.catalogFeatureItem
+          }
+        >
+          <Ionicons
+            name="create-outline"
+            size={14}
+            color={
+              colors.accent
+            }
+          />
+
+          <Text
+            style={[
+              styles.catalogFeatureText,
+              {
+                color:
+                  colors.muted,
+              },
+            ]}
+          >
+            Edit
+          </Text>
+        </View>
+
+        <View
+          style={
+            styles.catalogFeatureItem
+          }
+        >
+          <Ionicons
+            name="trash-outline"
+            size={14}
+            color={
+              colors.accent
+            }
+          />
+
+          <Text
+            style={[
+              styles.catalogFeatureText,
+              {
+                color:
+                  colors.muted,
+              },
+            ]}
+          >
+            Delete
+          </Text>
+        </View>
+      </View>
+    </View>
+
+    <View
+      style={[
+        styles.catalogArrowButton,
+        {
+          backgroundColor:
+            colors.surfaceSecondary,
+        },
+      ]}
+    >
+      <Ionicons
+        name="chevron-forward"
+        size={20}
+        color={
+          colors.accent
+        }
+      />
+    </View>
+  </Pressable>
+) : null}
 
         <View
           style={[
@@ -995,4 +1243,87 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontFamily: "Poppins_400Regular",
   },
+  catalogNavigationCard: {
+  borderWidth: 1,
+  borderRadius: 24,
+  padding: 15,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 13,
+  shadowColor: "#000",
+  shadowOffset: {
+    width: 0,
+    height: 5,
+  },
+  shadowOpacity: 0.06,
+  shadowRadius: 12,
+  elevation: 2,
+},
+
+catalogNavigationIcon: {
+  width: 58,
+  height: 58,
+  borderRadius: 19,
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+},
+
+catalogTitleRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 8,
+  minWidth: 0,
+},
+
+catalogNavigationTitle: {
+  flexShrink: 1,
+  fontSize: 16,
+  fontFamily: "Poppins_700Bold",
+},
+
+catalogManageBadge: {
+  borderRadius: 999,
+  paddingHorizontal: 8,
+  paddingVertical: 3,
+},
+
+catalogManageBadgeText: {
+  fontSize: 9,
+  fontFamily: "Poppins_600SemiBold",
+},
+
+catalogNavigationSubtitle: {
+  marginTop: 3,
+  fontSize: 11,
+  lineHeight: 17,
+  fontFamily: "Poppins_400Regular",
+},
+
+catalogFeatureRow: {
+  marginTop: 8,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 12,
+},
+
+catalogFeatureItem: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 4,
+},
+
+catalogFeatureText: {
+  fontSize: 10,
+  fontFamily: "Poppins_500Medium",
+},
+
+catalogArrowButton: {
+  width: 36,
+  height: 36,
+  borderRadius: 12,
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+},
 });

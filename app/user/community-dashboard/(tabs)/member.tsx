@@ -242,6 +242,9 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
     membersResponse?.viewer?.isOwner === true ||
     membersResponse?.viewer?.canManageMembers === true;
 
+  const isInstituteCommunity =
+    membersResponse?.community?.isInstituteCommunity === true;
+
   const selectedStatusFilter =
     STATUS_FILTERS.find((filter) => filter.value === statusFilter) ??
     STATUS_FILTERS[0];
@@ -332,6 +335,17 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
 
     setSearch("");
     focusSearchInput();
+  }
+
+  function handleOpenVerifiedStudents() {
+    if (!communityId || !isInstituteCommunity) return;
+
+    router.push({
+      pathname: "/user/community-dashboard/(tabs)/students",
+      params: {
+        communityId,
+      },
+    } as never);
   }
 
   function handleStatusFilterChange(nextStatus: MemberStatusFilter) {
@@ -449,24 +463,51 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
   }
   
   async function runSendStudentInvite(member: CommunityMemberItem) {
-  if (!communityId) return;
+    if (!communityId || !isInstituteCommunity) {
+      Alert.alert(
+        "Not available",
+        "Student verification is available only for institute communities.",
+      );
+      return;
+    }
 
-  const memberName = member.user.name ?? "Unknown User";
+    if (member.status !== "ACTIVE") {
+      Alert.alert(
+        "Member not active",
+        "Only active members can receive a student verification invitation.",
+      );
+      return;
+    }
 
-  try {
-    await sendStudentInvite({
-      communityId,
-      targetUserId: member.userId,
-    }).unwrap();
+    if (member.isVerifiedStudent) {
+      Alert.alert(
+        "Already verified",
+        "This member is already a verified student.",
+      );
+      return;
+    }
 
-    Alert.alert(
-      "Invite sent",
-      `A student verification invite has been sent to ${memberName}.`,
-    );
-  } catch (inviteError) {
-    Alert.alert("Failed to send invite", getErrorMessage(inviteError));
+    const memberName = member.user.name ?? "Unknown User";
+
+    try {
+      await sendStudentInvite({
+        communityId,
+        targetUserId: member.userId,
+      }).unwrap();
+
+      Alert.alert(
+        "Invite sent",
+        `A student verification invite has been sent to ${memberName}.`,
+      );
+
+      await refetch();
+    } catch (inviteError) {
+      Alert.alert(
+        "Failed to send invite",
+        getErrorMessage(inviteError),
+      );
+    }
   }
-}
 
   function confirmMemberAction(
     action: Extract<MemberAction, "ban" | "unban" | "remove">,
@@ -526,19 +567,18 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
     if (!selectedMember || isActionLoading) return;
 
     const member = selectedMember;
-    const memberName = member.user.name ?? "Unknown User";
 
     if (action === "view") {
-  closeActionSheet();
-  router.push(`/user/profile/${member.userId}`);
-  return;
-}
-  if (action === "invite") {
-    closeActionSheet();
-    void runSendStudentInvite(member);
-    return;
-  }
+      closeActionSheet();
+      router.push(`/user/profile/${member.userId}` as never);
+      return;
+    }
 
+    if (action === "invite") {
+      closeActionSheet();
+      void runSendStudentInvite(member);
+      return;
+    }
 
     if (action === "ban" || action === "unban" || action === "remove") {
       confirmMemberAction(action, member);
@@ -558,6 +598,25 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
           </View>
 
           <View style={styles.headerActions}>
+            {isInstituteCommunity ? (
+              <Pressable
+                onPress={handleOpenVerifiedStudents}
+                accessibilityRole="button"
+                accessibilityLabel="Open verified students"
+                style={({ pressed }) => [
+                  styles.headerIconButton,
+                  styles.headerIconButtonActive,
+                  pressed && { opacity: 0.75 },
+                ]}
+              >
+                <Ionicons
+                  name="school-outline"
+                  size={20}
+                  color={colors.accent}
+                />
+              </Pressable>
+            ) : null}
+
             <Pressable
               onPress={handleSearchButtonPress}
               style={({ pressed }) => [
@@ -751,7 +810,7 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
         contentContainerStyle={[
           styles.listContent,
           {
-            paddingBottom: Math.max(130, insets.bottom + 120),
+            paddingBottom: 24,
           },
           members.length === 0 && styles.emptyListContent,
         ]}
@@ -827,6 +886,20 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
               label="Status"
               value={formatLabel(selectedMember?.status, "Active")}
             />
+
+            {isInstituteCommunity ? (
+              <DetailItem
+                icon="school-outline"
+                label="Student verification"
+                value={
+                  selectedMember?.isVerifiedStudent
+                    ? selectedMember.studentBatch
+                      ? `Verified • ${selectedMember.studentBatch}`
+                      : "Verified"
+                    : "Not verified"
+                }
+              />
+            ) : null}
           </View>
 
           <View style={styles.actionGrid}>
@@ -837,14 +910,17 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
               onPress={() => handleMemberAction("view")}
             />
 
-         {canManageMembers && selectedMember?.status === "ACTIVE" ? (
-  <GridAction
-    icon="school-outline"
-    label={isSendingInvite ? "Sending..." : "Invite as student"}
-    disabled={isActionLoading}
-    onPress={() => handleMemberAction("invite")}
-  />
-) : null}
+            {isInstituteCommunity &&
+            canManageMembers &&
+            selectedMember?.status === "ACTIVE" &&
+            !selectedMember?.isVerifiedStudent ? (
+              <GridAction
+                icon="school-outline"
+                label={isSendingInvite ? "Sending..." : "Invite as student"}
+                disabled={isActionLoading}
+                onPress={() => handleMemberAction("invite")}
+              />
+            ) : null}
 
             {canManageMembers && selectedMember?.status === "BANNED" ? (
               <GridAction
@@ -990,7 +1066,7 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
 
   return (
     <Pressable
-      onPress={() => router.push(`/user/profile/${member.userId}`)}
+      onPress={() => router.push(`/user/profile/${member.userId}` as never)}
       style={({ pressed }) => [
         styles.memberCard,
         pressed && { opacity: 0.85 },
@@ -1019,6 +1095,21 @@ const isActionLoading = isBanning || isUnbanning || isRemoving || isSendingInvit
         <Text numberOfLines={1} style={styles.memberRoleText}>
           {role}
         </Text>
+
+        {isInstituteCommunity && member.isVerifiedStudent ? (
+          <View style={styles.verifiedStudentRow}>
+            <Ionicons
+              name="school"
+              size={13}
+              color={colors.accent}
+            />
+
+            <Text numberOfLines={1} style={styles.verifiedStudentText}>
+              Verified student
+              {member.studentBatch ? ` • ${member.studentBatch}` : ""}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {canManageMembers ? (
@@ -1199,6 +1290,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>["colors"]) {
     headerIconButton: {
       width: 42,
       height: 42,
+      borderRadius: 21,
+      borderWidth: 1,
+      borderColor: colors.border,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.surfaceSecondary,
@@ -1354,6 +1448,19 @@ memberRoleText: {
   fontSize: 11,
   lineHeight: 16,
   fontFamily: "Poppins_500Medium",
+},
+verifiedStudentRow: {
+  marginTop: 4,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 5,
+},
+verifiedStudentText: {
+  flexShrink: 1,
+  color: colors.accent,
+  fontSize: 11,
+  lineHeight: 16,
+  fontFamily: "Poppins_600SemiBold",
 },
 statusDotText: {
   fontSize: 11,

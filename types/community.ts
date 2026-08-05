@@ -36,6 +36,10 @@ export type CommunityJoinRequestStatus =
 
 export type CommunitySortBy = "newest" | "oldest" | "name_asc" | "name_desc";
 
+export type BusinessCommunityKind =
+  | "BUSINESS"
+  | "INSTITUTE";
+
 /* =========================================================
    PERMISSION TYPES
    ========================================================= */
@@ -62,21 +66,38 @@ export type CommunityItem = {
   id: string;
   name: string;
   slug: string;
+
   description?: string | null;
   avatarImage?: string | null;
   coverImage?: string | null;
+
   visibility: CommunityVisibility;
   status: CommunityStatus;
-  purpose: CommunityPurpose; 
+  purpose: CommunityPurpose;
+
+  /**
+   * Null for GENERAL and DISTRICT_OFFICIAL communities.
+   */
+  communityKind?:
+    | BusinessCommunityKind
+    | null;
+
+  isBusinessCommunity?: boolean;
+  isInstituteCommunity?: boolean;
+
   categoryId?: string;
   adminId?: string;
+
   createdAt?: string;
   updatedAt?: string;
+
   myJoinRequestId?: string | null;
-myJoinRequestStatus?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | null;
-isOwner:any;
-  studentBatch?: string | null;
-   isVerifiedStudent?: boolean;
+
+  myJoinRequestStatus?:
+    | CommunityJoinRequestStatus
+    | null;
+
+  isOwner: boolean;
 
   category?: CommunityCategory | null;
 
@@ -84,12 +105,15 @@ isOwner:any;
   memberCount: number;
 
   isJoined: boolean;
-  myRole: CommunityRole | null;
-  myMemberStatus: CommunityMemberStatus | null;
-  adminVerificationTrack?: string | null;   // ADD
-  isInstituteCommunity?: boolean;   
-};
 
+  myRole:
+    | CommunityRole
+    | null;
+
+  myMemberStatus:
+    | CommunityMemberStatus
+    | null;
+};
 export type CommunityAccessItem = {
   communityId: string;
   slug: string;
@@ -126,30 +150,36 @@ export type CommunityMemberItem = {
   userId: string;
 
   role: CommunityRole;
-  isVerifiedStudent?: boolean;
-studentBatch?: string | null;
 
   /**
-   * Normal joined members may not receive status.
-   * Owner/admin/member manager receives status.
+   * Management member endpoints return status.
+   * Some public member endpoints may omit it.
    */
   status?: CommunityMemberStatus;
 
   joinedAt: string;
 
   /**
-   * These only come for owner/admin/member manager.
+   * Student fields are meaningful only for
+   * institute communities.
    */
+  isVerifiedStudent?: boolean;
+  studentBatch?: string | null;
+
   permissions?: CommunityPermissions;
 
-    canEditCommunity?: boolean;
+  /**
+   * Some existing moderator screens use
+   * permission fields directly.
+   */
+  canEditCommunity?: boolean;
   canManageMembers?: boolean;
   canManagePosts?: boolean;
   canManageComments?: boolean;
   canManageReports?: boolean;
+
   user: CommunityMemberUser;
 };
-
 export type CommunityJoinRequestItem = {
   id: string;
   status: CommunityJoinRequestStatus;
@@ -277,47 +307,96 @@ export type CommunityStatusResponse = {
   community: CommunityItem;
 };
 
-export type CommunityMembersResponse = PaginatedResponse<CommunityMemberItem> & {
-  community: {
-    id: string;
-    name: string;
-    slug: string;
-    visibility: CommunityVisibility;
+export type CommunityMembersResponse =
+  PaginatedResponse<CommunityMemberItem> & {
+    community: {
+      id: string;
+      name: string;
+      slug: string;
+
+      visibility:
+        CommunityVisibility;
+
+      purpose:
+        CommunityPurpose;
+
+      communityKind:
+        | BusinessCommunityKind
+        | null;
+
+      isBusinessCommunity:
+        boolean;
+
+      isInstituteCommunity:
+        boolean;
+    };
+
+    viewer: {
+      isOwner: boolean;
+      canManageMembers: boolean;
+
+      role:
+        | CommunityRole
+        | null;
+
+      status:
+        | CommunityMemberStatus
+        | null;
+    };
+
+    filters: {
+      search:
+        | string
+        | null;
+
+      status:
+        CommunityMemberStatus;
+    };
   };
-
-  viewer: {
-    isOwner: boolean;
-    isActiveMember: boolean;
-    canManageMembers: boolean;
-    role: CommunityRole | null;
-    status: CommunityMemberStatus | null;
-  };
-
-  filters: {
-    search: string | null;
-    status: CommunityMemberStatus;
-  }
-};
-
 export type CommunityModeratorsResponse =
   PaginatedResponse<CommunityMemberItem> & {
     community: {
       id: string;
       name: string;
       slug: string;
-      visibility: CommunityVisibility;
+
+      visibility:
+        CommunityVisibility;
+
+      purpose?:
+        CommunityPurpose;
+
+      communityKind?:
+        | BusinessCommunityKind
+        | null;
+
+      isBusinessCommunity?:
+        boolean;
+
+      isInstituteCommunity?:
+        boolean;
     };
 
     viewer: {
       isOwner: boolean;
       canManageMembers: boolean;
-      role: CommunityRole | null;
-      status: CommunityMemberStatus | null;
+
+      role:
+        | CommunityRole
+        | null;
+
+      status:
+        | CommunityMemberStatus
+        | null;
     };
 
     filters: {
-      search: string | null;
-      status: CommunityMemberStatus;
+      search:
+        | string
+        | null;
+
+      status:
+        CommunityMemberStatus;
     };
   };
 
@@ -334,20 +413,47 @@ export type CommunityDashboardOverviewResponse = {
     id: string;
     name: string;
     slug: string;
-    visibility: CommunityVisibility;
-      purpose: "GENERAL" | "DISTRICT_OFFICIAL" | "BUSINESS";        // ADD
-    adminVerificationTrack: "BUSINESS" | "INDIVIDUAL" | "TRAINING" | null; 
 
+    visibility:
+      CommunityVisibility;
+
+    purpose:
+      CommunityPurpose;
+
+    communityKind:
+      | BusinessCommunityKind
+      | null;
+
+    isBusinessCommunity:
+      boolean;
+
+    isInstituteCommunity:
+      boolean;
   };
-
-
 
   kpis: {
     members: number;
     posts: number;
     banned: number;
     moderators: number;
-       verifiedStudents: number;   
+
+    pendingJoinRequests:
+      number;
+
+    verifiedStudents:
+      number;
+  };
+
+  chartFilter: {
+    year: number;
+
+    month:
+      | number
+      | null;
+
+    mode:
+      | "DAILY"
+      | "MONTHLY";
   };
 
   growth: {
@@ -355,6 +461,7 @@ export type CommunityDashboardOverviewResponse = {
       value: number;
       label: string;
     }[];
+
     posts: {
       value: number;
       label: string;
@@ -363,12 +470,26 @@ export type CommunityDashboardOverviewResponse = {
 
   viewer: {
     isOwner: boolean;
-    isActiveMember: boolean;
-    role: CommunityRole | null;
-    canManageMembers: boolean;
-    canManagePosts: boolean;
+
+    role:
+      | CommunityRole
+      | null;
+
+    canEditCommunity:
+      boolean;
+
+    canManageMembers:
+      boolean;
+
+    canManagePosts:
+      boolean;
+
+    canManageComments:
+      boolean;
+
+    canManageReports:
+      boolean;
   };
-  
 };
  export type CommunityDashboardOverviewQuery = {
   communityId: string;

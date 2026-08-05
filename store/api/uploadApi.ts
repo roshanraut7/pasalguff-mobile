@@ -8,6 +8,7 @@ export type UploadResponse = {
   size: number;
   originalSize?: number;
 };
+
 export type UploadedFileResponse = {
   url: string;
   filename: string;
@@ -16,12 +17,23 @@ export type UploadedFileResponse = {
   size: number;
   originalSize: number;
 };
- 
+
 export type UploadVerificationDocumentArgs = {
   uri: string;
   fileName?: string | null;
   mimeType?: string | null;
   side: "front" | "back";
+};
+
+export type UploadMediaFilePayload = {
+  uri: string;
+  name?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+};
+
+export type UploadPostMediaPayload = {
+  files: UploadMediaFilePayload[];
 };
 
 export type UploadPostMediaItem = {
@@ -39,6 +51,27 @@ export type UploadPostMediaResponse = {
   items: UploadPostMediaItem[];
 };
 
+export type UploadCatalogImagesPayload = {
+  files: UploadMediaFilePayload[];
+};
+
+export type UploadCatalogImageItem = {
+  index: number;
+  url: string;
+  filename: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+  originalSize: number;
+};
+
+export type UploadCatalogImagesResponse = {
+  message: string;
+  total: number;
+  pictures: string[];
+  items: UploadCatalogImageItem[];
+};
+
 type UploadFilePayload = {
   uri: string;
   fileName?: string | null;
@@ -46,122 +79,260 @@ type UploadFilePayload = {
   mimeType?: string | null;
 };
 
-export type UploadPostMediaFilePayload = {
-  uri: string;
-  name?: string | null;
-  fileName?: string | null;
-  mimeType?: string | null;
-};
+function buildSingleFileFormData(
+  payload: UploadFilePayload,
+  fallbackPrefix: string,
+) {
+  const formData = new FormData();
 
-export type UploadPostMediaPayload = {
-  files: UploadPostMediaFilePayload[];
-};
+  formData.append(
+    "file",
+    {
+      uri: payload.uri,
 
-function buildFormData(payload: UploadFilePayload, fallbackPrefix: string) {
-  const form = new FormData();
+      name:
+        payload.fileName ??
+        payload.name ??
+        `${fallbackPrefix}-${Date.now()}.jpg`,
 
-  form.append("file", {
-    uri: payload.uri,
-    name:
-      payload.fileName ??
-      payload.name ??
-      `${fallbackPrefix}-${Date.now()}.jpg`,
-    type: payload.mimeType ?? "image/jpeg",
-  } as any);
+      type:
+        payload.mimeType ??
+        "image/jpeg",
+    } as any,
+  );
 
-  return form;
+  return formData;
 }
 
-function buildPostImageFormData(payload: UploadPostMediaPayload) {
-  const form = new FormData();
+function buildMultipleImageFormData(
+  files: UploadMediaFilePayload[],
+  fallbackPrefix: string,
+) {
+  const formData = new FormData();
 
-  payload.files.forEach((file, index) => {
-    form.append("files", {
-      uri: file.uri,
-      name:
-        file.fileName ??
-        file.name ??
-        `post-image-${Date.now()}-${index}.jpg`,
-      type: file.mimeType ?? "image/jpeg",
-    } as any);
+  files.forEach((file, index) => {
+    formData.append(
+      "files",
+      {
+        uri: file.uri,
+
+        name:
+          file.fileName ??
+          file.name ??
+          `${fallbackPrefix}-${Date.now()}-${index}.jpg`,
+
+        type:
+          file.mimeType ??
+          "image/jpeg",
+      } as any,
+    );
   });
 
-  return form;
+  return formData;
 }
 
-export const uploadApi = baseApi.injectEndpoints({
-  overrideExisting: true,
+export const uploadApi =
+  baseApi.injectEndpoints({
+    overrideExisting: true,
 
-  endpoints: (builder) => ({
-    uploadProfileAvatar: builder.mutation<UploadResponse, UploadFilePayload>({
-      query: (payload) => ({
-        url: "/uploads/profile/avatar",
-        method: "POST",
-        body: buildFormData(payload, "profile-avatar"),
-      }),
-      invalidatesTags: ["Profile", "Onboarding"],
-    }),
+    endpoints: (builder) => ({
+      uploadProfileAvatar:
+        builder.mutation<
+          UploadResponse,
+          UploadFilePayload
+        >({
+          query: (payload) => ({
+            url:
+              "/uploads/profile/avatar",
 
-    uploadProfileCover: builder.mutation<UploadResponse, UploadFilePayload>({
-      query: (payload) => ({
-        url: "/uploads/profile/cover",
-        method: "POST",
-        body: buildFormData(payload, "profile-cover"),
-      }),
-      invalidatesTags: ["Profile", "Onboarding"],
-    }),
+            method:
+              "POST",
 
-    uploadCommunityAvatar: builder.mutation<UploadResponse, UploadFilePayload>({
-      query: (payload) => ({
-        url: "/uploads/community/avatar",
-        method: "POST",
-        body: buildFormData(payload, "community-avatar"),
-      }),
-      invalidatesTags: ["Community", "AdminCommunities"],
-    }),
+            body:
+              buildSingleFileFormData(
+                payload,
+                "profile-avatar",
+              ),
+          }),
 
-    uploadCommunityCover: builder.mutation<UploadResponse, UploadFilePayload>({
-      query: (payload) => ({
-        url: "/uploads/community/cover",
-        method: "POST",
-        body: buildFormData(payload, "community-cover"),
-      }),
-      invalidatesTags: ["Community", "AdminCommunities"],
-    }),
-    uploadVerificationDocument: builder.mutation<
-  UploadedFileResponse,
-  UploadVerificationDocumentArgs
->({
-  query: ({ uri, fileName, mimeType, side }) => {
-    const formData = new FormData();
- 
-    formData.append("file", {
-      uri,
-      name: fileName ?? `verification-${side}-${Date.now()}.jpg`,
-      type: mimeType ?? "image/jpeg",
-    } as any);
- 
-    return {
-      url: `/uploads/verification?side=${side}`,
-      method: "POST",
-      body: formData,
-    };
-  },
-}),
+          invalidatesTags: [
+            "Profile",
+            "Onboarding",
+          ],
+        }),
 
-    uploadPostMedia: builder.mutation<
-      UploadPostMediaResponse,
-      UploadPostMediaPayload
-    >({
-      query: (payload) => ({
-        url: "/uploads/post",
-        method: "POST",
-        body: buildPostImageFormData(payload),
-      }),
-      invalidatesTags: ["Post", "DraftPost"],
+      uploadProfileCover:
+        builder.mutation<
+          UploadResponse,
+          UploadFilePayload
+        >({
+          query: (payload) => ({
+            url:
+              "/uploads/profile/cover",
+
+            method:
+              "POST",
+
+            body:
+              buildSingleFileFormData(
+                payload,
+                "profile-cover",
+              ),
+          }),
+
+          invalidatesTags: [
+            "Profile",
+            "Onboarding",
+          ],
+        }),
+
+      uploadCommunityAvatar:
+        builder.mutation<
+          UploadResponse,
+          UploadFilePayload
+        >({
+          query: (payload) => ({
+            url:
+              "/uploads/community/avatar",
+
+            method:
+              "POST",
+
+            body:
+              buildSingleFileFormData(
+                payload,
+                "community-avatar",
+              ),
+          }),
+
+          invalidatesTags: [
+            "Community",
+            "AdminCommunities",
+          ],
+        }),
+
+      uploadCommunityCover:
+        builder.mutation<
+          UploadResponse,
+          UploadFilePayload
+        >({
+          query: (payload) => ({
+            url:
+              "/uploads/community/cover",
+
+            method:
+              "POST",
+
+            body:
+              buildSingleFileFormData(
+                payload,
+                "community-cover",
+              ),
+          }),
+
+          invalidatesTags: [
+            "Community",
+            "AdminCommunities",
+          ],
+        }),
+
+      uploadVerificationDocument:
+        builder.mutation<
+          UploadedFileResponse,
+          UploadVerificationDocumentArgs
+        >({
+          query: ({
+            uri,
+            fileName,
+            mimeType,
+            side,
+          }) => {
+            const formData =
+              new FormData();
+
+            formData.append(
+              "file",
+              {
+                uri,
+
+                name:
+                  fileName ??
+                  `verification-${side}-${Date.now()}.jpg`,
+
+                type:
+                  mimeType ??
+                  "image/jpeg",
+              } as any,
+            );
+
+            return {
+              url:
+                `/uploads/verification?side=${side}`,
+
+              method:
+                "POST",
+
+              body:
+                formData,
+            };
+          },
+        }),
+
+      uploadPostMedia:
+        builder.mutation<
+          UploadPostMediaResponse,
+          UploadPostMediaPayload
+        >({
+          query: ({ files }) => ({
+            url:
+              "/uploads/post",
+
+            method:
+              "POST",
+
+            body:
+              buildMultipleImageFormData(
+                files,
+                "post-image",
+              ),
+          }),
+
+          invalidatesTags: [
+            "Post",
+            "DraftPost",
+          ],
+        }),
+
+      /**
+       * Upload real catalogue image files.
+       *
+       * Backend route:
+       * POST /uploads/catalog
+       *
+       * Multipart field:
+       * files
+       */
+      uploadCatalogImages:
+        builder.mutation<
+          UploadCatalogImagesResponse,
+          UploadCatalogImagesPayload
+        >({
+          query: ({ files }) => ({
+            url:
+              "/uploads/catalog",
+
+            method:
+              "POST",
+
+            body:
+              buildMultipleImageFormData(
+                files,
+                "catalog-image",
+              ),
+          }),
+        }),
     }),
-  }),
-});
+  });
 
 export const {
   useUploadProfileAvatarMutation,
@@ -169,5 +340,6 @@ export const {
   useUploadCommunityAvatarMutation,
   useUploadCommunityCoverMutation,
   useUploadPostMediaMutation,
-  useUploadVerificationDocumentMutation 
+  useUploadVerificationDocumentMutation,
+  useUploadCatalogImagesMutation,
 } = uploadApi;

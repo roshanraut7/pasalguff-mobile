@@ -7,10 +7,12 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
-import { Controller, useForm } from "react-hook-form";
+import {
+  Controller,
+  useForm,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Ionicons } from "@expo/vector-icons";
-import { setPendingPassword } from "@/lib/pending-auth";
 import {
   Button,
   FieldError,
@@ -20,6 +22,7 @@ import {
   TextField,
 } from "heroui-native";
 
+import { setPendingPassword } from "@/lib/pending-auth";
 import {
   signupSchema,
   type SignupFormValues,
@@ -29,10 +32,19 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { NEPAL_DISTRICTS } from "@/constants/nepalDistricts";
 
 export default function SignupForm() {
-  const [serverError, setServerError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [isDistrictModalOpen, setIsDistrictModalOpen] = useState(false);
+  const [serverError, setServerError] =
+    useState("");
+
+  const [isSubmitting, setIsSubmitting] =
+    useState(false);
+
+  const [showPassword, setShowPassword] =
+    useState(false);
+
+  const [
+    isDistrictModalOpen,
+    setIsDistrictModalOpen,
+  ] = useState(false);
 
   const { colors } = useAppTheme();
 
@@ -42,6 +54,7 @@ export default function SignupForm() {
     formState: { errors },
   } = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
+
     defaultValues: {
       firstName: "",
       lastName: "",
@@ -53,318 +66,456 @@ export default function SignupForm() {
     },
   });
 
- const onSubmit = async (values: SignupFormValues) => {
+  const onSubmit = async (
+    values: SignupFormValues,
+  ) => {
+    if (isSubmitting) {
+      return;
+    }
+
+    setServerError("");
+    setIsSubmitting(true);
+
+    const email = values.email
+      .trim()
+      .toLowerCase();
+
     try {
-      setServerError("");
-      setIsSubmitting(true);
-
-      const email = values.email.trim().toLowerCase();
-
-    await signUpWithEmail({
+      /*
+       * This function should create the account only.
+       *
+       * It should not wait for Stalwart to send the OTP.
+       * The OTP page will send the first OTP after it opens.
+       */
+      await signUpWithEmail({
         firstName: values.firstName.trim(),
         lastName: values.lastName.trim(),
         email,
         password: values.password,
-        districtName: values.districtName.trim(),
-        address: values.address?.trim() || "",
+        districtName:
+          values.districtName.trim(),
+        address:
+          values.address?.trim() || "",
       });
 
-      // await sendSignupOTP(email);
-
+      /*
+       * Keep the password temporarily in memory so the user
+       * can be automatically signed in after verification.
+       */
       setPendingPassword(values.password);
 
+      /*
+       * Open the OTP page immediately.
+       * That page will send the first OTP using autoSend=true.
+       */
       router.replace({
         pathname: "/pages/verify-otp",
-        params: { email },
+        params: {
+          email,
+          autoSend: "true",
+        },
       });
 
-      // no router.replace here anymore —
-      // AuthPage's session-based <Redirect> handles navigation to verify-otp
+      /*
+       * Do not set isSubmitting back to false here.
+       * router.replace removes this screen.
+       */
     } catch (error) {
-      setServerError(error instanceof Error ? error.message : "Signup failed");
-    } finally {
+      setServerError(
+        error instanceof Error
+          ? error.message
+          : "Account creation failed",
+      );
+
+      /*
+       * Reset only when account creation fails.
+       */
       setIsSubmitting(false);
     }
   };
+
   return (
-    <>
-      <View className="gap-4">
-        <View>
-          <Text
-            className="text-foreground"
-            style={{
-              fontSize: 24,
-              fontFamily: "Poppins_700Bold",
-            }}
-          >
-            Sign Up
-          </Text>
+    <View className="gap-4">
+      <View>
+        <Text
+          className="text-foreground"
+          style={{
+            fontSize: 24,
+            fontFamily: "Poppins_700Bold",
+          }}
+        >
+          Sign Up
+        </Text>
 
-          <Text
-            className="text-muted mt-1"
-            style={{
-              fontSize: 14,
-              fontFamily: "Poppins_400Regular",
-            }}
-          >
-            Create your account to get started.
-          </Text>
-        </View>
+        <Text
+          className="text-muted mt-1"
+          style={{
+            fontSize: 14,
+            fontFamily:
+              "Poppins_400Regular",
+          }}
+        >
+          Create your account to get started.
+        </Text>
+      </View>
 
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <Controller
-              control={control}
-              name="firstName"
-              render={({ field: { onChange, value } }) => (
-                <TextField isRequired isInvalid={!!errors.firstName}>
-                  <Label>First Name</Label>
+      <View className="flex-row gap-3">
+        <View className="flex-1">
+          <Controller
+            control={control}
+            name="firstName"
+            render={({
+              field: {
+                onChange,
+                value,
+              },
+            }) => (
+              <TextField
+                isRequired
+                isInvalid={!!errors.firstName}
+              >
+                <Label>First Name</Label>
 
-                  <Input
-                    value={value}
-                    onChangeText={onChange}
-                    placeholder="First name"
-                    autoCapitalize="words"
-                    autoCorrect={false}
-                    className="border-field-border bg-field-background"
-                  />
-
-                  {errors.firstName?.message ? (
-                    <FieldError>{errors.firstName.message}</FieldError>
-                  ) : null}
-                </TextField>
-              )}
-            />
-          </View>
-
-          <View className="flex-1">
-            <Controller
-              control={control}
-              name="lastName"
-              render={({ field: { onChange, value } }) => (
-                <TextField isRequired isInvalid={!!errors.lastName}>
-                  <Label>Last Name</Label>
-
-                  <Input
-                    value={value}
-                    onChangeText={onChange}
-                    placeholder="Last name"
-                    autoCapitalize="words"
-                    autoCorrect={false}
-                    className="border-field-border bg-field-background"
-                  />
-
-                  {errors.lastName?.message ? (
-                    <FieldError>{errors.lastName.message}</FieldError>
-                  ) : null}
-                </TextField>
-              )}
-            />
-          </View>
-        </View>
-
-        <Controller
-          control={control}
-          name="email"
-          render={({ field: { onChange, value } }) => (
-            <TextField isRequired isInvalid={!!errors.email}>
-              <Label>Email</Label>
-
-              <InputGroup className="border-field-border bg-field-background">
-                <InputGroup.Prefix isDecorative>
-                  <Ionicons
-                    name="mail-outline"
-                    size={18}
-                    color={colors.muted}
-                  />
-                </InputGroup.Prefix>
-
-                <InputGroup.Input
+                <Input
                   value={value}
                   onChangeText={onChange}
-                  placeholder="Enter your email"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
+                  placeholder="First name"
+                  autoCapitalize="words"
                   autoCorrect={false}
-                />
-              </InputGroup>
-
-              {errors.email?.message ? (
-                <FieldError>{errors.email.message}</FieldError>
-              ) : null}
-            </TextField>
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="password"
-          render={({ field: { onChange, value } }) => (
-            <TextField isRequired isInvalid={!!errors.password}>
-              <Label>Password</Label>
-
-              <InputGroup className="border-field-border bg-field-background">
-                <InputGroup.Prefix isDecorative>
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={18}
-                    color={colors.muted}
-                  />
-                </InputGroup.Prefix>
-
-                <InputGroup.Input
-                  value={value}
-                  onChangeText={onChange}
-                  placeholder="Enter your password"
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
+                  editable={!isSubmitting}
+                  className="border-field-border bg-field-background"
                 />
 
-                <InputGroup.Suffix>
-                  <Pressable
-                    onPress={() => setShowPassword((previous) => !previous)}
-                    hitSlop={10}
-                  >
-                    <Ionicons
-                      name={showPassword ? "eye-off-outline" : "eye-outline"}
-                      size={18}
-                      color={colors.muted}
-                    />
-                  </Pressable>
-                </InputGroup.Suffix>
-              </InputGroup>
-
-              {errors.password?.message ? (
-                <FieldError>{errors.password.message}</FieldError>
-              ) : null}
-            </TextField>
-          )}
-        />
-
-        {/* DISTRICT FIELD */}
-        <Controller
-          control={control}
-          name="districtName"
-          render={({ field: { onChange, value } }) => (
-            <View>
-              <Text
-                className="text-foreground mb-2"
-                style={{
-                  fontSize: 14,
-                  fontFamily: "Poppins_500Medium",
-                }}
-              >
-                District
-              </Text>
-
-              <Pressable
-                onPress={() => setIsDistrictModalOpen(true)}
-                disabled={isSubmitting}
-                className="h-12 flex-row items-center justify-between rounded-xl border border-field-border bg-field-background px-4"
-                style={{
-                  borderColor: errors.districtName
-                    ? colors.danger
-                    : undefined,
-                }}
-              >
-                <View className="flex-row items-center flex-1">
-                  <Ionicons
-                    name="location-outline"
-                    size={18}
-                    color={colors.muted}
-                  />
-
-                  <Text
-                    className={
-                      value ? "text-foreground ml-3" : "text-muted ml-3"
+                {errors.firstName?.message ? (
+                  <FieldError>
+                    {
+                      errors.firstName
+                        .message
                     }
-                    style={{
-                      fontSize: 14,
-                      fontFamily: "Poppins_400Regular",
-                    }}
-                  >
-                    {value || "Select your district"}
-                  </Text>
-                </View>
+                  </FieldError>
+                ) : null}
+              </TextField>
+            )}
+          />
+        </View>
 
+        <View className="flex-1">
+          <Controller
+            control={control}
+            name="lastName"
+            render={({
+              field: {
+                onChange,
+                value,
+              },
+            }) => (
+              <TextField
+                isRequired
+                isInvalid={!!errors.lastName}
+              >
+                <Label>Last Name</Label>
+
+                <Input
+                  value={value}
+                  onChangeText={onChange}
+                  placeholder="Last name"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  editable={!isSubmitting}
+                  className="border-field-border bg-field-background"
+                />
+
+                {errors.lastName?.message ? (
+                  <FieldError>
+                    {
+                      errors.lastName
+                        .message
+                    }
+                  </FieldError>
+                ) : null}
+              </TextField>
+            )}
+          />
+        </View>
+      </View>
+
+      <Controller
+        control={control}
+        name="email"
+        render={({
+          field: {
+            onChange,
+            value,
+          },
+        }) => (
+          <TextField
+            isRequired
+            isInvalid={!!errors.email}
+          >
+            <Label>Email</Label>
+
+            <InputGroup className="border-field-border bg-field-background">
+              <InputGroup.Prefix isDecorative>
                 <Ionicons
-                  name="chevron-down-outline"
+                  name="mail-outline"
                   size={18}
                   color={colors.muted}
                 />
-              </Pressable>
+              </InputGroup.Prefix>
 
-              {errors.districtName?.message ? (
+              <InputGroup.Input
+                value={value}
+                onChangeText={onChange}
+                placeholder="Enter your email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isSubmitting}
+              />
+            </InputGroup>
+
+            {errors.email?.message ? (
+              <FieldError>
+                {errors.email.message}
+              </FieldError>
+            ) : null}
+          </TextField>
+        )}
+      />
+
+      <Controller
+        control={control}
+        name="password"
+        render={({
+          field: {
+            onChange,
+            value,
+          },
+        }) => (
+          <TextField
+            isRequired
+            isInvalid={!!errors.password}
+          >
+            <Label>Password</Label>
+
+            <InputGroup className="border-field-border bg-field-background">
+              <InputGroup.Prefix isDecorative>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={colors.muted}
+                />
+              </InputGroup.Prefix>
+
+              <InputGroup.Input
+                value={value}
+                onChangeText={onChange}
+                placeholder="Enter your password"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isSubmitting}
+              />
+
+              <InputGroup.Suffix>
+                <Pressable
+                  onPress={() =>
+                    setShowPassword(
+                      (previous) =>
+                        !previous,
+                    )
+                  }
+                  disabled={isSubmitting}
+                  hitSlop={10}
+                >
+                  <Ionicons
+                    name={
+                      showPassword
+                        ? "eye-off-outline"
+                        : "eye-outline"
+                    }
+                    size={18}
+                    color={colors.muted}
+                  />
+                </Pressable>
+              </InputGroup.Suffix>
+            </InputGroup>
+
+            {errors.password?.message ? (
+              <FieldError>
+                {errors.password.message}
+              </FieldError>
+            ) : null}
+          </TextField>
+        )}
+      />
+
+      <Controller
+        control={control}
+        name="districtName"
+        render={({
+          field: {
+            onChange,
+            value,
+          },
+        }) => (
+          <View>
+            <Text
+              className="text-foreground mb-2"
+              style={{
+                fontSize: 14,
+                fontFamily:
+                  "Poppins_500Medium",
+              }}
+            >
+              District
+            </Text>
+
+            <Pressable
+              onPress={() =>
+                setIsDistrictModalOpen(true)
+              }
+              disabled={isSubmitting}
+              className="h-12 flex-row items-center justify-between rounded-xl border border-field-border bg-field-background px-4"
+              style={{
+                borderColor:
+                  errors.districtName
+                    ? colors.danger
+                    : undefined,
+                opacity: isSubmitting
+                  ? 0.6
+                  : 1,
+              }}
+            >
+              <View className="flex-row items-center flex-1">
+                <Ionicons
+                  name="location-outline"
+                  size={18}
+                  color={colors.muted}
+                />
+
                 <Text
+                  className={
+                    value
+                      ? "text-foreground ml-3"
+                      : "text-muted ml-3"
+                  }
                   style={{
-                    color: colors.danger,
-                    fontSize: 12,
-                    marginTop: 5,
-                    fontFamily: "Poppins_400Regular",
+                    fontSize: 14,
+                    fontFamily:
+                      "Poppins_400Regular",
                   }}
                 >
-                  {errors.districtName.message}
+                  {value ||
+                    "Select your district"}
                 </Text>
-              ) : null}
+              </View>
 
-              <Modal
-                visible={isDistrictModalOpen}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setIsDistrictModalOpen(false)}
+              <Ionicons
+                name="chevron-down-outline"
+                size={18}
+                color={colors.muted}
+              />
+            </Pressable>
+
+            {errors.districtName
+              ?.message ? (
+              <Text
+                style={{
+                  color: colors.danger,
+                  fontSize: 12,
+                  marginTop: 5,
+                  fontFamily:
+                    "Poppins_400Regular",
+                }}
               >
-                <View className="flex-1 justify-end bg-black/40">
-                  <View
-                    className="rounded-t-3xl bg-background px-5 pt-5 pb-8"
-                    style={{ maxHeight: "72%" }}
-                  >
-                    <View className="mb-4 flex-row items-center justify-between">
-                      <View>
-                        <Text
-                          className="text-foreground"
-                          style={{
-                            fontSize: 18,
-                            fontFamily: "Poppins_600SemiBold",
-                          }}
-                        >
-                          Select District
-                        </Text>
+                {
+                  errors.districtName
+                    .message
+                }
+              </Text>
+            ) : null}
 
-                        <Text
-                          className="text-muted mt-1"
-                          style={{
-                            fontSize: 12,
-                            fontFamily: "Poppins_400Regular",
-                          }}
-                        >
-                          Choose the district where you are based.
-                        </Text>
-                      </View>
-
-                      <Pressable
-                        onPress={() => setIsDistrictModalOpen(false)}
-                        hitSlop={12}
-                        className="h-9 w-9 items-center justify-center rounded-full bg-field-background"
+            <Modal
+              visible={isDistrictModalOpen}
+              transparent
+              animationType="slide"
+              onRequestClose={() =>
+                setIsDistrictModalOpen(false)
+              }
+            >
+              <View className="flex-1 justify-end bg-black/40">
+                <View
+                  className="rounded-t-3xl bg-background px-5 pt-5 pb-8"
+                  style={{
+                    maxHeight: "72%",
+                  }}
+                >
+                  <View className="mb-4 flex-row items-center justify-between">
+                    <View>
+                      <Text
+                        className="text-foreground"
+                        style={{
+                          fontSize: 18,
+                          fontFamily:
+                            "Poppins_600SemiBold",
+                        }}
                       >
-                        <Ionicons
-                          name="close-outline"
-                          size={24}
-                          color={colors.muted}
-                        />
-                      </Pressable>
+                        Select District
+                      </Text>
+
+                      <Text
+                        className="text-muted mt-1"
+                        style={{
+                          fontSize: 12,
+                          fontFamily:
+                            "Poppins_400Regular",
+                        }}
+                      >
+                        Choose the district
+                        where you are based.
+                      </Text>
                     </View>
 
-                    <ScrollView showsVerticalScrollIndicator={false}>
-                      {NEPAL_DISTRICTS.map((district) => {
-                        const isSelected = value === district;
+                    <Pressable
+                      onPress={() =>
+                        setIsDistrictModalOpen(
+                          false,
+                        )
+                      }
+                      hitSlop={12}
+                      className="h-9 w-9 items-center justify-center rounded-full bg-field-background"
+                    >
+                      <Ionicons
+                        name="close-outline"
+                        size={24}
+                        color={colors.muted}
+                      />
+                    </Pressable>
+                  </View>
+
+                  <ScrollView
+                    showsVerticalScrollIndicator={
+                      false
+                    }
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    {NEPAL_DISTRICTS.map(
+                      (district) => {
+                        const isSelected =
+                          value === district;
 
                         return (
                           <Pressable
                             key={district}
                             onPress={() => {
-                              onChange(district);
-                              setIsDistrictModalOpen(false);
+                              onChange(
+                                district,
+                              );
+
+                              setIsDistrictModalOpen(
+                                false,
+                              );
                             }}
                             className="flex-row items-center justify-between border-b border-field-border py-4"
                           >
@@ -372,9 +523,10 @@ export default function SignupForm() {
                               className="text-foreground"
                               style={{
                                 fontSize: 14,
-                                fontFamily: isSelected
-                                  ? "Poppins_600SemiBold"
-                                  : "Poppins_400Regular",
+                                fontFamily:
+                                  isSelected
+                                    ? "Poppins_600SemiBold"
+                                    : "Poppins_400Regular",
                               }}
                             >
                               {district}
@@ -384,134 +536,178 @@ export default function SignupForm() {
                               <Ionicons
                                 name="checkmark-circle"
                                 size={21}
-                                color={colors.success}
+                                color={
+                                  colors.success
+                                }
                               />
                             ) : null}
                           </Pressable>
                         );
-                      })}
-                    </ScrollView>
-                  </View>
+                      },
+                    )}
+                  </ScrollView>
                 </View>
-              </Modal>
-            </View>
-          )}
-        />
-
-        {/* OPTIONAL ADDRESS FIELD */}
-        <Controller
-          control={control}
-          name="address"
-          render={({ field: { onChange, value } }) => (
-            <TextField isInvalid={!!errors.address}>
-              <Label>Address / Area Optional</Label>
-
-              <InputGroup className="border-field-border bg-field-background">
-                <InputGroup.Prefix isDecorative>
-                  <Ionicons
-                    name="home-outline"
-                    size={18}
-                    color={colors.muted}
-                  />
-                </InputGroup.Prefix>
-
-                <InputGroup.Input
-                  value={value}
-                  onChangeText={onChange}
-                  placeholder="Example: Baneshwor, near Civil Hospital"
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                />
-              </InputGroup>
-
-              {errors.address?.message ? (
-                <FieldError>{errors.address.message}</FieldError>
-              ) : null}
-            </TextField>
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="acceptedTerms"
-          render={({ field: { onChange, value } }) => (
-            <View className="mt-1">
-              <View className="flex-row items-start">
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: value }}
-                  onPress={() => onChange(!value)}
-                  disabled={isSubmitting}
-                  hitSlop={8}
-                  className="mr-3 mt-0.5"
-                >
-                  <Ionicons
-                    name={value ? "checkbox" : "square-outline"}
-                    size={23}
-                    color={value ? colors.success : colors.muted}
-                  />
-                </Pressable>
-
-                <Text
-                  className="text-muted flex-1"
-                  style={{
-                    fontSize: 13,
-                    lineHeight: 21,
-                    fontFamily: "Poppins_400Regular",
-                  }}
-                >
-                  I have read and agree to the{" "}
-                  <Text
-                    onPress={() => router.push("/pages/terms-condition")}
-                    style={{
-                      color: colors.success,
-                      fontFamily: "Poppins_600SemiBold",
-                    }}
-                  >
-                    Terms and Conditions
-                  </Text>
-                  .
-                </Text>
               </View>
+            </Modal>
+          </View>
+        )}
+      />
 
-              {errors.acceptedTerms?.message ? (
+      <Controller
+        control={control}
+        name="address"
+        render={({
+          field: {
+            onChange,
+            value,
+          },
+        }) => (
+          <TextField
+            isInvalid={!!errors.address}
+          >
+            <Label>
+              Address / Area Optional
+            </Label>
+
+            <InputGroup className="border-field-border bg-field-background">
+              <InputGroup.Prefix isDecorative>
+                <Ionicons
+                  name="home-outline"
+                  size={18}
+                  color={colors.muted}
+                />
+              </InputGroup.Prefix>
+
+              <InputGroup.Input
+                value={value}
+                onChangeText={onChange}
+                placeholder="Example: Baneshwor, near Civil Hospital"
+                autoCapitalize="words"
+                autoCorrect={false}
+                editable={!isSubmitting}
+              />
+            </InputGroup>
+
+            {errors.address?.message ? (
+              <FieldError>
+                {errors.address.message}
+              </FieldError>
+            ) : null}
+          </TextField>
+        )}
+      />
+
+      <Controller
+        control={control}
+        name="acceptedTerms"
+        render={({
+          field: {
+            onChange,
+            value,
+          },
+        }) => (
+          <View className="mt-1">
+            <View className="flex-row items-start">
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{
+                  checked: value,
+                }}
+                onPress={() =>
+                  onChange(!value)
+                }
+                disabled={isSubmitting}
+                hitSlop={8}
+                className="mr-3 mt-0.5"
+              >
+                <Ionicons
+                  name={
+                    value
+                      ? "checkbox"
+                      : "square-outline"
+                  }
+                  size={23}
+                  color={
+                    value
+                      ? colors.success
+                      : colors.muted
+                  }
+                />
+              </Pressable>
+
+              <Text
+                className="text-muted flex-1"
+                style={{
+                  fontSize: 13,
+                  lineHeight: 21,
+                  fontFamily:
+                    "Poppins_400Regular",
+                }}
+              >
+                I have read and agree to the{" "}
                 <Text
+                  onPress={() =>
+                    router.push(
+                      "/pages/terms-condition",
+                    )
+                  }
                   style={{
-                    color: colors.danger,
-                    fontSize: 12,
-                    marginTop: 5,
-                    fontFamily: "Poppins_400Regular",
+                    color: colors.success,
+                    fontFamily:
+                      "Poppins_600SemiBold",
                   }}
                 >
-                  {errors.acceptedTerms.message}
+                  Terms and Conditions
                 </Text>
-              ) : null}
+                .
+              </Text>
             </View>
-          )}
-        />
 
-        {serverError ? (
-          <Text
-            style={{
-              color: colors.danger,
-              fontSize: 13,
-              fontFamily: "Poppins_500Medium",
-            }}
-          >
-            {serverError}
-          </Text>
-        ) : null}
+            {errors.acceptedTerms
+              ?.message ? (
+              <Text
+                style={{
+                  color: colors.danger,
+                  fontSize: 12,
+                  marginTop: 5,
+                  fontFamily:
+                    "Poppins_400Regular",
+                }}
+              >
+                {
+                  errors.acceptedTerms
+                    .message
+                }
+              </Text>
+            ) : null}
+          </View>
+        )}
+      />
 
-        <Button
-          onPress={handleSubmit(onSubmit)}
-          isDisabled={isSubmitting}
-          className="mt-2 bg-accent rounded-full"
+      {serverError ? (
+        <Text
+          style={{
+            color: colors.danger,
+            fontSize: 13,
+            fontFamily:
+              "Poppins_500Medium",
+          }}
         >
-          <Button.Label className="text-accent-foreground">
-            {isSubmitting ? "Creating account..." : "Create Account"}
-          </Button.Label>
-        </Button>
-      </View>
-    </>
+          {serverError}
+        </Text>
+      ) : null}
+
+      <Button
+        onPress={handleSubmit(onSubmit)}
+        isDisabled={isSubmitting}
+        className="mt-2 bg-accent rounded-full"
+      >
+        <Button.Label className="text-accent-foreground">
+          {isSubmitting
+            ? "Creating account..."
+            : "Create Account"}
+        </Button.Label>
+      </Button>
+    </View>
   );
 }

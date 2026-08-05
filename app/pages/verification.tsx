@@ -35,7 +35,7 @@ type PickedDoc = {
 const TRACK_LABEL: Record<VerificationTrack, string> = {
   BUSINESS: "Business",
   INDIVIDUAL: "Individual",
-  TRAINING: "Training Professional",
+  TRAINING: "Institute",
 };
 
 const DOCUMENT_TYPE_LABEL: Record<VerificationDocumentType, string> = {
@@ -44,26 +44,16 @@ const DOCUMENT_TYPE_LABEL: Record<VerificationDocumentType, string> = {
   INSTITUTE_CERTIFICATE: "Institute Certificate",
 };
 
-function resolveDocumentType(
-  track: VerificationTrack,
-): VerificationDocumentType {
-  switch (track) {
-    case "BUSINESS":
-      return "PAN";
-    case "TRAINING":
-      return "INSTITUTE_CERTIFICATE";
-    case "INDIVIDUAL":
-    default:
-      return "CITIZENSHIP";
-  }
-}
-
-function needsDocumentNumber(track: VerificationTrack) {
-  return track === "BUSINESS" || track === "INDIVIDUAL";
-}
-
-function needsBackSide(track: VerificationTrack) {
-  return track === "INDIVIDUAL";
+/**
+ * The backend determines the expected document from the
+ * profile type selected during onboarding:
+ *
+ * BUSINESS   -> PAN
+ * INSTITUTE  -> PAN
+ * INDIVIDUAL -> CITIZENSHIP
+ */
+function needsBackSide(documentType: VerificationDocumentType) {
+  return documentType === "CITIZENSHIP";
 }
 
 export default function VerificationScreen() {
@@ -86,13 +76,24 @@ export default function VerificationScreen() {
   const [serverError, setServerError] = useState("");
 
   const expectedTrack = status?.expectedTrack ?? "INDIVIDUAL";
-  const documentType = resolveDocumentType(expectedTrack);
-  const requiresNumber = needsDocumentNumber(expectedTrack);
-  const requiresBack = needsBackSide(expectedTrack);
+
+  // Do not calculate this from the track on the frontend.
+  // Trust the value returned by GET /verification/me.
+  const documentType: VerificationDocumentType =
+    status?.expectedDocumentType ?? "CITIZENSHIP";
+
+  // PAN and citizenship both require a document number.
+  const requiresNumber = true;
+  const requiresBack = needsBackSide(documentType);
 
   const latestRequest = status?.latestRequest ?? null;
   const isPendingReview = latestRequest?.status === "PENDING";
   const isRejected = latestRequest?.status === "REJECTED";
+
+  // Show the actual document used by an existing request.
+  // This also supports older institute-certificate requests.
+  const pendingDocumentType =
+    latestRequest?.documentType ?? documentType;
 
   const canSubmit = useMemo(() => {
     if (!frontImage) return false;
@@ -162,11 +163,10 @@ export default function VerificationScreen() {
       }
 
       await submitRequest({
-        track: expectedTrack,
-        documentType,
-        documentNumber: requiresNumber ? documentNumber.trim() : undefined,
+        // The backend derives track and documentType from profileType.
+        documentNumber: documentNumber.trim(),
         documentFrontUrl: uploadedFront.url,
-        documentBackUrl: uploadedBackUrl,
+        documentBackUrl: uploadedBackUrl ?? null,
       }).unwrap();
 
       setFrontImage(null);
@@ -257,7 +257,10 @@ export default function VerificationScreen() {
             verifiedAt={status.verifiedAt}
           />
         ) : isPendingReview ? (
-          <PendingStateCard colors={colors} documentType={documentType} />
+          <PendingStateCard
+            colors={colors}
+            documentType={pendingDocumentType}
+          />
         ) : (
           <>
             {isRejected && latestRequest?.rejectionReason ? (
@@ -302,26 +305,29 @@ export default function VerificationScreen() {
               </Text>
             </View>
 
-            {requiresNumber ? (
-              <View style={{ marginTop: 18 }}>
-                <TextField>
-                  <Label>
-                    {documentType === "PAN" ? "PAN Number" : "Citizenship Number"}
-                  </Label>
-                  <Input
-                    value={documentNumber}
-                    onChangeText={setDocumentNumber}
-                    placeholder={
-                      documentType === "PAN"
-                        ? "Example: 123456789"
-                        : "Example: 12-34-56-78901"
-                    }
-                    className="border-field-border bg-field-background"
-                  />
-                  <FieldError />
-                </TextField>
-              </View>
-            ) : null}
+            <View style={{ marginTop: 18 }}>
+              <TextField>
+                <Label>
+                  {documentType === "PAN"
+                    ? "PAN Number"
+                    : "Citizenship Number"}
+                </Label>
+
+                <Input
+                  value={documentNumber}
+                  onChangeText={setDocumentNumber}
+                  placeholder={
+                    documentType === "PAN"
+                      ? "Example: 123456789"
+                      : "Example: 12-34-56-78901"
+                  }
+                  autoCapitalize="characters"
+                  className="border-field-border bg-field-background"
+                />
+
+                <FieldError />
+              </TextField>
+            </View>
 
             <View style={{ marginTop: 18, gap: 14 }}>
               <DocPickerCard

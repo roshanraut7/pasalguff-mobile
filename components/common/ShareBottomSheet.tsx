@@ -663,6 +663,7 @@ const ShareBottomSheet = forwardRef<ShareBottomSheetRef, ShareBottomSheetProps>(
       <BottomSheetModal
         ref={sheetRef}
         snapPoints={snapPoints}
+        stackBehavior="push"
         enablePanDownToClose
         backdropComponent={renderBackdrop}
         footerComponent={renderFooter}

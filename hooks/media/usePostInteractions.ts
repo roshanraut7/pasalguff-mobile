@@ -20,7 +20,9 @@ import {
   useSharePostMutation,
   useUnlikeCommentMutation,
   useUnlikePostMutation,
-    useSharePostToFeedMutation,
+  useUpdateCommentMutation,
+  useDeleteCommentMutation,
+  useSharePostToFeedMutation,
 } from "@/store/api/postApi";
 
 import type { CommunityPost } from "@/types/post";
@@ -91,6 +93,67 @@ function updateCommentInTree(
 
     return comment;
   });
+}
+
+function removeCommentFromTree(
+  comments: FeedComment[],
+  commentId: string,
+): FeedComment[] {
+  return comments
+    .filter((comment) => comment.id !== commentId)
+    .map((comment) => {
+      const previousReplies = comment.replies ?? [];
+      const nextReplies = removeCommentFromTree(
+        previousReplies,
+        commentId,
+      );
+
+      const removedReplyCount =
+        previousReplies.length - nextReplies.length;
+
+      if (removedReplyCount === 0) {
+        return comment;
+      }
+
+      return {
+        ...comment,
+        replies: nextReplies,
+        replyCount: Math.max(
+          0,
+          (comment.replyCount ?? previousReplies.length) -
+            removedReplyCount,
+        ),
+      };
+    });
+}
+
+function normalizeUpdatedComment(
+  payload: unknown,
+  currentComment: FeedComment,
+  fallbackContent: string,
+): FeedComment {
+  const possiblePayload = payload as {
+    comment?: Partial<FeedComment>;
+  } & Partial<FeedComment>;
+
+  const updated =
+    possiblePayload?.comment ?? possiblePayload;
+
+  return {
+    ...currentComment,
+    ...updated,
+    content:
+      updated?.content ??
+      fallbackContent,
+    replies:
+      updated?.replies ??
+      currentComment.replies ??
+      [],
+    replyCount:
+      updated?.replyCount ??
+      currentComment.replyCount ??
+      0,
+  } as FeedComment;
 }
 
 function getCommentLiked(comment: FeedComment) {
@@ -201,6 +264,12 @@ export function usePostInteractions<TPost extends CommunityPost>({
 
   const [createCommentReply, { isLoading: isCreatingReply }] =
     useCreateCommentReplyMutation();
+
+  const [updateComment, { isLoading: isUpdatingComment }] =
+    useUpdateCommentMutation();
+
+  const [deleteComment, { isLoading: isDeletingComment }] =
+    useDeleteCommentMutation();
 
   useEffect(() => {
     if (!commentsResponse || !activeCommentPost?.id) return;
@@ -763,6 +832,144 @@ const handleCreateComment = useCallback(
     updatePostCommentCount,
   ],
 );
+
+  const handleUpdateComment = useCallback(
+    async (
+      comment: FeedComment,
+      content: string,
+    ) => {
+      if (!activeCommentPost) {
+        throw new Error("No active post");
+      }
+
+      const trimmedContent =
+        content.trim();
+
+      if (!trimmedContent) {
+        throw new Error(
+          "Comment content is required",
+        );
+      }
+
+      const previousComment =
+        comment;
+
+      /*
+       * Optimistically update the visible comment so editing feels instant.
+       */
+      setComments((previous) =>
+        updateCommentInTree(
+          previous,
+          comment.id,
+          (current) => ({
+            ...current,
+            content:
+              trimmedContent,
+            editedAt:
+              new Date().toISOString(),
+          }),
+        ),
+      );
+
+      try {
+        const payload =
+          await updateComment({
+            communityId:
+              activeCommentPost.communityId,
+            postId:
+              activeCommentPost.id,
+            commentId:
+              comment.id,
+            body: {
+              content:
+                trimmedContent,
+            },
+          }).unwrap();
+
+        setComments((previous) =>
+          updateCommentInTree(
+            previous,
+            comment.id,
+            (current) =>
+              normalizeUpdatedComment(
+                payload,
+                current,
+                trimmedContent,
+              ),
+          ),
+        );
+      } catch (error) {
+        /*
+         * Roll back the optimistic update when the API fails.
+         */
+        setComments((previous) =>
+          updateCommentInTree(
+            previous,
+            comment.id,
+            () =>
+              previousComment,
+          ),
+        );
+
+        console.log(
+          "Update comment failed:",
+          error,
+        );
+
+        throw error;
+      }
+    },
+    [
+      activeCommentPost,
+      updateComment,
+    ],
+  );
+
+  const handleDeleteComment = useCallback(
+    async (
+      comment: FeedComment,
+    ) => {
+      if (!activeCommentPost) {
+        throw new Error("No active post");
+      }
+
+      try {
+        await deleteComment({
+          communityId:
+            activeCommentPost.communityId,
+          postId:
+            activeCommentPost.id,
+          commentId:
+            comment.id,
+        }).unwrap();
+
+        setComments((previous) =>
+          removeCommentFromTree(
+            previous,
+            comment.id,
+          ),
+        );
+
+        updatePostCommentCount(
+          activeCommentPost.id,
+          -1,
+        );
+      } catch (error) {
+        console.log(
+          "Delete comment failed:",
+          error,
+        );
+
+        throw error;
+      }
+    },
+    [
+      activeCommentPost,
+      deleteComment,
+      updatePostCommentCount,
+    ],
+  );
+
   return {
     commentPost,
     activeCommentPost,
@@ -776,6 +983,8 @@ const handleCreateComment = useCallback(
     isFetchingComments,
     isCreatingComment,
     isCreatingReply,
+    isUpdatingComment,
+    isDeletingComment,
 
     /**
      * Feed-only Dislike modal state.
@@ -791,6 +1000,8 @@ const handleCreateComment = useCallback(
     closeComments,
     handleLikePost,
     handleCommentLike,
+    handleUpdateComment,
+    handleDeleteComment,
     handleDislikePost,
     handleSubmitDislike,
     closeDislikeModal,

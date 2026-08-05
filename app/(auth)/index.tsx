@@ -1,16 +1,23 @@
-import React, { useEffect, useState } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StatusBar,
   Text,
   View,
-  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Redirect, useLocalSearchParams } from "expo-router";
+import {
+  Redirect,
+  useLocalSearchParams,
+} from "expo-router";
 
 import LoginForm from "@/components/form/LoginForm";
 import SignupForm from "@/components/form/SignupForm";
@@ -21,24 +28,56 @@ type AuthMode = "login" | "signup";
 
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>("login");
-  const params = useLocalSearchParams<{ mode?: string }>();
+
+  const params = useLocalSearchParams<{
+    mode?: string | string[];
+  }>();
+
+  const requestedMode = Array.isArray(params.mode)
+    ? params.mode[0]
+    : params.mode;
 
   const { data: session, isPending } = useSession();
   const { colors, isDark } = useAppTheme();
 
+  /*
+   * This prevents later Better Auth session refreshes from replacing
+   * the complete login/signup page with a loading spinner.
+   */
+  const hasCompletedInitialSessionCheck = useRef(false);
+
   useEffect(() => {
-    if (params.mode === "signup") {
+    if (!isPending) {
+      hasCompletedInitialSessionCheck.current = true;
+    }
+  }, [isPending]);
+
+  useEffect(() => {
+    if (requestedMode === "signup") {
       setMode("signup");
+      return;
     }
 
-    if (params.mode === "login") {
+    if (requestedMode === "login") {
       setMode("login");
     }
-  }, [params.mode]);
+  }, [requestedMode]);
 
-  if (isPending) {
+  /*
+   * Show the full-screen loading indicator only during the first
+   * session check when the app/auth page initially opens.
+   */
+  if (
+    isPending &&
+    !hasCompletedInitialSessionCheck.current
+  ) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <SafeAreaView
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+        }}
+      >
         <View
           style={{
             flex: 1,
@@ -46,35 +85,71 @@ export default function AuthPage() {
             justifyContent: "center",
           }}
         >
-          <ActivityIndicator size="large" color={colors.accent} />
+          <ActivityIndicator
+            size="large"
+            color={colors.accent}
+          />
         </View>
       </SafeAreaView>
     );
   }
-if (session?.user) {
-  const role = session.user.role;
-  const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
-  const onboardingCompleted = session.user.onboardingCompleted;
 
-  if (!session.user.emailVerified) {
-    return <Redirect href={{ pathname: "/pages/verify-otp", params: { email: session.user.email } }} />;
+  /*
+   * Redirect only authenticated users whose email has already
+   * been verified.
+   *
+   * SignupForm controls navigation to the OTP page for new users.
+   */
+  if (
+    !isPending &&
+    session?.user?.emailVerified
+  ) {
+    const role = session.user.role;
+
+    const isAdmin =
+      role === "ADMIN" ||
+      role === "SUPER_ADMIN";
+
+    const onboardingCompleted =
+      session.user.onboardingCompleted;
+
+    if (isAdmin) {
+      return <Redirect href="/admin" />;
+    }
+
+    if (!onboardingCompleted) {
+      return <Redirect href="/onboarding" />;
+    }
+
+    return <Redirect href="/(tabs)" />;
   }
-  if (isAdmin) return <Redirect href="/admin" />;
-  if (!onboardingCompleted) return <Redirect href="/onboarding" />;
-  return <Redirect href="/(tabs)" />;
-}
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+      }}
+    >
       <StatusBar
-        barStyle={isDark ? "light-content" : "dark-content"}
+        barStyle={
+          isDark
+            ? "light-content"
+            : "dark-content"
+        }
         backgroundColor={colors.background}
       />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : "height"
+        }
+        keyboardVerticalOffset={
+          Platform.OS === "ios" ? 0 : 20
+        }
       >
         <ScrollView
           contentContainerStyle={{
@@ -100,7 +175,8 @@ if (session?.user) {
                 style={{
                   color: colors.segmentForeground,
                   fontSize: 13,
-                  fontFamily: "Poppins_600SemiBold",
+                  fontFamily:
+                    "Poppins_600SemiBold",
                 }}
               >
                 Kam Kuro
@@ -116,7 +192,9 @@ if (session?.user) {
                 textAlign: "center",
               }}
             >
-              {mode === "login" ? "Welcome Back" : "Create Account"}
+              {mode === "login"
+                ? "Welcome Back"
+                : "Create Account"}
             </Text>
 
             <Text
@@ -125,7 +203,8 @@ if (session?.user) {
                 fontSize: 15,
                 lineHeight: 24,
                 maxWidth: 330,
-                fontFamily: "Poppins_400Regular",
+                fontFamily:
+                  "Poppins_400Regular",
                 textAlign: "center",
                 marginTop: 8,
               }}
@@ -149,12 +228,15 @@ if (session?.user) {
           >
             <Pressable
               onPress={() => setMode("login")}
+              disabled={mode === "login"}
               style={{
                 flex: 1,
                 paddingVertical: 12,
                 borderRadius: 999,
                 backgroundColor:
-                  mode === "login" ? colors.accent : "transparent",
+                  mode === "login"
+                    ? colors.accent
+                    : "transparent",
                 alignItems: "center",
                 justifyContent: "center",
               }}
@@ -166,7 +248,8 @@ if (session?.user) {
                       ? colors.accentForeground
                       : colors.foreground,
                   fontSize: 14,
-                  fontFamily: "Poppins_600SemiBold",
+                  fontFamily:
+                    "Poppins_600SemiBold",
                 }}
               >
                 Login
@@ -175,12 +258,15 @@ if (session?.user) {
 
             <Pressable
               onPress={() => setMode("signup")}
+              disabled={mode === "signup"}
               style={{
                 flex: 1,
                 paddingVertical: 12,
                 borderRadius: 999,
                 backgroundColor:
-                  mode === "signup" ? colors.accent : "transparent",
+                  mode === "signup"
+                    ? colors.accent
+                    : "transparent",
                 alignItems: "center",
                 justifyContent: "center",
               }}
@@ -192,7 +278,8 @@ if (session?.user) {
                       ? colors.accentForeground
                       : colors.foreground,
                   fontSize: 14,
-                  fontFamily: "Poppins_600SemiBold",
+                  fontFamily:
+                    "Poppins_600SemiBold",
                 }}
               >
                 Sign Up
@@ -210,7 +297,11 @@ if (session?.user) {
               padding: 18,
             }}
           >
-            {mode === "login" ? <LoginForm /> : <SignupForm />}
+            {mode === "login" ? (
+              <LoginForm />
+            ) : (
+              <SignupForm />
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

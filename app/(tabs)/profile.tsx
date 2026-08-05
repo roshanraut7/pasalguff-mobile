@@ -13,9 +13,9 @@ import {
   RefreshControl,
   Text,
   View,
-  Modal
+  Modal,
 } from "react-native";
-import { Redirect, router } from "expo-router";
+import { Redirect, router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Menu, Tabs } from "heroui-native";
@@ -30,8 +30,6 @@ import { useGetMyCommunitiesQuery } from "@/store/api/communityApi";
 import type { CommunityItem } from "@/types/community";
 import VerifiedBadge from "@/components/common/verifiedBadge";
 import { useGetMyVerificationStatusQuery } from "@/store/api/verificationApi";
-import { useGetMyBusinessCommunityStatusQuery } from "@/store/api/businessCommunityApi";
-import StudentBadge from "@/components/common/StudentBadge"; // adjust path if needed
 
 import {
   useGetMyProfileQuery,
@@ -58,21 +56,14 @@ import CommunityCard from "@/components/common/communityCard";
 
 import { usePostInteractions } from "@/hooks/media/usePostInteractions";
 
-import {
-  createProfileStyles,
-  type ProfileColors,
-  type ProfileStyles,
-} from "@/constants/styles/profile.styles";
+import { createProfileStyles } from "@/constants/styles/profile.styles";
 import ImageCropModal from "@/components/post/ImageCropModal";
+import ProfileDetailsContent from "@/components/profile/ProfileDetailsContent";
 
 type ImageTarget = "avatar" | "cover";
 
 const POSTS_LIMIT = 10;
 
-// Profession types that only need Professional Email + Phone
-// (no business name / address required). Keep in sync with
-// TRAINING_PROFESSIONS in onboarding.tsx.
-const TRAINING_PROFESSIONS = ["Instructor", "Trainer", "Trainee"];
 
 const getBannerDismissKey = (userId: string) =>
   `profileCompletionBannerDismissedUntil:${userId}`;
@@ -82,7 +73,18 @@ export default function ProfileScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createProfileStyles(colors), [colors]);
 
-  const [tab, setTab] = useState("posts");
+  const [tab, setTab] = useState("about");
+
+  /*
+   * Always open the profile on the About tab.
+   * Expo Router keeps tab screens mounted, so only changing the
+   * initial state is not enough when the user leaves and returns.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setTab("about");
+    }, []),
+  );
 
   const [uploadingTarget, setUploadingTarget] = useState<ImageTarget | null>(
     null,
@@ -157,13 +159,6 @@ export default function ProfileScreen() {
     },
   );
 
-  const { data: businessCommunityStatus } = useGetMyBusinessCommunityStatusQuery(
-  undefined,
-  { skip: !session?.user },
-);
-
-const hasApprovedBusinessCommunity =
-  businessCommunityStatus?.latestRequest?.status === "APPROVED";
   const myCommunities = (myCommunitiesResponse?.data ?? []) as CommunityItem[];
 
   const hasMorePosts = myPostsResponse?.meta?.hasMore ?? false;
@@ -175,35 +170,16 @@ const hasApprovedBusinessCommunity =
   const [uploadProfileAvatar] = useUploadProfileAvatarMutation();
   const [uploadProfileCover] = useUploadProfileCoverMutation();
 
-  const user = profile ?? session?.user;
+  const user = profile;
 
-  const isTrainingProfession = TRAINING_PROFESSIONS.includes(
-    user?.businessType ?? "",
-  );
+  const completion = profile?.completion;
+  const completionPercent =
+    completion?.completionPercent ?? 0;
+  const isProfileComplete =
+    completion?.isComplete ?? false;
+  const missingFields =
+    completion?.missingFields ?? [];
 
-  const requiredFieldChecks = useMemo(() => {
-    const checks = [
-      !!user?.image,
-      !!user?.businessType,
-      !!user?.businessEmail,
-      !!user?.businessPhoneNo,
-    ];
-
-    if (!isTrainingProfession) {
-      checks.push(!!user?.businessName, !!user?.address);
-    }
-
-    return checks;
-  }, [user, isTrainingProfession]);
-
-const verifiedStudentCommunities = useMemo(() => {
-  return myCommunities.filter((community) => community.isVerifiedStudent);
-}, [myCommunities]);
-  const completedCount = requiredFieldChecks.filter(Boolean).length;
-  const completionPercent = Math.round(
-    (completedCount / requiredFieldChecks.length) * 100,
-  );
-  const isProfileComplete = completedCount === requiredFieldChecks.length;
 
   const {
     commentPost,
@@ -811,24 +787,85 @@ const renderPost = useCallback(
 
               <View style={styles.profileInfoSection}>
                 <View style={styles.profileInfoRow}>
-                  <View style={styles.profileInfoLeft}>
-                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Text style={styles.profileName}>{fullName}</Text>
-                      {verificationStatus?.isVerified ? (
-      <VerifiedBadge
-        track={verificationStatus.verificationTrack}
-        size={16}
-      />
-    
-    ) : null}
-      </View>
-                    <Text style={styles.profileEmail}>{user?.email}</Text>
-
-                    {!!user?.businessType && (
-                      <Text style={styles.profileBusinessType}>
-                        {user.businessType}
+                  <View
+                    style={[
+                      styles.profileInfoLeft,
+                      { flex: 1 },
+                    ]}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Text style={styles.profileName}>
+                        {fullName}
                       </Text>
-                    )}
+
+                      {verificationStatus?.isVerified ? (
+                        <VerifiedBadge
+                          track={
+                            verificationStatus.verificationTrack
+                          }
+                          size={16}
+                        />
+                      ) : null}
+                    </View>
+
+                    {user?.profileRole ? (
+                      <Text
+                        style={
+                          styles.profileBusinessType
+                        }
+                      >
+                        {user.profileRole}
+                      </Text>
+                    ) : null}
+
+                    {user?.headline ? (
+                      <Text
+                        style={{
+                          color: colors.muted,
+                          fontSize: 13,
+                          lineHeight: 19,
+                          fontFamily:
+                            "Poppins_400Regular",
+                          marginTop: 3,
+                        }}
+                      >
+                        {user.headline}
+                      </Text>
+                    ) : null}
+
+                    {user?.location ? (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                          marginTop: 5,
+                        }}
+                      >
+                        <Ionicons
+                          name="location-outline"
+                          size={14}
+                          color={colors.muted}
+                        />
+
+                        <Text
+                          style={{
+                            color: colors.muted,
+                            fontSize: 12,
+                            fontFamily:
+                              "Poppins_400Regular",
+                          }}
+                        >
+                          {user.location}
+                        </Text>
+                      </View>
+                    ) : null}
 
                     {profileError ? (
                       <Text style={styles.errorText}>
@@ -838,42 +875,65 @@ const renderPost = useCallback(
                   </View>
 
                   <View style={styles.profileInfoRight}>
-                    <Menu>
-                      <Menu.Trigger asChild>
-                        <Pressable style={styles.menuButton}>
-                          <Ionicons
-                            name="ellipsis-horizontal"
-                            size={22}
-                            color={colors.accent}
-                          />
-                        </Pressable>
-                      </Menu.Trigger>
-
-                      <Menu.Portal>
-                        <Menu.Overlay />
-
-                        <Menu.Content
-                          presentation="popover"
-                          placement="bottom"
-                          align="end"
-                          width={240}
-                          className="rounded-2xl border border-border bg-surface"
-                        >
-                          <Menu.Item onPress={handleOpenSettingsPrivacy}>
-                            <Menu.ItemTitle>
-                              Settings & Privacy
-                            </Menu.ItemTitle>
-                          </Menu.Item>
-                        </Menu.Content>
-                      </Menu.Portal>
-                    </Menu>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Open settings and privacy"
+                      onPress={handleOpenSettingsPrivacy}
+                      style={styles.menuButton}
+                    >
+                      <Ionicons
+                        name="settings-outline"
+                        size={22}
+                        color={colors.accent}
+                      />
+                    </Pressable>
                   </View>
+                </View>
+
+                <View
+                  style={{
+                    marginTop: 14,
+                  }}
+                >
+                  <Pressable
+                    onPress={() =>
+                      router.push(
+                        "/pages/editProfile" as never,
+                      )
+                    }
+                    style={{
+                      minHeight: 42,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surface,
+                      justifyContent: "center",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.foreground,
+                        fontSize: 13,
+                        fontFamily:
+                          "Poppins_600SemiBold",
+                      }}
+                    >
+                      Edit profile
+                    </Text>
+                  </Pressable>
                 </View>
               </View>
 
-              {!isProfileComplete && !isBannerDismissed && isBannerCheckDone ? (
+              {!isProfileComplete &&
+              !isBannerDismissed &&
+              isBannerCheckDone ? (
                 <Pressable
-                  onPress={() => router.push("/pages/editBusinessProfile")}
+                  onPress={() =>
+                    router.push(
+                      "/pages/profile/completeProfile" as never,
+                    )
+                  }
                   style={{
                     marginHorizontal: 20,
                     marginTop: 16,
@@ -896,13 +956,11 @@ const renderPost = useCallback(
                       style={{
                         color: colors.foreground,
                         fontSize: 14,
-                        fontFamily: "Poppins_600SemiBold",
+                        fontFamily:
+                          "Poppins_600SemiBold",
                       }}
                     >
-                      Complete your{" "}
-                      {isTrainingProfession
-                        ? "contact details"
-                        : "business profile"}
+                      Complete your profile
                     </Text>
 
                     <View
@@ -916,21 +974,28 @@ const renderPost = useCallback(
                         style={{
                           color: colors.accent,
                           fontSize: 13,
-                          fontFamily: "Poppins_700Bold",
+                          fontFamily:
+                            "Poppins_700Bold",
                         }}
                       >
                         {completionPercent}%
                       </Text>
 
-                   <Pressable
-  hitSlop={8}
-  onPress={(e) => {
-    e.stopPropagation();
-    setShowRemindLaterModal(true);
-  }}
->
-  <Ionicons name="close" size={16} color={colors.muted} />
-</Pressable>
+                      <Pressable
+                        hitSlop={8}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          setShowRemindLaterModal(
+                            true,
+                          );
+                        }}
+                      >
+                        <Ionicons
+                          name="close"
+                          size={16}
+                          color={colors.muted}
+                        />
+                      </Pressable>
                     </View>
                   </View>
 
@@ -956,11 +1021,16 @@ const renderPost = useCallback(
                     style={{
                       color: colors.muted,
                       fontSize: 12,
-                      fontFamily: "Poppins_400Regular",
+                      lineHeight: 18,
+                      fontFamily:
+                        "Poppins_400Regular",
                       marginTop: 8,
                     }}
                   >
-                    Vendors trust complete profiles more. Tap to finish yours.
+                    {missingFields.length === 1
+                      ? `Add your ${missingFields[0].label.toLowerCase()}.`
+                      : `${missingFields.length} profile details remaining.`}
+                    {" "}Tap to continue.
                   </Text>
                 </Pressable>
               ) : null}
@@ -981,12 +1051,12 @@ const renderPost = useCallback(
                     >
                       <Tabs.Indicator />
 
-                      <Tabs.Trigger value="posts">
-                        <Tabs.Label>Posts</Tabs.Label>
-                      </Tabs.Trigger>
-
                       <Tabs.Trigger value="about">
                         <Tabs.Label>About</Tabs.Label>
+                      </Tabs.Trigger>
+
+                      <Tabs.Trigger value="posts">
+                        <Tabs.Label>Posts</Tabs.Label>
                       </Tabs.Trigger>
 
                       <Tabs.Trigger value="communities">
@@ -999,92 +1069,12 @@ const renderPost = useCallback(
                     </Tabs.ScrollView>
                   </Tabs.List>
 
-{tab === "about" ? (
-  <View style={styles.paddedPanel}>
-    <Text style={styles.sectionTitle}>About</Text>
-
-    <View style={styles.infoList}>
-      <InfoRow
-        icon="person-outline"
-        label="Name"
-        value={fullName}
-        colors={colors}
-        styles={styles}
-      />
-
-      <InfoRow
-        icon="mail-outline"
-        label="Email"
-        value={user?.email || "-"}
-        colors={colors}
-        styles={styles}
-      />
-
-      <InfoRow
-        icon="briefcase-outline"
-        label="Business Type"
-        value={user?.businessType || "-"}
-        colors={colors}
-        styles={styles}
-      />
-
-      <InfoRow
-        icon="location-outline"
-        label="Address"
-        value={user?.address || "-"}
-        colors={colors}
-        styles={styles}
-      />
-
-      {!isTrainingProfession && (
-        <InfoRow
-          icon="business-outline"
-          label="Business Name"
-          value={user?.businessName || "-"}
-          colors={colors}
-          styles={styles}
-        />
-      )}
-
-      <InfoRow
-        icon="call-outline"
-        label={isTrainingProfession ? "Professional Phone" : "Business Phone"}
-        value={user?.businessPhoneNo || "-"}
-        colors={colors}
-        styles={styles}
-      />
-
-      {/* Verified Student Row - Now matches design */}
-      {verifiedStudentCommunities.length > 0 &&
-        verifiedStudentCommunities.map((community) => (
-          <View
-            key={community.id}
-            style={styles.infoRow}
-          >
-            <View style={styles.infoIconWrap}>
-              <StudentBadge size={26} />
-            </View>
-
-            <View style={styles.infoTextWrap}>
-              <Text style={styles.infoLabel}>{community.name}</Text>
-              <Text style={[styles.infoValue, { color: colors.accent, fontFamily: "Poppins_500Medium" }]}>
-                {community.studentBatch 
-                  ? `Batch ${community.studentBatch}` 
-                  : "Verified Student"}
-              </Text>
-            </View>
-
-            <Ionicons
-              name="checkmark-circle"
-              size={22}
-              color="#22C55E"
-              style={{ marginLeft: "auto" }}
-            />
-          </View>
-        ))}
-    </View>
-  </View>
-) : null}
+                  {tab === "about" ? (
+                    <ProfileDetailsContent
+                      profile={profile}
+                      colors={colors}
+                    />
+                  ) : null}
 
                   {tab === "communities" ? (
                     <View style={styles.paddedPanel}>
@@ -1361,32 +1351,5 @@ const renderPost = useCallback(
   </Pressable>
 </Modal>
     </>
-  );
-}
-
-function InfoRow({
-  icon,
-  label,
-  value,
-  colors,
-  styles,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-  colors: ProfileColors;
-  styles: ProfileStyles;
-}) {
-  return (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIconWrap}>
-        <Ionicons name={icon} size={18} color={colors.accent} />
-      </View>
-
-      <View style={styles.infoTextWrap}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
-      </View>
-    </View>
   );
 }

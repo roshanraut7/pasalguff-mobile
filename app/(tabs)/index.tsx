@@ -202,6 +202,8 @@ export default function HomeScreen() {
     isFetchingComments,
     isCreatingComment,
     isCreatingReply,
+    isUpdatingComment,
+    isDeletingComment,
     dislikePostTarget,
     dislikeReason,
     setDislikeReason,
@@ -217,6 +219,8 @@ export default function HomeScreen() {
     handleShareToFriends,
     handleCreateComment,
     handleCommentLike,
+    handleUpdateComment,
+    handleDeleteComment,
     handleShareToFeed,
     refetchComments,
   } = usePostInteractions({
@@ -1034,8 +1038,13 @@ const handleShareToGroup = useCallback(
         onSubmit={handleCreateComment}
         onPressMedia={openViewer}
         onPressPostLike={handleLikePost}
-        onPressPostShare={handleSharePost}
+        onPressPostShare={handleOpenShareSheet}
+        currentUserId={session?.user?.id ?? null}
         onPressCommentLike={handleCommentLike}
+        onEditComment={handleUpdateComment}
+        onDeleteComment={handleDeleteComment}
+        isUpdatingComment={isUpdatingComment}
+        isDeletingComment={isDeletingComment}
         onRefreshComments={() => {
           void refetchComments();
         }}
