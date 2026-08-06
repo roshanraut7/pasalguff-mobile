@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from "react";
-import BusinessCommunityBadge from "@/components/common/BusinessCommunityBadge";
 import {
   ActivityIndicator,
   Modal,
@@ -12,12 +11,12 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
+  Stack,
   useGlobalSearchParams,
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
 import { BarChart } from "react-native-gifted-charts";
-import { LinearGradient } from "expo-linear-gradient";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import AdminKpiCard from "@/components/common/Kpi-card";
@@ -102,6 +101,7 @@ export default function CommunityDashboardScreen() {
 
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null);
 
@@ -120,18 +120,14 @@ export default function CommunityDashboardScreen() {
       refetchOnMountOrArgChange: true,
     },
   );
-  const communityKind =
-  dashboard?.community.communityKind;
+  const communityKind = dashboard?.community.communityKind;
 
-const isInstituteCommunity =
-  communityKind === "INSTITUTE";
+  const isInstituteCommunity = communityKind === "INSTITUTE";
+  const isBusinessCommunity = communityKind === "BUSINESS";
 
-const isBusinessCommunity =
-  communityKind === "BUSINESS";
-
-const canManageCatalog =
-  isBusinessCommunity ||
-  isInstituteCommunity;
+  const canManageCatalog = isBusinessCommunity || isInstituteCommunity;
+  const canEditCommunity = dashboard?.viewer?.canEditCommunity === true;
+  const canOpenSettings = canManageCatalog || canEditCommunity;
 
   const memberGrowthData = useMemo(
     () => cloneGrowthData(dashboard?.growth.members),
@@ -271,6 +267,30 @@ const canManageCatalog =
     }
   }
 
+  function handleOpenCatalog() {
+    setIsSettingsOpen(false);
+
+    router.push({
+      pathname: "/community-catalog",
+      params: {
+        communityId,
+        communityKind: communityKind!,
+        communityName: dashboard?.community.name ?? "",
+      },
+    });
+  }
+
+  function handleEditCommunity() {
+    setIsSettingsOpen(false);
+
+    router.push({
+      pathname: "/pages/editCommunity",
+      params: {
+        communityId,
+      },
+    });
+  }
+
   if (!communityId) {
     return (
       <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
@@ -301,6 +321,39 @@ const canManageCatalog =
 
   return (
     <>
+      <Stack.Screen
+        options={{
+          title:
+            dashboard?.community.name ??
+            "Community Dashboard",
+
+          headerRight: canOpenSettings
+            ? () => (
+                <Pressable
+                  onPress={() =>
+                    setIsSettingsOpen(true)
+                  }
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open community settings"
+                  style={({ pressed }) => [
+                    styles.navigationSettingsButton,
+                    {
+                      opacity: pressed ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="settings-outline"
+                    size={23}
+                    color={colors.foreground}
+                  />
+                </Pressable>
+              )
+            : undefined,
+        }}
+      />
+
       <ScrollView
         style={[styles.root, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.content}
@@ -314,80 +367,6 @@ const canManageCatalog =
           />
         }
       >
-        <LinearGradient
-          colors={[colors.accent, colors.muted ?? "#0B3D2E"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.heroCard}
-        >
-          <View style={styles.heroTopRow}>
-            <View style={styles.heroAvatar}>
-              <Text style={styles.heroAvatarText}>
-                {(dashboard?.community.name ?? "C").charAt(0).toUpperCase()}
-              </Text>
-            </View>
-
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                  minWidth: 0,
-                }}
-              >
-                <Text
-                  style={[styles.heroTitle, { flexShrink: 1, minWidth: 0 }]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {dashboard?.community.name ?? "Community Dashboard"}
-                </Text>
-
-                {isBusinessCommunity ? (
-                  <View
-                    style={{
-                      flexShrink: 0,
-                      backgroundColor: "rgba(255,255,255,0.9)",
-                      borderRadius: 999,
-                      paddingHorizontal: 8,
-                      paddingVertical: 3,
-                    }}
-                  >
-                    <BusinessCommunityBadge label="Business" size={12} />
-                  </View>
-                ) : null}
-              </View>
-
-              <Text
-                style={styles.heroSubtitle}
-                numberOfLines={2}
-                ellipsizeMode="tail"
-              >
-                {isInstituteCommunity
-                  ? "Manage students, members, posts and more"
-                  : "Manage members, moderators, posts and more"}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.heroStatsRow}>
-            <View style={styles.heroStatChip}>
-              <Ionicons name="people-outline" size={14} color="#fff" />
-              <Text style={styles.heroStatText} numberOfLines={1}>
-                {dashboard?.kpis.members ?? 0} members
-              </Text>
-            </View>
-
-            <View style={styles.heroStatChip}>
-              <Ionicons name="newspaper-outline" size={14} color="#fff" />
-              <Text style={styles.heroStatText} numberOfLines={1}>
-                {dashboard?.kpis.posts ?? 0} posts
-              </Text>
-            </View>
-          </View>
-        </LinearGradient>
-
         {error ? (
           <View
             style={[
@@ -454,241 +433,6 @@ const canManageCatalog =
     />
   )}
 </View>
-{canManageCatalog ? (
-  <Pressable
-    onPress={() => {
-      router.push({
-        pathname:
-          "/community-catalog",
-
-        params: {
-          communityId,
-
-          communityKind:
-            communityKind!,
-
-          communityName:
-            dashboard?.community
-              .name ??
-            "",
-        },
-      });
-    }}
-    style={({ pressed }) => [
-      styles.catalogNavigationCard,
-      {
-        backgroundColor:
-          colors.surface,
-
-        borderColor:
-          pressed
-            ? colors.accent
-            : colors.border,
-
-        opacity:
-          pressed
-            ? 0.92
-            : 1,
-      },
-    ]}
-  >
-    <LinearGradient
-      colors={[
-        colors.accent,
-        colors.muted ??
-          "#173B36",
-      ]}
-      start={{
-        x: 0,
-        y: 0,
-      }}
-      end={{
-        x: 1,
-        y: 1,
-      }}
-      style={
-        styles.catalogNavigationIcon
-      }
-    >
-      <Ionicons
-        name={
-          isInstituteCommunity
-            ? "school-outline"
-            : "storefront-outline"
-        }
-        size={26}
-        color="#ffffff"
-      />
-    </LinearGradient>
-
-    <View
-      style={{
-        flex: 1,
-        minWidth: 0,
-      }}
-    >
-      <View
-        style={
-          styles.catalogTitleRow
-        }
-      >
-        <Text
-          style={[
-            styles.catalogNavigationTitle,
-            {
-              color:
-                colors.foreground,
-            },
-          ]}
-          numberOfLines={1}
-        >
-          {isInstituteCommunity
-            ? "Course Catalogue"
-            : "Product Catalogue"}
-        </Text>
-
-        <View
-          style={[
-            styles.catalogManageBadge,
-            {
-              backgroundColor:
-                colors.surfaceSecondary,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.catalogManageBadgeText,
-              {
-                color:
-                  colors.accent,
-              },
-            ]}
-          >
-            Manage
-          </Text>
-        </View>
-      </View>
-
-      <Text
-        style={[
-          styles.catalogNavigationSubtitle,
-          {
-            color:
-              colors.muted,
-          },
-        ]}
-        numberOfLines={2}
-      >
-        {isInstituteCommunity
-          ? "Create, edit and delete courses offered by your institute."
-          : "Create, edit and delete products offered by your business."}
-      </Text>
-
-      <View
-        style={
-          styles.catalogFeatureRow
-        }
-      >
-        <View
-          style={
-            styles.catalogFeatureItem
-          }
-        >
-          <Ionicons
-            name="add-circle-outline"
-            size={14}
-            color={
-              colors.accent
-            }
-          />
-
-          <Text
-            style={[
-              styles.catalogFeatureText,
-              {
-                color:
-                  colors.muted,
-              },
-            ]}
-          >
-            Add
-          </Text>
-        </View>
-
-        <View
-          style={
-            styles.catalogFeatureItem
-          }
-        >
-          <Ionicons
-            name="create-outline"
-            size={14}
-            color={
-              colors.accent
-            }
-          />
-
-          <Text
-            style={[
-              styles.catalogFeatureText,
-              {
-                color:
-                  colors.muted,
-              },
-            ]}
-          >
-            Edit
-          </Text>
-        </View>
-
-        <View
-          style={
-            styles.catalogFeatureItem
-          }
-        >
-          <Ionicons
-            name="trash-outline"
-            size={14}
-            color={
-              colors.accent
-            }
-          />
-
-          <Text
-            style={[
-              styles.catalogFeatureText,
-              {
-                color:
-                  colors.muted,
-              },
-            ]}
-          >
-            Delete
-          </Text>
-        </View>
-      </View>
-    </View>
-
-    <View
-      style={[
-        styles.catalogArrowButton,
-        {
-          backgroundColor:
-            colors.surfaceSecondary,
-        },
-      ]}
-    >
-      <Ionicons
-        name="chevron-forward"
-        size={20}
-        color={
-          colors.accent
-        }
-      />
-    </View>
-  </Pressable>
-) : null}
 
         <View
           style={[
@@ -839,6 +583,167 @@ const canManageCatalog =
       </ScrollView>
 
       <Modal
+        visible={isSettingsOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setIsSettingsOpen(false)}
+      >
+        <Pressable
+          style={[styles.modalBackdrop, { backgroundColor: colors.backdrop }]}
+          onPress={() => setIsSettingsOpen(false)}
+        >
+          <Pressable
+            style={[
+              styles.settingsModalCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+            onPress={() => {}}
+          >
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+                  Community settings
+                </Text>
+
+                <Text style={[styles.modalSubtitle, { color: colors.muted }]}>
+                  Choose what you want to manage.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => setIsSettingsOpen(false)}
+                hitSlop={12}
+              >
+                <Ionicons name="close" size={22} color={colors.muted} />
+              </Pressable>
+            </View>
+
+            <View style={styles.settingsOptions}>
+              {canManageCatalog ? (
+                <Pressable
+                  onPress={handleOpenCatalog}
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    {
+                      backgroundColor: pressed
+                        ? colors.surfaceSecondary
+                        : colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.settingsOptionIcon,
+                      { backgroundColor: colors.surfaceSecondary },
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        isInstituteCommunity
+                          ? "school-outline"
+                          : "storefront-outline"
+                      }
+                      size={22}
+                      color={colors.accent}
+                    />
+                  </View>
+
+                  <View style={styles.settingsOptionContent}>
+                    <Text
+                      style={[
+                        styles.settingsOptionTitle,
+                        { color: colors.foreground },
+                      ]}
+                    >
+                      Add Catalog
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.settingsOptionSubtitle,
+                        { color: colors.muted },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {isInstituteCommunity
+                        ? "Add and manage the institute course catalog."
+                        : "Add and manage the business product catalog."}
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.muted}
+                  />
+                </Pressable>
+              ) : null}
+
+              {canEditCommunity ? (
+                <Pressable
+                  onPress={handleEditCommunity}
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    {
+                      backgroundColor: pressed
+                        ? colors.surfaceSecondary
+                        : colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.settingsOptionIcon,
+                      { backgroundColor: colors.surfaceSecondary },
+                    ]}
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={22}
+                      color={colors.accent}
+                    />
+                  </View>
+
+                  <View style={styles.settingsOptionContent}>
+                    <Text
+                      style={[
+                        styles.settingsOptionTitle,
+                        { color: colors.foreground },
+                      ]}
+                    >
+                      Edit Community
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.settingsOptionSubtitle,
+                        { color: colors.muted },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      Update the name, images, category, visibility and details.
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.muted}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
         visible={isFilterOpen}
         transparent
         animationType="fade"
@@ -944,71 +849,11 @@ const styles = StyleSheet.create({
     gap: 16,
   },
 
-  heroCard: {
-    borderRadius: 28,
-    padding: 20,
-    paddingTop: 22,
-    gap: 18,
-    overflow: "hidden",
-  },
-
-  heroTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minWidth: 0,
-  },
-
-  heroAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.2)",
+  navigationSettingsButton: {
+    width: 40,
+    height: 40,
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
-  },
-
-  heroAvatarText: {
-    fontSize: 20,
-    fontFamily: "Poppins_700Bold",
-    color: "#fff",
-  },
-
-  heroTitle: {
-    fontSize: 20,
-    fontFamily: "Poppins_700Bold",
-    color: "#fff",
-  },
-
-  heroSubtitle: {
-    marginTop: 2,
-    fontSize: 12,
-    lineHeight: 17,
-    fontFamily: "Poppins_400Regular",
-    color: "rgba(255,255,255,0.85)",
-  },
-
-  heroStatsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-
-  heroStatChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-
-  heroStatText: {
-    fontSize: 12,
-    color: "#fff",
-    fontFamily: "Poppins_500Medium",
   },
 
   errorBox: {
@@ -1198,6 +1043,55 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
 
+  settingsModalCard: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    paddingTop: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 30,
+  },
+
+  settingsOptions: {
+    gap: 10,
+  },
+
+  settingsOption: {
+    minHeight: 82,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  settingsOptionIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+
+  settingsOptionContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  settingsOptionTitle: {
+    fontSize: 15,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  settingsOptionSubtitle: {
+    marginTop: 3,
+    fontSize: 11,
+    lineHeight: 17,
+    fontFamily: "Poppins_400Regular",
+  },
+
   filterList: {
     maxHeight: 320,
   },
@@ -1243,87 +1137,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontFamily: "Poppins_400Regular",
   },
-  catalogNavigationCard: {
-  borderWidth: 1,
-  borderRadius: 24,
-  padding: 15,
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 13,
-  shadowColor: "#000",
-  shadowOffset: {
-    width: 0,
-    height: 5,
-  },
-  shadowOpacity: 0.06,
-  shadowRadius: 12,
-  elevation: 2,
-},
-
-catalogNavigationIcon: {
-  width: 58,
-  height: 58,
-  borderRadius: 19,
-  alignItems: "center",
-  justifyContent: "center",
-  flexShrink: 0,
-},
-
-catalogTitleRow: {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 8,
-  minWidth: 0,
-},
-
-catalogNavigationTitle: {
-  flexShrink: 1,
-  fontSize: 16,
-  fontFamily: "Poppins_700Bold",
-},
-
-catalogManageBadge: {
-  borderRadius: 999,
-  paddingHorizontal: 8,
-  paddingVertical: 3,
-},
-
-catalogManageBadgeText: {
-  fontSize: 9,
-  fontFamily: "Poppins_600SemiBold",
-},
-
-catalogNavigationSubtitle: {
-  marginTop: 3,
-  fontSize: 11,
-  lineHeight: 17,
-  fontFamily: "Poppins_400Regular",
-},
-
-catalogFeatureRow: {
-  marginTop: 8,
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 12,
-},
-
-catalogFeatureItem: {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 4,
-},
-
-catalogFeatureText: {
-  fontSize: 10,
-  fontFamily: "Poppins_500Medium",
-},
-
-catalogArrowButton: {
-  width: 36,
-  height: 36,
-  borderRadius: 12,
-  alignItems: "center",
-  justifyContent: "center",
-  flexShrink: 0,
-},
 });

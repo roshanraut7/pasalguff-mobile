@@ -17,6 +17,7 @@ import { io, type Socket } from "socket.io-client";
 import dayjs from "dayjs";
 import { useDispatch } from "react-redux";
 
+import VerifiedBadge from "@/components/common/verifiedBadge";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useSession } from "@/api/better-auth-client";
 import {
@@ -41,6 +42,27 @@ type RealtimeChatPayload = {
   message?: ChatMessage;
   chat?: Chat;
 };
+
+type ChatVerificationTrack =
+  | "BUSINESS"
+  | "INDIVIDUAL"
+  | "TRAINING";
+
+type VerifiedChatUser = {
+  isVerified?: boolean;
+  verificationTrack?: ChatVerificationTrack | null;
+};
+
+function getVerifiedTrack(
+  user:
+    | VerifiedChatUser
+    | null
+    | undefined,
+) {
+  return user?.isVerified === true
+    ? user.verificationTrack ?? null
+    : null;
+}
 
 function getSocketOrigin() {
   const rawBase = RAW_API_BASE_URL.trim();
@@ -643,6 +665,15 @@ function ConversationRow({
 
   const isUnread = unreadCount > 0;
 
+  const verificationTrack =
+    !isGroup
+      ? getVerifiedTrack(
+          chat.otherUser as
+            | VerifiedChatUser
+            | undefined,
+        )
+      : null;
+
   return (
     <Pressable
       onPress={onPress}
@@ -664,10 +695,29 @@ function ConversationRow({
         <View style={styles.rowNameLine}>
           <Text
             numberOfLines={1}
-            style={[styles.rowName, isUnread && styles.rowNameUnread]}
+            style={[
+              styles.rowName,
+              isUnread &&
+                styles.rowNameUnread,
+              {
+                flexShrink: 1,
+              },
+            ]}
           >
             {name}
           </Text>
+
+          {verificationTrack ? (
+            <VerifiedBadge
+              track={
+                verificationTrack
+              }
+              size={15}
+              style={{
+                flexShrink: 0,
+              }}
+            />
+          ) : null}
 
           {requestBadge ? (
             <Text style={styles.requestBadge}>{requestBadge}</Text>
@@ -732,6 +782,13 @@ function SuggestionRow({
   const subtitle = getSuggestionSubtitle(item, currentUserId);
   const actionLabel = getSuggestionActionLabel(item, currentUserId);
 
+  const verificationTrack =
+    getVerifiedTrack(
+      item.user as
+        | VerifiedChatUser
+        | undefined,
+    );
+
   return (
     <Pressable
       onPress={onPress}
@@ -746,9 +803,29 @@ function SuggestionRow({
 
       <View style={styles.rowMiddle}>
         <View style={styles.rowNameLine}>
-          <Text numberOfLines={1} style={styles.rowName}>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.rowName,
+              {
+                flexShrink: 1,
+              },
+            ]}
+          >
             {name}
           </Text>
+
+          {verificationTrack ? (
+            <VerifiedBadge
+              track={
+                verificationTrack
+              }
+              size={15}
+              style={{
+                flexShrink: 0,
+              }}
+            />
+          ) : null}
 
           {item.user.isOnline ? (
             <Text style={styles.onlineText}>Online</Text>

@@ -151,6 +151,28 @@ export default function EditProfileScreen() {
     profileType === "BUSINESS" ||
     profileType === "INSTITUTE";
 
+  /**
+   * Once the account is verified, its verified identity is controlled
+   * by the platform. The user can still edit bio, contacts, role,
+   * location, images and organization address.
+   */
+  const isVerifiedUser =
+    profile?.isVerified === true;
+
+  const isIdentityLocked =
+    isVerifiedUser;
+
+  const isOrganizationNameLocked =
+    isVerifiedUser &&
+    showOrganization;
+
+  const verificationLabel =
+    profile?.verificationTrack === "BUSINESS"
+      ? "Verified business"
+      : profile?.verificationTrack === "TRAINING"
+        ? "Verified institute"
+        : "Verified identity";
+
   const emailIsValid =
     !publicEmail.trim() ||
     EMAIL_REGEX.test(publicEmail.trim());
@@ -169,6 +191,10 @@ export default function EditProfileScreen() {
   const handleSelectProfileType = (
     value: UserProfileType,
   ) => {
+    if (isIdentityLocked) {
+      return;
+    }
+
     setProfileType(value);
 
     if (!PROFILE_ROLES[value].includes(profileRole)) {
@@ -200,12 +226,20 @@ export default function EditProfileScreen() {
 
     try {
       await updateMyProfile({
-        name:
-          `${firstName.trim()} ${lastName.trim()}`.trim(),
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+        /**
+         * Never send verified identity fields from this screen.
+         * The backend also rejects direct rename attempts.
+         */
+        ...(!isIdentityLocked
+          ? {
+              name:
+                `${firstName.trim()} ${lastName.trim()}`.trim(),
+              firstName: firstName.trim(),
+              lastName: lastName.trim(),
+              profileType,
+            }
+          : {}),
 
-        profileType,
         profileRole:
           cleanOptional(profileRole),
 
@@ -219,9 +253,20 @@ export default function EditProfileScreen() {
           cleanOptional(publicPhone),
         website: cleanOptional(website),
 
-        organizationName: showOrganization
-          ? cleanOptional(organizationName)
-          : null,
+        ...(
+          showOrganization &&
+          !isOrganizationNameLocked
+            ? {
+                organizationName:
+                  cleanOptional(organizationName),
+              }
+            : !showOrganization &&
+                !isIdentityLocked
+              ? {
+                  organizationName: null,
+                }
+              : {}
+        ),
 
         organizationAddress: showOrganization
           ? cleanOptional(organizationAddress)
@@ -301,27 +346,91 @@ export default function EditProfileScreen() {
           />
 
           <View style={{ gap: 16 }}>
-            <TextField>
-              <Label>First name *</Label>
+            <TextField
+              isDisabled={isIdentityLocked}
+            >
+              <Label>
+                First name *
+                {isIdentityLocked
+                  ? "  •  Locked"
+                  : ""}
+              </Label>
+
               <Input
                 value={firstName}
-                onChangeText={setFirstName}
+                onChangeText={
+                  isIdentityLocked
+                    ? undefined
+                    : setFirstName
+                }
+                editable={!isIdentityLocked}
                 placeholder="Enter your first name"
                 className="border-field-border bg-field-background"
               />
+
               <FieldError />
             </TextField>
 
-            <TextField>
-              <Label>Last name *</Label>
+            <TextField
+              isDisabled={isIdentityLocked}
+            >
+              <Label>
+                Last name *
+                {isIdentityLocked
+                  ? "  •  Locked"
+                  : ""}
+              </Label>
+
               <Input
                 value={lastName}
-                onChangeText={setLastName}
+                onChangeText={
+                  isIdentityLocked
+                    ? undefined
+                    : setLastName
+                }
+                editable={!isIdentityLocked}
                 placeholder="Enter your last name"
                 className="border-field-border bg-field-background"
               />
+
               <FieldError />
             </TextField>
+
+            {isIdentityLocked ? (
+              <View
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor:
+                    colors.surfaceSecondary,
+                  borderRadius: 14,
+                  padding: 12,
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  gap: 9,
+                }}
+              >
+                <Ionicons
+                  name="shield-checkmark"
+                  size={18}
+                  color={colors.accent}
+                />
+
+                <Text
+                  style={{
+                    flex: 1,
+                    color: colors.muted,
+                    fontSize: 11,
+                    lineHeight: 17,
+                    fontFamily:
+                      "Poppins_400Regular",
+                  }}
+                >
+                  {verificationLabel} name cannot be changed after approval.
+                  Contact support if the verified name is incorrect.
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <SectionHeading
@@ -337,6 +446,7 @@ export default function EditProfileScreen() {
               return (
                 <Pressable
                   key={option.value}
+                  disabled={isIdentityLocked}
                   onPress={() =>
                     handleSelectProfileType(
                       option.value,
@@ -355,6 +465,11 @@ export default function EditProfileScreen() {
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 12,
+                    opacity:
+                      isIdentityLocked &&
+                      !selected
+                        ? 0.45
+                        : 1,
                   }}
                 >
                   <View
@@ -408,6 +523,15 @@ export default function EditProfileScreen() {
                       {option.description}
                     </Text>
                   </View>
+
+                  {isIdentityLocked &&
+                  selected ? (
+                    <Ionicons
+                      name="lock-closed"
+                      size={17}
+                      color={colors.accent}
+                    />
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -523,17 +647,30 @@ export default function EditProfileScreen() {
               />
 
               <View style={{ gap: 16 }}>
-                <TextField>
+                <TextField
+                  isDisabled={
+                    isOrganizationNameLocked
+                  }
+                >
                   <Label>
                     {profileType === "BUSINESS"
                       ? "Business name *"
                       : "Institute name *"}
+
+                    {isOrganizationNameLocked
+                      ? "  •  Verified and locked"
+                      : ""}
                   </Label>
 
                   <Input
                     value={organizationName}
                     onChangeText={
-                      setOrganizationName
+                      isOrganizationNameLocked
+                        ? undefined
+                        : setOrganizationName
+                    }
+                    editable={
+                      !isOrganizationNameLocked
                     }
                     placeholder={
                       profileType === "BUSINESS"
@@ -542,7 +679,24 @@ export default function EditProfileScreen() {
                     }
                     className="border-field-border bg-field-background"
                   />
+
                   <FieldError />
+
+                  {isOrganizationNameLocked ? (
+                    <Text
+                      style={{
+                        marginTop: 6,
+                        color: colors.muted,
+                        fontSize: 10,
+                        lineHeight: 16,
+                        fontFamily:
+                          "Poppins_400Regular",
+                      }}
+                    >
+                      This name is connected to the approved PAN verification
+                      and cannot be changed.
+                    </Text>
+                  ) : null}
                 </TextField>
 
                 <TextField>

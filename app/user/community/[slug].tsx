@@ -154,6 +154,20 @@ export default function CommunityDetailScreen() {
     isModerator;
 
   /**
+   * BUSINESS and INSTITUTE communities both use purpose="BUSINESS".
+   * The public product catalogue must appear only for a real business,
+   * never for an institute/course community.
+   */
+  const isBusinessCommunity =
+    community?.communityKind === "BUSINESS" ||
+    community?.isBusinessCommunity === true ||
+    (
+      community?.purpose === "BUSINESS" &&
+      community?.communityKind !== "INSTITUTE" &&
+      community?.isInstituteCommunity !== true
+    );
+
+  /**
    * This slug page is purely a viewing page.
    * Admin/moderator management actions (manage panel) are handled
    * in the dedicated manage pages, not here.
@@ -400,6 +414,28 @@ const handleManageCommunity = useCallback(() => {
       },
     });
   }, [community?.id, community?.name, community?.slug]);
+
+  const handleViewBusinessCatalog = useCallback(() => {
+    if (
+      !community?.id ||
+      !isBusinessCommunity
+    ) {
+      return;
+    }
+
+    router.push({
+      pathname: "/pages/businessCatalog",
+      params: {
+        communityId: community.id,
+        communityName: community.name,
+        businessOwnerId: community.adminId ?? "",
+      },
+    });
+  }, [
+    community?.id,
+    community?.name,
+    isBusinessCommunity,
+  ]);
 
   const handleJoin = useCallback(async () => {
     if (!community?.id) {
@@ -757,53 +793,117 @@ const handleManageCommunity = useCallback(() => {
           scrollEventThrottle={16}
         >
           <View className="bg-background">
-            <View className="relative">
-              {coverUrl ? (
-                <Image
-                  source={{ uri: coverUrl }}
-                  style={{
-                    width: "100%",
-                    height: 214,
-                    borderBottomLeftRadius: 32,
-                    borderBottomRightRadius: 32,
-                  }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View
-                  style={{
-                    height: 214,
-                    borderBottomLeftRadius: 32,
-                    borderBottomRightRadius: 32,
-                  }}
-                />
-              )}
-
+            <View
+              className="relative"
+              style={{
+                height: 214,
+                overflow: "visible",
+              }}
+            >
+              {/*
+               * Only the cover wrapper clips its children.
+               * The avatar stays outside this wrapper so its
+               * lower half is not cut off.
+               */}
               <View
-                pointerEvents="none"
-                className="absolute inset-0"
+                className="overflow-hidden"
                 style={{
+                  width: "100%",
                   height: 214,
                   borderBottomLeftRadius: 32,
                   borderBottomRightRadius: 32,
-                  backgroundColor: colors.separator,
+                  backgroundColor:
+                    colors.surfaceSecondary,
                 }}
-              />
+              >
+                {coverUrl ? (
+                  <>
+                    <Image
+                      source={{ uri: coverUrl }}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                      }}
+                      resizeMode="cover"
+                      onError={(event) => {
+                        console.log(
+                          "Community cover image failed:",
+                          coverUrl,
+                          event.nativeEvent.error,
+                        );
+                      }}
+                    />
 
-              <View className="absolute left-5 top-5">
+                    <View
+                      pointerEvents="none"
+                      className="absolute inset-0"
+                      style={{
+                        backgroundColor:
+                          "rgba(0, 0, 0, 0.12)",
+                      }}
+                    />
+                  </>
+                ) : (
+                  <View
+                    className="h-full w-full items-center justify-center"
+                    style={{
+                      backgroundColor:
+                        colors.surfaceSecondary,
+                    }}
+                  >
+                    <Ionicons
+                      name="images-outline"
+                      size={36}
+                      color={colors.muted}
+                    />
+                  </View>
+                )}
+              </View>
+
+              <View
+                className="absolute left-5 top-5"
+                style={{
+                  zIndex: 30,
+                  elevation: 8,
+                }}
+              >
                 <Pressable
                   onPress={() => {
                     router.replace("/(tabs)");
                   }}
                   className="h-[42px] w-[42px] items-center justify-center rounded-full"
-                  style={{ backgroundColor: colors.coverActionBackground }}
+                  style={{
+                    backgroundColor:
+                      colors.coverActionBackground,
+                  }}
                 >
-                  <Ionicons name="chevron-back" size={22} color={colors.surface} />
+                  <Ionicons
+                    name="chevron-back"
+                    size={22}
+                    color={colors.surface}
+                  />
                 </Pressable>
               </View>
 
-              <View className="absolute -bottom-[48px] left-5">
-                <View className="h-[104px] w-[104px] items-center justify-center overflow-hidden rounded-full border-4 border-background bg-surface">
+              <View
+                className="absolute -bottom-[48px] left-5"
+                style={{
+                  zIndex: 40,
+                  elevation: 12,
+                }}
+              >
+                <View
+                  className="h-[104px] w-[104px] items-center justify-center overflow-hidden rounded-full border-4 border-background bg-surface"
+                  style={{
+                    shadowColor: "#000",
+                    shadowOffset: {
+                      width: 0,
+                      height: 4,
+                    },
+                    shadowOpacity: 0.16,
+                    shadowRadius: 8,
+                  }}
+                >
                   {avatarUrl ? (
                     <Image
                       source={{ uri: avatarUrl }}
@@ -812,6 +912,13 @@ const handleManageCommunity = useCallback(() => {
                         height: "100%",
                       }}
                       resizeMode="cover"
+                      onError={(event) => {
+                        console.log(
+                          "Community avatar image failed:",
+                          avatarUrl,
+                          event.nativeEvent.error,
+                        );
+                      }}
                     />
                   ) : (
                     <View className="h-full w-full items-center justify-center bg-segment">
@@ -947,7 +1054,13 @@ const handleManageCommunity = useCallback(() => {
                 </View>
               ) : null}
 
-              <View className="mt-5 flex-row items-center" style={{ gap: 22 }}>
+              <View
+                className="mt-5 flex-row items-center"
+                style={{
+                  gap: 14,
+                  flexWrap: "wrap",
+                }}
+              >
                 <InlineStat
                   icon="document-text-outline"
                   value={String(totalPostCount)}
@@ -961,6 +1074,13 @@ const handleManageCommunity = useCallback(() => {
                   label="Members"
                   colors={colors}
                 />
+
+                {isBusinessCommunity ? (
+                  <ViewCatalogAction
+                    colors={colors}
+                    onPress={handleViewBusinessCatalog}
+                  />
+                ) : null}
               </View>
             </View>
 
@@ -1383,6 +1503,73 @@ function InlineStat({
         {label}
       </Text>
     </View>
+  );
+}
+
+function ViewCatalogAction({
+  colors,
+  onPress,
+}: {
+  colors: ReturnType<typeof useAppTheme>["colors"];
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel="View business catalogue"
+      style={({ pressed }) => ({
+        minHeight: 42,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: pressed
+          ? colors.surfaceSecondary
+          : colors.surface,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        flexDirection: "row",
+        alignItems: "center",
+        opacity: pressed ? 0.72 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.segment,
+        }}
+      >
+        <Ionicons
+          name="storefront-outline"
+          size={17}
+          color={colors.accent}
+        />
+      </View>
+
+      <Text
+        numberOfLines={1}
+        style={{
+          marginLeft: 7,
+          color: colors.accent,
+          fontSize: 12,
+          fontFamily: "Poppins_700Bold",
+        }}
+      >
+        View Catalog
+      </Text>
+
+      <Ionicons
+        name="chevron-forward"
+        size={15}
+        color={colors.accent}
+        style={{ marginLeft: 3 }}
+      />
+    </Pressable>
   );
 }
 

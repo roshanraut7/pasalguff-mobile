@@ -191,7 +191,7 @@ export default function PrivacySettingsScreen() {
 };
 
   const handleEditProfile = () => {
-    router.push("/pages/editprofile");
+    router.push("/pages/editProfile");
   };
 
 const handleCreateCommunity = () => {

@@ -1,7 +1,9 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
+  Modal,
   Pressable,
   Text,
   View,
@@ -23,6 +25,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { toAbsoluteFileUrl } from "@/lib/file-url";
 
 import {
+  useGetCommunityAccessQuery,
   useGetCommunityDetailsByIdQuery,
 } from "@/store/api/communityApi";
 
@@ -245,6 +248,11 @@ export default function CommunityDashboardTabsLayout() {
   const insets =
     useSafeAreaInsets();
 
+  const [
+    isSettingsOpen,
+    setIsSettingsOpen,
+  ] = useState(false);
+
   const params =
     useLocalSearchParams<{
       communityId?:
@@ -252,10 +260,6 @@ export default function CommunityDashboardTabsLayout() {
         | string[];
 
       id?:
-        | string
-        | string[];
-
-      returnTo?:
         | string
         | string[];
 
@@ -280,11 +284,6 @@ export default function CommunityDashboardTabsLayout() {
       params.id,
     );
 
-  const returnTo =
-    getParamValue(
-      params.returnTo,
-    );
-
   const paramCommunityName =
     getParamValue(
       params.communityName,
@@ -306,6 +305,20 @@ export default function CommunityDashboardTabsLayout() {
       isCommunityLoading,
   } =
     useGetCommunityDetailsByIdQuery(
+      communityId,
+      {
+        skip:
+          !communityId,
+
+        refetchOnMountOrArgChange:
+          true,
+      },
+    );
+
+  const {
+    data: communityAccess,
+  } =
+    useGetCommunityAccessQuery(
       communityId,
       {
         skip:
@@ -363,27 +376,55 @@ export default function CommunityDashboardTabsLayout() {
   const shouldShowModeratorTab =
     isPublicCommunity;
 
+  /**
+   * Resolve one reliable catalogue kind.
+   *
+   * Some community-detail responses currently include purpose="BUSINESS"
+   * and the helper flags, but may omit communityKind. Previously the
+   * settings button still appeared, while navigation sent an empty
+   * communityKind to /community-catalog.
+   */
+  const resolvedCommunityKind:
+    BusinessCommunityKind | null =
+    typedCommunity?.communityKind ===
+    "INSTITUTE"
+      ? "INSTITUTE"
+      : typedCommunity
+            ?.communityKind ===
+          "BUSINESS"
+        ? "BUSINESS"
+        : typedCommunity
+              ?.isInstituteCommunity ===
+            true
+          ? "INSTITUTE"
+          : typedCommunity
+                ?.isBusinessCommunity ===
+              true ||
+              typedCommunity?.purpose ===
+                "BUSINESS"
+            ? "BUSINESS"
+            : null;
+
   const isInstituteCommunity =
-    typedCommunity
-      ?.isInstituteCommunity ===
-      true ||
-    (
-      typedCommunity?.purpose ===
-        "BUSINESS" &&
-      typedCommunity
-        ?.communityKind ===
-        "INSTITUTE"
-    );
+    resolvedCommunityKind ===
+    "INSTITUTE";
 
   const isBusinessCommunity =
-    !isInstituteCommunity &&
-    (
-      typedCommunity
-        ?.isBusinessCommunity ===
-        true ||
-      typedCommunity?.purpose ===
-        "BUSINESS"
-    );
+    resolvedCommunityKind ===
+    "BUSINESS";
+
+  const canManageCatalog =
+    resolvedCommunityKind !== null;
+
+  const canEditCommunity =
+    communityAccess
+      ?.permissions
+      ?.canEditCommunity ===
+    true;
+
+  const canOpenSettings =
+    canManageCatalog ||
+    canEditCommunity;
 
   const {
     data:
@@ -578,22 +619,99 @@ export default function CommunityDashboardTabsLayout() {
     );
 
   const handleBackPress = () => {
-    if (returnTo) {
-      router.replace(
-        returnTo as never,
-      );
+    setIsSettingsOpen(false);
 
-      return;
-    }
-
+    /**
+     * Always leave community management and return to Profile.
+     * router.back() is intentionally not used because it can
+     * return to the previous Members tab.
+     */
     router.replace(
       "/(tabs)/profile" as never,
     );
   };
 
+  const handleOpenCatalog = () => {
+    if (
+      !communityId ||
+      !resolvedCommunityKind
+    ) {
+      console.log(
+        "Cannot open catalogue:",
+        {
+          communityId,
+          purpose:
+            typedCommunity?.purpose,
+          communityKind:
+            typedCommunity
+              ?.communityKind,
+          isBusinessCommunity:
+            typedCommunity
+              ?.isBusinessCommunity,
+          isInstituteCommunity:
+            typedCommunity
+              ?.isInstituteCommunity,
+        },
+      );
+
+      return;
+    }
+
+    setIsSettingsOpen(false);
+
+    router.push({
+      pathname:
+        "/community-catalog",
+
+      params: {
+        communityId,
+        communityKind:
+          resolvedCommunityKind,
+        communityName,
+      },
+    } as never);
+  };
+
+  const handleEditCommunity = () => {
+    setIsSettingsOpen(false);
+
+    router.push({
+      pathname:
+        "/pages/editCommunity",
+
+      params: {
+        communityId,
+      },
+    } as never);
+  };
+
+  /**
+   * Android system back normally follows the tab history.
+   * Override it so it also returns directly to Profile.
+   */
+  useEffect(() => {
+    const subscription =
+      BackHandler.addEventListener(
+        "hardwareBackPress",
+        () => {
+          router.replace(
+            "/(tabs)/profile" as never,
+          );
+
+          return true;
+        },
+      );
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   return (
-    <Tabs
-      initialRouteName="index"
+    <>
+      <Tabs
+        initialRouteName="index"
+        backBehavior="none"
       screenOptions={{
         headerShown:
           true,
@@ -797,6 +915,64 @@ export default function CommunityDashboardTabsLayout() {
                   {subtitle}
                 </Text>
               </View>
+
+              {canOpenSettings ? (
+                <Pressable
+                  onPress={() =>
+                    setIsSettingsOpen(true)
+                  }
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open community settings"
+                  style={({
+                    pressed,
+                  }) => [
+                    {
+                      width:
+                        42,
+
+                      height:
+                        42,
+
+                      borderRadius:
+                        21,
+
+                      borderWidth:
+                        1,
+
+                      borderColor:
+                        colors.border,
+
+                      backgroundColor:
+                        colors.surfaceSecondary,
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "center",
+
+                      flexShrink:
+                        0,
+                    },
+
+                    pressed
+                      ? {
+                          opacity:
+                            0.65,
+                        }
+                      : null,
+                  ]}
+                >
+                  <Ionicons
+                    name="settings-outline"
+                    size={22}
+                    color={
+                      colors.foreground
+                    }
+                  />
+                </Pressable>
+              ) : null}
             </View>
           </View>
         ),
@@ -1006,6 +1182,412 @@ export default function CommunityDashboardTabsLayout() {
           ),
         }}
       />
-    </Tabs>
+      </Tabs>
+
+      <Modal
+        visible={
+          isSettingsOpen
+        }
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() =>
+          setIsSettingsOpen(false)
+        }
+      >
+        <Pressable
+          onPress={() =>
+            setIsSettingsOpen(false)
+          }
+          style={{
+            flex:
+              1,
+
+            justifyContent:
+              "flex-end",
+
+            backgroundColor:
+              colors.backdrop ??
+              "rgba(0,0,0,0.45)",
+          }}
+        >
+          <Pressable
+            onPress={() => {}}
+            style={{
+              backgroundColor:
+                colors.surface,
+
+              borderColor:
+                colors.border,
+
+              borderWidth:
+                1,
+
+              borderTopLeftRadius:
+                28,
+
+              borderTopRightRadius:
+                28,
+
+              paddingTop:
+                18,
+
+              paddingHorizontal:
+                16,
+
+              paddingBottom:
+                Math.max(
+                  insets.bottom,
+                  20,
+                ) + 12,
+            }}
+          >
+            <View
+              style={{
+                flexDirection:
+                  "row",
+
+                alignItems:
+                  "flex-start",
+
+                gap:
+                  12,
+
+                marginBottom:
+                  14,
+              }}
+            >
+              <View
+                style={{
+                  flex:
+                    1,
+
+                  minWidth:
+                    0,
+                }}
+              >
+                <Text
+                  style={{
+                    color:
+                      colors.foreground,
+
+                    fontSize:
+                      18,
+
+                    fontFamily:
+                      "Poppins_700Bold",
+                  }}
+                >
+                  Community settings
+                </Text>
+
+                <Text
+                  style={{
+                    marginTop:
+                      3,
+
+                    color:
+                      colors.muted,
+
+                    fontSize:
+                      12,
+
+                    lineHeight:
+                      18,
+
+                    fontFamily:
+                      "Poppins_400Regular",
+                  }}
+                >
+                  Choose what you want to manage.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() =>
+                  setIsSettingsOpen(false)
+                }
+                hitSlop={12}
+              >
+                <Ionicons
+                  name="close"
+                  size={23}
+                  color={
+                    colors.muted
+                  }
+                />
+              </Pressable>
+            </View>
+
+            <View
+              style={{
+                gap:
+                  10,
+              }}
+            >
+              {canManageCatalog ? (
+                <Pressable
+                  onPress={
+                    handleOpenCatalog
+                  }
+                  style={({
+                    pressed,
+                  }) => ({
+                    minHeight:
+                      78,
+
+                    borderWidth:
+                      1,
+
+                    borderColor:
+                      colors.border,
+
+                    borderRadius:
+                      18,
+
+                    padding:
+                      13,
+
+                    flexDirection:
+                      "row",
+
+                    alignItems:
+                      "center",
+
+                    gap:
+                      12,
+
+                    backgroundColor:
+                      pressed
+                        ? colors
+                            .surfaceSecondary
+                        : colors.surface,
+                  })}
+                >
+                  <View
+                    style={{
+                      width:
+                        46,
+
+                      height:
+                        46,
+
+                      borderRadius:
+                        15,
+
+                      backgroundColor:
+                        colors
+                          .surfaceSecondary,
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "center",
+                    }}
+                  >
+                    <Ionicons
+                      name={
+                        isInstituteCommunity
+                          ? "school-outline"
+                          : "storefront-outline"
+                      }
+                      size={22}
+                      color={
+                        colors.accent
+                      }
+                    />
+                  </View>
+
+                  <View
+                    style={{
+                      flex:
+                        1,
+
+                      minWidth:
+                        0,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color:
+                          colors.foreground,
+
+                        fontSize:
+                          15,
+
+                        fontFamily:
+                          "Poppins_700Bold",
+                      }}
+                    >
+                      Add Catalog
+                    </Text>
+
+                    <Text
+                      numberOfLines={2}
+                      style={{
+                        marginTop:
+                          3,
+
+                        color:
+                          colors.muted,
+
+                        fontSize:
+                          11,
+
+                        lineHeight:
+                          17,
+
+                        fontFamily:
+                          "Poppins_400Regular",
+                      }}
+                    >
+                      {isInstituteCommunity
+                        ? "Add and manage the institute course catalog."
+                        : "Add and manage the business product catalog."}
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={
+                      colors.muted
+                    }
+                  />
+                </Pressable>
+              ) : null}
+
+              {canEditCommunity ? (
+                <Pressable
+                  onPress={
+                    handleEditCommunity
+                  }
+                  style={({
+                    pressed,
+                  }) => ({
+                    minHeight:
+                      78,
+
+                    borderWidth:
+                      1,
+
+                    borderColor:
+                      colors.border,
+
+                    borderRadius:
+                      18,
+
+                    padding:
+                      13,
+
+                    flexDirection:
+                      "row",
+
+                    alignItems:
+                      "center",
+
+                    gap:
+                      12,
+
+                    backgroundColor:
+                      pressed
+                        ? colors
+                            .surfaceSecondary
+                        : colors.surface,
+                  })}
+                >
+                  <View
+                    style={{
+                      width:
+                        46,
+
+                      height:
+                        46,
+
+                      borderRadius:
+                        15,
+
+                      backgroundColor:
+                        colors
+                          .surfaceSecondary,
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "center",
+                    }}
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={22}
+                      color={
+                        colors.accent
+                      }
+                    />
+                  </View>
+
+                  <View
+                    style={{
+                      flex:
+                        1,
+
+                      minWidth:
+                        0,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color:
+                          colors.foreground,
+
+                        fontSize:
+                          15,
+
+                        fontFamily:
+                          "Poppins_700Bold",
+                      }}
+                    >
+                      Edit Community
+                    </Text>
+
+                    <Text
+                      numberOfLines={2}
+                      style={{
+                        marginTop:
+                          3,
+
+                        color:
+                          colors.muted,
+
+                        fontSize:
+                          11,
+
+                        lineHeight:
+                          17,
+
+                        fontFamily:
+                          "Poppins_400Regular",
+                      }}
+                    >
+                      Update images, category, visibility and community details.
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={
+                      colors.muted
+                    }
+                  />
+                </Pressable>
+              ) : null}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }

@@ -31,6 +31,7 @@ import {
 } from "expo-audio";
 import { io, type Socket } from "socket.io-client";
 
+import VerifiedBadge from "@/components/common/verifiedBadge";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useSession } from "@/api/better-auth-client";
 import {
@@ -83,6 +84,27 @@ type MessageDisplayGroup = {
   type: "single" | "image-grid";
   items: ChatMessage[];
 };
+
+type ChatVerificationTrack =
+  | "BUSINESS"
+  | "INDIVIDUAL"
+  | "TRAINING";
+
+type VerifiedChatUser = {
+  isVerified?: boolean;
+  verificationTrack?: ChatVerificationTrack | null;
+};
+
+function getVerifiedTrack(
+  user:
+    | VerifiedChatUser
+    | null
+    | undefined,
+) {
+  return user?.isVerified === true
+    ? user.verificationTrack ?? null
+    : null;
+}
 
 const DRAWER_ACTIONS: DrawerAction[] = [
   { id: "document", label: "Document", icon: "document-text-outline" },
@@ -232,6 +254,15 @@ export default function ConversationScreen() {
   const otherUserAvatar = isGroupChat
     ? getAvatarUrl(otherUserName, (chat as Chat | undefined)?.avatarImage)
     : getAvatarUrl(otherUserName, chat?.otherUser?.image);
+
+  const otherUserVerificationTrack =
+    !isGroupChat
+      ? getVerifiedTrack(
+          chat?.otherUser as
+            | VerifiedChatUser
+            | undefined,
+        )
+      : null;
 
   // Map of userId -> user, used to show sender avatar/name on each bubble.
   const chatMembersById = useMemo(() => {
@@ -1071,9 +1102,36 @@ export default function ConversationScreen() {
               }
             }}
           >
-            <Text numberOfLines={1} style={styles.headerName}>
-              {otherUserName}
-            </Text>
+            <View
+              style={{
+                minWidth: 0,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.headerName,
+                  {
+                    flexShrink: 1,
+                  },
+                ]}
+              >
+                {otherUserName}
+              </Text>
+
+              {otherUserVerificationTrack ? (
+                <VerifiedBadge
+                  track={otherUserVerificationTrack}
+                  size={16}
+                  style={{
+                    flexShrink: 0,
+                  }}
+                />
+              ) : null}
+            </View>
 
             <Text numberOfLines={1} style={styles.headerStatus}>
               {headerStatus}
@@ -1333,6 +1391,16 @@ function renderMessages(
       sender?.name || sender?.businessName || firstMessage.sender?.name || "Member";
     const senderAvatar = getAvatarUrl(senderName, sender?.image ?? firstMessage.sender?.image);
 
+    const senderVerificationTrack =
+      getVerifiedTrack(
+        (
+          sender ??
+          firstMessage.sender
+        ) as
+          | VerifiedChatUser
+          | undefined,
+      );
+
     return (
       <View key={group.key}>
         {showDate ? (
@@ -1351,6 +1419,9 @@ function renderMessages(
             isGroupChat={isGroupChat}
             senderName={senderName}
             senderAvatar={senderAvatar}
+            senderVerificationTrack={
+              senderVerificationTrack
+            }
           />
         ) : (
           <View
@@ -1378,17 +1449,39 @@ function renderMessages(
                 this must not also be set inside styles.bubble. */}
             <View style={{ maxWidth: "78%", flexShrink: 1 }}>
               {isGroupChat && !isMe ? (
-                <Text
+                <View
                   style={{
-                    fontSize: 11,
-                    fontWeight: "700",
-                    color: colors.muted,
                     marginBottom: 2,
                     marginLeft: 4,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
                   }}
                 >
-                  {senderName}
-                </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      flexShrink: 1,
+                      fontSize: 11,
+                      fontWeight: "700",
+                      color: colors.muted,
+                    }}
+                  >
+                    {senderName}
+                  </Text>
+
+                  {senderVerificationTrack ? (
+                    <VerifiedBadge
+                      track={
+                        senderVerificationTrack
+                      }
+                      size={13}
+                      style={{
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : null}
+                </View>
               ) : null}
 
               <Pressable
@@ -1523,6 +1616,7 @@ function ImageMessageGrid({
   isGroupChat,
   senderName,
   senderAvatar,
+  senderVerificationTrack,
 }: {
   messages: ChatMessage[];
   isMe: boolean;
@@ -1530,6 +1624,9 @@ function ImageMessageGrid({
   isGroupChat: boolean;
   senderName: string;
   senderAvatar: string;
+  senderVerificationTrack:
+    | ChatVerificationTrack
+    | null;
 }) {
   const visibleMessages = messages.slice(0, 4);
   const extraCount = messages.length - visibleMessages.length;
@@ -1556,17 +1653,39 @@ function ImageMessageGrid({
 
       <View style={{ maxWidth: "78%", flexShrink: 1 }}>
         {isGroupChat && !isMe ? (
-          <Text
+          <View
             style={{
-              fontSize: 11,
-              fontWeight: "700",
-              color: "#94a3b8",
               marginBottom: 2,
               marginLeft: 4,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
             }}
           >
-            {senderName}
-          </Text>
+            <Text
+              numberOfLines={1}
+              style={{
+                flexShrink: 1,
+                fontSize: 11,
+                fontWeight: "700",
+                color: "#94a3b8",
+              }}
+            >
+              {senderName}
+            </Text>
+
+            {senderVerificationTrack ? (
+              <VerifiedBadge
+                track={
+                  senderVerificationTrack
+                }
+                size={13}
+                style={{
+                  flexShrink: 0,
+                }}
+              />
+            ) : null}
+          </View>
         ) : null}
 
         <View style={styles.imageGridBubble}>

@@ -1,142 +1,267 @@
 import {
-  BaseQueryFn,
-  FetchArgs,
-  FetchBaseQueryError,
+  type BaseQueryFn,
+  type FetchArgs,
+  type FetchBaseQueryError,
   createApi,
   fetchBaseQuery,
 } from "@reduxjs/toolkit/query/react";
-import { getAuthCookie } from "@/api/better-auth-client";
+
+import {
+  getAuthCookie,
+} from "@/api/better-auth-client";
 
 const RAW_API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? process.env.EXPO_PUBLIC_AUTH_URL ?? "";
+  process.env.EXPO_PUBLIC_API_URL ??
+  process.env.EXPO_PUBLIC_AUTH_URL ??
+  "";
 
 function getApiBaseUrl() {
-  const raw = RAW_API_BASE_URL.trim();
+  const raw =
+    RAW_API_BASE_URL.trim();
 
   if (!raw) {
-    console.log("API base URL is missing. Check your .env file.");
+    console.log(
+      "API base URL is missing. Check your .env file.",
+    );
+
     return "";
   }
 
-  const cleaned = raw
-    .replace(/\/api\/auth\/?$/i, "")
-    .replace(/\/api\/?$/i, "");
+  const cleaned =
+    raw
+      .replace(
+        /\/api\/auth\/?$/i,
+        "",
+      )
+      .replace(
+        /\/api\/?$/i,
+        "",
+      );
 
-  return cleaned.endsWith("/") ? cleaned.slice(0, -1) : cleaned;
+  return cleaned.endsWith("/")
+    ? cleaned.slice(0, -1)
+    : cleaned;
 }
 
-const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL =
+  getApiBaseUrl();
 
-const rawBaseQuery = fetchBaseQuery({
-  baseUrl: API_BASE_URL,
-  credentials: "omit",
-  prepareHeaders: (headers) => {
-    headers.set("Accept", "application/json");
-    return headers;
-  },
-});
+const rawBaseQuery =
+  fetchBaseQuery({
+    baseUrl:
+      API_BASE_URL,
 
-function isFormDataBody(body: unknown) {
+    credentials:
+      "omit",
+
+    prepareHeaders: (
+      headers,
+    ) => {
+      headers.set(
+        "Accept",
+        "application/json",
+      );
+
+      return headers;
+    },
+  });
+
+function isFormDataBody(
+  body: unknown,
+) {
   return (
-    typeof FormData !== "undefined" &&
-    (body instanceof FormData ||
-      Object.prototype.toString.call(body) === "[object FormData]" ||
-      Boolean((body as any)?._parts))
+    typeof FormData !==
+      "undefined" &&
+    (
+      body instanceof
+        FormData ||
+      Object.prototype.toString.call(
+        body,
+      ) ===
+        "[object FormData]" ||
+      Boolean(
+        (
+          body as {
+            _parts?: unknown;
+          }
+        )?._parts,
+      )
+    )
   );
 }
 
-const baseQueryWithAuth: BaseQueryFn<
-  string | FetchArgs,
-  unknown,
-  FetchBaseQueryError
-> = async (args, api, extraOptions) => {
-  const normalizedArgs: FetchArgs =
-    typeof args === "string" ? { url: args } : { ...args };
+const baseQueryWithAuth:
+  BaseQueryFn<
+    string | FetchArgs,
+    unknown,
+    FetchBaseQueryError
+  > =
+  async (
+    args,
+    api,
+    extraOptions,
+  ) => {
+    const normalizedArgs:
+      FetchArgs =
+      typeof args ===
+      "string"
+        ? {
+            url: args,
+          }
+        : {
+            ...args,
+          };
 
-  const headers = new Headers(normalizedArgs.headers as HeadersInit | undefined);
+    const headers =
+      new Headers(
+        normalizedArgs.headers as
+          | HeadersInit
+          | undefined,
+      );
 
-  const authCookie = await getAuthCookie();
+    const authCookie =
+      await getAuthCookie();
 
-  if (authCookie) {
-    headers.set("Cookie", authCookie);
-  }
+    if (authCookie) {
+      headers.set(
+        "Cookie",
+        authCookie,
+      );
+    }
 
-  const isFormData = isFormDataBody(normalizedArgs.body);
+    const isFormData =
+      isFormDataBody(
+        normalizedArgs.body,
+      );
 
-  if (normalizedArgs.body && !isFormData && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
+    if (
+      normalizedArgs.body &&
+      !isFormData &&
+      !headers.has(
+        "Content-Type",
+      )
+    ) {
+      headers.set(
+        "Content-Type",
+        "application/json",
+      );
+    }
 
-  normalizedArgs.headers = headers;
+    normalizedArgs.headers =
+      headers;
 
-let result = await rawBaseQuery(normalizedArgs, api, extraOptions);
+    let result =
+      await rawBaseQuery(
+        normalizedArgs,
+        api,
+        extraOptions,
+      );
 
-  // First multipart/network request after app launch can fail with
-  // FETCH_ERROR on RN even though the server never received it — retry once.
-  if (result.error && (result.error as any).status === "FETCH_ERROR") {
-    console.log("Network request failed — retrying once:", normalizedArgs.url);
-    result = await rawBaseQuery(normalizedArgs, api, extraOptions);
-  }
+    const requestMethod =
+      (
+        normalizedArgs.method ??
+        "GET"
+      ).toUpperCase();
 
-  return result;
-};
+    const isSafeToRetry =
+      requestMethod === "GET" ||
+      requestMethod === "HEAD";
 
-export const baseApi = createApi({
-  reducerPath: "api",
-  baseQuery: baseQueryWithAuth,
+    const isFetchError =
+      result.error?.status ===
+      "FETCH_ERROR";
 
-  tagTypes: [
-    "Category",
+    /**
+     * Retry only read operations.
+     *
+     * Never automatically retry POST/PATCH/DELETE because
+     * the backend may have processed the first request.
+     */
+    if (
+      isFetchError &&
+      isSafeToRetry
+    ) {
+      console.log(
+        "Read request failed — retrying once:",
+        normalizedArgs.url,
+      );
 
-    "Community",
-    "MyCommunity",
-    "CommunityMembers",
-    "CommunityAccess",
-    "CommunityJoinRequests",
-    "CommunityDiscussion",
+      result =
+        await rawBaseQuery(
+          normalizedArgs,
+          api,
+          extraOptions,
+        );
+    }
 
-    "Profile",
-    "AdminCommunities",
-    "Notifications",
-    "CommunityGuidelines",
+    return result;
+  };
 
-    "Onboarding",
-    "OnboardingCategory",
-    "SuggestedCommunity",
+export const baseApi =
+  createApi({
+    reducerPath:
+      "api",
 
-    "Post",
-    "DraftPost",
-    "AdminUsers",
-    "AdminPosts",
+    baseQuery:
+      baseQueryWithAuth,
 
-    "Friend",
-    "Follow",
-    "Follower",
-    "Following",
+    tagTypes: [
+      "Category",
 
-    "CommunityModerators",
+      "Community",
+      "MyCommunity",
+      "CommunityMembers",
+      "CommunityAccess",
+      "CommunityJoinRequests",
+      "CommunityDiscussion",
 
-    "Chat",
-    "Message",
+      "Profile",
+      "AdminCommunities",
+      "Notifications",
+      "CommunityGuidelines",
 
-    "PostLike",
-    "PostShare",
-    "PostComment",
-    "PostReply",
+      "Onboarding",
+      "OnboardingCategory",
+      "SuggestedCommunity",
 
-    "PostAnalytics",
+      "Post",
+      "DraftPost",
+      "AdminUsers",
+      "AdminPosts",
 
-    "CommunityDiscussionAnswer",
-    "CommunityDiscussionLive",
-    "CommunityDiscussionLiveMessage",
-   "Verification",
-  "BusinessCommunity",
-  "StudentVerification",
-  "ContributorRequest"
-  ],
+      "Friend",
+      "Follow",
+      "Follower",
+      "Following",
 
-  refetchOnFocus: true,
-  refetchOnReconnect: true,
+      "CommunityModerators",
 
-  endpoints: () => ({}),
-});
+      "Chat",
+      "Message",
+
+      "PostLike",
+      "PostShare",
+      "PostComment",
+      "PostReply",
+
+      "PostAnalytics",
+
+      "CommunityDiscussionAnswer",
+      "CommunityDiscussionLive",
+      "CommunityDiscussionLiveMessage",
+
+      "Verification",
+      "BusinessCommunity",
+      "StudentVerification",
+      "ContributorRequest",
+    ],
+
+    refetchOnFocus:
+      true,
+
+    refetchOnReconnect:
+      true,
+
+    endpoints:
+      () => ({}),
+  });

@@ -54,7 +54,6 @@ type ExploreHeaderProps = {
   categoryPills: CategoryPillItem[];
 
   searchValue: string;
-  isSearchVisible: boolean;
 
   categoriesLoading: boolean;
   categoriesFetching: boolean;
@@ -64,10 +63,7 @@ type ExploreHeaderProps = {
   showCategoryNextButton: boolean;
   isPullRefreshing: boolean;
 
-  onOpenSearch: () => void;
-  onCloseSearch: () => void;
   onSearchChange: (value: string) => void;
-  onOpenCreateCommunity: () => void;
 
   onSelectCategory: (categoryId: string) => void;
   onCategoryContainerLayout: (event: LayoutChangeEvent) => void;
@@ -86,7 +82,6 @@ const ExploreHeader = React.memo(function ExploreHeader({
   categoryPills,
 
   searchValue,
-  isSearchVisible,
 
   categoriesLoading,
   categoriesFetching,
@@ -96,10 +91,7 @@ const ExploreHeader = React.memo(function ExploreHeader({
   showCategoryNextButton,
   isPullRefreshing,
 
-  onOpenSearch,
-  onCloseSearch,
   onSearchChange,
-  onOpenCreateCommunity,
 
   onSelectCategory,
   onCategoryContainerLayout,
@@ -118,126 +110,61 @@ const ExploreHeader = React.memo(function ExploreHeader({
 
   return (
     <View style={{ paddingTop: 16, paddingBottom: 12 }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: isSearchVisible ? 10 : 0,
-        }}
-      >
-        <View style={{ flex: 1, minWidth: 90 }}>
-          <Text
-            numberOfLines={1}
-            style={{
-              color: colors.foreground,
-              fontSize: 26,
-              fontFamily: "Poppins_700Bold",
-            }}
+      <View>
+        <Text
+          numberOfLines={1}
+          style={{
+            color: colors.foreground,
+            fontSize: 26,
+            fontFamily: "Poppins_700Bold",
+          }}
+        >
+          Explore
+        </Text>
+
+        <View
+          style={{
+            marginTop: 14,
+          }}
+        >
+          <SearchField
+            value={searchValue}
+            onChange={onSearchChange}
           >
-            Explore
-          </Text>
+            <SearchField.Group>
+              <SearchField.SearchIcon
+                iconProps={{
+                  size: 18,
+                  color: colors.muted,
+                }}
+              />
+
+              <SearchField.Input
+                placeholder="Search communities"
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={{
+                  color: colors.foreground,
+                  fontSize: 14,
+                  fontFamily: "Poppins_400Regular",
+                }}
+                placeholderTextColor={
+                  colors.placeholder
+                }
+              />
+
+              {searchValue.length > 0 ? (
+                <SearchField.ClearButton
+                  iconProps={{
+                    size: 16,
+                    color: colors.muted,
+                  }}
+                />
+              ) : null}
+            </SearchField.Group>
+          </SearchField>
         </View>
-
-        {isSearchVisible ? (
-          <>
-            <View
-              style={{
-                flex: 1.45,
-                minWidth: 170,
-              }}
-            >
-              <SearchField value={searchValue} onChange={onSearchChange}>
-                <SearchField.Group>
-                  <SearchField.SearchIcon
-                    iconProps={{
-                      size: 16,
-                      color: colors.muted,
-                    }}
-                  />
-
-                  <SearchField.Input
-                    autoFocus
-                    placeholder="Search communities"
-                    returnKeyType="search"
-                    style={{
-                      color: colors.foreground,
-                      fontSize: 13,
-                      fontFamily: "Poppins_400Regular",
-                    }}
-                    placeholderTextColor={colors.placeholder}
-                  />
-
-                  <SearchField.ClearButton
-                    iconProps={{
-                      size: 14,
-                      color: colors.muted,
-                    }}
-                  />
-                </SearchField.Group>
-              </SearchField>
-            </View>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={onCloseSearch}
-              style={{
-                height: 42,
-                width: 42,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="close" size={20} color={colors.foreground} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={onOpenCreateCommunity}
-              style={{
-                height: 44,
-                width: 44,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="add" size={24} color={colors.accent} />
-            </TouchableOpacity>
-          </>
-        ) : (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={onOpenSearch}
-              style={{
-                height: 44,
-                width: 34,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="search-outline" size={22} color={colors.accent} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={onOpenCreateCommunity}
-              style={{
-                height: 44,
-                width: 34,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="add" size={24} color={colors.accent} />
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
 
       <View
@@ -393,7 +320,6 @@ export default function ExploreScreen() {
     null,
   );
 
-  const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [debouncedSearchValue, setDebouncedSearchValue] = useState("");
 
@@ -535,22 +461,8 @@ export default function ExploreScreen() {
   const showCategoryNextButton =
     categoryContentWidth > categoryContainerWidth + 8;
 
-  const handleOpenSearch = useCallback(() => {
-    setIsSearchVisible(true);
-  }, []);
-
-  const handleCloseSearch = useCallback(() => {
-    setIsSearchVisible(false);
-    setSearchValue("");
-    setDebouncedSearchValue("");
-  }, []);
-
   const handleSearchChange = useCallback((value: string) => {
     setSearchValue(value);
-  }, []);
-
-  const handleOpenCreateCommunity = useCallback(() => {
-    router.push("/pages/createCommunity");
   }, []);
 
   const handleSelectCategory = useCallback(
@@ -912,7 +824,6 @@ export default function ExploreScreen() {
           selectedCategoryId={selectedCategoryId}
           categoryPills={categoryPills}
           searchValue={searchValue}
-          isSearchVisible={isSearchVisible}
           categoriesLoading={categoriesLoading}
           categoriesFetching={categoriesFetching}
           categoriesError={categoriesError}
@@ -920,10 +831,7 @@ export default function ExploreScreen() {
           hasMoreCategories={hasMoreCategories}
           showCategoryNextButton={showCategoryNextButton}
           isPullRefreshing={isPullRefreshing}
-          onOpenSearch={handleOpenSearch}
-          onCloseSearch={handleCloseSearch}
           onSearchChange={handleSearchChange}
-          onOpenCreateCommunity={handleOpenCreateCommunity}
           onSelectCategory={handleSelectCategory}
           onCategoryContainerLayout={handleCategoryContainerLayout}
           onCategoryScroll={handleCategoryScroll}
