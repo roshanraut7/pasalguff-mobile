@@ -4,7 +4,7 @@
     "slug": "kamkuro",
     
     "orientation": "portrait",
-    "icon": "./assets/images/kamkuro.png",
+    "icon": "./assets/images/kamkuronew.png",
     "scheme": "kamkuro",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -28,8 +28,8 @@
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/kamkuro.png",
-        "monochromeImage": "./assets/images/kamkuro.png"
+        "foregroundImage": "./assets/images/kamkuronew.png",
+        "monochromeImage": "./assets/images/kamkuronew.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -61,7 +61,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/kamkuro.png",
+          "image": "./assets/images/kamkuronew.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",

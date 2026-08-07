@@ -1,6 +1,4 @@
-import React, {
-  useState,
-} from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -12,10 +10,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  Redirect,
-  router,
-} from "expo-router";
+import { Redirect, router } from "expo-router";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "heroui-native";
@@ -37,15 +32,23 @@ import {
   authClient,
   useSession,
 } from "@/api/better-auth-client";
+
 import { useAppTheme } from "@/hooks/useAppTheme";
+
 import {
   useGetMyOnboardingQuery,
   useGetOnboardingCategoriesQuery,
   useGetSuggestedCommunitiesQuery,
   useUpdateMyOnboardingMutation,
 } from "@/store/api/onboardingApi";
+
 import { useUploadProfileAvatarMutation } from "@/store/api/uploadApi";
+
 import type { ReferralShareStats } from "@/store/api/referralApi";
+
+/* =========================================================
+   TYPES
+   ========================================================= */
 
 type StepKey =
   | "welcome"
@@ -55,6 +58,10 @@ type StepKey =
   | "interests"
   | "suggestedCommunities"
   | "inviteFriends";
+
+/* =========================================================
+   STEPS
+   ========================================================= */
 
 const STEPS: StepKey[] = [
   "welcome",
@@ -66,19 +73,19 @@ const STEPS: StepKey[] = [
   "inviteFriends",
 ];
 
-const STEP_LABELS: Record<
-  StepKey,
-  string
-> = {
+const STEP_LABELS: Record<StepKey, string> = {
   welcome: "Welcome",
   profilePhoto: "Profile photo",
   accountType: "Account type",
   profession: "Profession",
   interests: "Interests",
-  suggestedCommunities:
-    "Communities",
+  suggestedCommunities: "Communities",
   inviteFriends: "Invite friends",
 };
+
+/* =========================================================
+   API ERROR HELPER
+   ========================================================= */
 
 function apiErrorMessage(
   error: unknown,
@@ -126,28 +133,45 @@ function apiErrorMessage(
   return fallback;
 }
 
+/* =========================================================
+   SCREEN
+   ========================================================= */
+
 export default function OnboardingScreen() {
-  const { colors, isDark } =
-    useAppTheme();
+  const { colors, isDark } = useAppTheme();
+
+  /* =======================================================
+     STEP
+     ======================================================= */
 
   const [stepIndex, setStepIndex] =
     useState(0);
 
+  /* =======================================================
+     PROFILE PHOTO
+     ======================================================= */
+
   const [
     profileImage,
     setProfileImage,
-  ] =
-    useState<PickedProfileImage | null>(
-      null,
-    );
+  ] = useState<PickedProfileImage | null>(
+    null,
+  );
+
+  /* =======================================================
+     ACCOUNT TYPE
+     ======================================================= */
 
   const [
     selectedProfileType,
     setSelectedProfileType,
-  ] =
-    useState<ProfileType | null>(
-      null,
-    );
+  ] = useState<ProfileType | null>(
+    null,
+  );
+
+  /* =======================================================
+     PROFESSION
+     ======================================================= */
 
   const [
     selectedProfileRole,
@@ -159,20 +183,36 @@ export default function OnboardingScreen() {
     setCustomProfileRole,
   ] = useState("");
 
+  /* =======================================================
+     INTERESTS
+     ======================================================= */
+
   const [
     selectedCategoryIds,
     setSelectedCategoryIds,
   ] = useState<string[]>([]);
+
+  /* =======================================================
+     COMMUNITIES
+     ======================================================= */
 
   const [
     selectedCommunityIds,
     setSelectedCommunityIds,
   ] = useState<string[]>([]);
 
+  /* =======================================================
+     ERROR
+     ======================================================= */
+
   const [
     serverError,
     setServerError,
   ] = useState("");
+
+  /* =======================================================
+     REFERRAL
+     ======================================================= */
 
   const [
     isReferralSheetOpen,
@@ -187,20 +227,36 @@ export default function OnboardingScreen() {
       null,
     );
 
+  /* =======================================================
+     SESSION
+     ======================================================= */
+
   const {
     data: session,
     isPending: isSessionPending,
   } = useSession();
 
+  /* =======================================================
+     ONBOARDING
+     ======================================================= */
+
   const {
     refetch: refetchMyOnboarding,
   } = useGetMyOnboardingQuery();
+
+  /* =======================================================
+     CATEGORIES
+     ======================================================= */
 
   const {
     data: categories = [],
     isLoading: isCategoriesLoading,
   } =
     useGetOnboardingCategoriesQuery();
+
+  /* =======================================================
+     SUGGESTED COMMUNITIES
+     ======================================================= */
 
   const {
     data: suggestedCommunities = [],
@@ -220,11 +276,19 @@ export default function OnboardingScreen() {
       },
     );
 
+  /* =======================================================
+     UPDATE ONBOARDING
+     ======================================================= */
+
   const [
     updateMyOnboarding,
     { isLoading: isSaving },
   ] =
     useUpdateMyOnboardingMutation();
+
+  /* =======================================================
+     UPLOAD PROFILE
+     ======================================================= */
 
   const [
     uploadProfileAvatar,
@@ -234,6 +298,10 @@ export default function OnboardingScreen() {
     },
   ] =
     useUploadProfileAvatarMutation();
+
+  /* =======================================================
+     DERIVED VALUES
+     ======================================================= */
 
   const currentStep =
     STEPS[stepIndex];
@@ -257,6 +325,10 @@ export default function OnboardingScreen() {
       ? customProfileRole.trim()
       : selectedProfileRole.trim();
 
+  /* =======================================================
+     TOGGLE CATEGORY
+     ======================================================= */
+
   const toggleCategory = (
     id: string,
   ) => {
@@ -270,6 +342,10 @@ export default function OnboardingScreen() {
     );
   };
 
+  /* =======================================================
+     TOGGLE COMMUNITY
+     ======================================================= */
+
   const toggleCommunity = (
     id: string,
   ) => {
@@ -282,6 +358,10 @@ export default function OnboardingScreen() {
           : [...previous, id],
     );
   };
+
+  /* =======================================================
+     BACK
+     ======================================================= */
 
   const goBack = () => {
     if (
@@ -298,6 +378,10 @@ export default function OnboardingScreen() {
     );
   };
 
+  /* =======================================================
+     SAVE INTERESTS
+     ======================================================= */
+
   const saveInterests =
     async () => {
       if (!selectedProfileType) {
@@ -309,13 +393,21 @@ export default function OnboardingScreen() {
       await updateMyOnboarding({
         profileType:
           selectedProfileType,
+
         profileRole:
           finalProfileRole,
+
         categoryIds:
           selectedCategoryIds,
-        onboardingCompleted: false,
+
+        onboardingCompleted:
+          false,
       }).unwrap();
     };
+
+  /* =======================================================
+     COMPLETE ONBOARDING
+     ======================================================= */
 
   const completeOnboarding =
     async () => {
@@ -332,18 +424,28 @@ export default function OnboardingScreen() {
           | string
           | undefined;
 
+        /* -------------------------------------------------
+           UPLOAD PROFILE IMAGE
+           ------------------------------------------------- */
+
         if (profileImage?.uri) {
           const uploaded =
             await uploadProfileAvatar({
               uri: profileImage.uri,
+
               fileName:
                 profileImage.fileName,
+
               mimeType:
                 profileImage.mimeType,
             }).unwrap();
 
           imageUrl = uploaded.url;
         }
+
+        /* -------------------------------------------------
+           SAVE ONBOARDING
+           ------------------------------------------------- */
 
         await updateMyOnboarding({
           ...(imageUrl
@@ -364,16 +466,26 @@ export default function OnboardingScreen() {
           communityIds:
             selectedCommunityIds,
 
-          onboardingCompleted: true,
+          onboardingCompleted:
+            true,
         }).unwrap();
+
+        /* -------------------------------------------------
+           REFRESH
+           ------------------------------------------------- */
 
         await refetchMyOnboarding();
 
         await authClient.getSession({
           query: {
-            disableCookieCache: true,
+            disableCookieCache:
+              true,
           },
         });
+
+        /* -------------------------------------------------
+           NAVIGATE
+           ------------------------------------------------- */
 
         router.replace("/(tabs)");
       } catch (error) {
@@ -386,9 +498,17 @@ export default function OnboardingScreen() {
       }
     };
 
+  /* =======================================================
+     NEXT
+     ======================================================= */
+
   const goNext = async () => {
     try {
       setServerError("");
+
+      /* -------------------------------------------------
+         ACCOUNT TYPE VALIDATION
+         ------------------------------------------------- */
 
       if (
         currentStep ===
@@ -401,6 +521,10 @@ export default function OnboardingScreen() {
 
         return;
       }
+
+      /* -------------------------------------------------
+         PROFESSION VALIDATION
+         ------------------------------------------------- */
 
       if (
         currentStep ===
@@ -428,6 +552,10 @@ export default function OnboardingScreen() {
         }
       }
 
+      /* -------------------------------------------------
+         INTEREST VALIDATION
+         ------------------------------------------------- */
+
       if (
         currentStep ===
         "interests"
@@ -446,10 +574,19 @@ export default function OnboardingScreen() {
         await saveInterests();
       }
 
+      /* -------------------------------------------------
+         FINAL STEP
+         ------------------------------------------------- */
+
       if (isLastStep) {
         await completeOnboarding();
+
         return;
       }
+
+      /* -------------------------------------------------
+         NEXT STEP
+         ------------------------------------------------- */
 
       setStepIndex(
         (previous) => previous + 1,
@@ -464,12 +601,20 @@ export default function OnboardingScreen() {
     }
   };
 
+  /* =======================================================
+     SKIP
+     ======================================================= */
+
   const skipStep = async () => {
     if (isProcessing) {
       return;
     }
 
     setServerError("");
+
+    /* -------------------------------------------------
+       PROFILE PHOTO
+       ------------------------------------------------- */
 
     if (
       currentStep ===
@@ -483,6 +628,10 @@ export default function OnboardingScreen() {
       return;
     }
 
+    /* -------------------------------------------------
+       COMMUNITIES
+       ------------------------------------------------- */
+
     if (
       currentStep ===
       "suggestedCommunities"
@@ -495,6 +644,10 @@ export default function OnboardingScreen() {
       return;
     }
 
+    /* -------------------------------------------------
+       INVITE FRIENDS
+       ------------------------------------------------- */
+
     if (
       currentStep ===
       "inviteFriends"
@@ -503,6 +656,10 @@ export default function OnboardingScreen() {
     }
   };
 
+  /* =======================================================
+     SHOW SKIP
+     ======================================================= */
+
   const showSkip =
     currentStep ===
       "profilePhoto" ||
@@ -510,6 +667,10 @@ export default function OnboardingScreen() {
       "suggestedCommunities" ||
     currentStep ===
       "inviteFriends";
+
+  /* =======================================================
+     MAIN CONTENT
+     ======================================================= */
 
   const content = (
     <View
@@ -520,7 +681,10 @@ export default function OnboardingScreen() {
         paddingBottom: 18,
       }}
     >
-      {/* Header */}
+      {/* =================================================
+          HEADER
+          ================================================= */}
+
       <View
         style={{
           flexDirection: "row",
@@ -530,6 +694,8 @@ export default function OnboardingScreen() {
           marginBottom: 15,
         }}
       >
+        {/* Back */}
+
         <Pressable
           onPress={goBack}
           disabled={
@@ -540,13 +706,17 @@ export default function OnboardingScreen() {
             width: 44,
             height: 44,
             borderRadius: 22,
+
             alignItems: "center",
             justifyContent: "center",
+
             backgroundColor:
               colors.surface,
+
             borderWidth: 1,
             borderColor:
               colors.border,
+
             opacity:
               stepIndex === 0
                 ? 0
@@ -561,6 +731,8 @@ export default function OnboardingScreen() {
             color={colors.foreground}
           />
         </Pressable>
+
+        {/* Logo */}
 
         <View
           style={{
@@ -579,15 +751,20 @@ export default function OnboardingScreen() {
           <Text
             style={{
               color: colors.muted,
+
               fontSize: 10,
+
               fontFamily:
                 "Poppins_600SemiBold",
+
               marginTop: 2,
             }}
           >
             {STEP_LABELS[currentStep]}
           </Text>
         </View>
+
+        {/* Progress number */}
 
         <View
           style={{
@@ -599,7 +776,9 @@ export default function OnboardingScreen() {
             style={{
               color:
                 colors.foreground,
+
               fontSize: 13,
+
               fontFamily:
                 "Poppins_600SemiBold",
             }}
@@ -610,7 +789,9 @@ export default function OnboardingScreen() {
           <Text
             style={{
               color: colors.muted,
+
               fontSize: 10,
+
               fontFamily:
                 "Poppins_400Regular",
             }}
@@ -621,14 +802,20 @@ export default function OnboardingScreen() {
         </View>
       </View>
 
-      {/* Progress */}
+      {/* =================================================
+          PROGRESS BAR
+          ================================================= */}
+
       <View
         style={{
           height: 7,
           borderRadius: 999,
+
           backgroundColor:
             colors.surface,
+
           overflow: "hidden",
+
           marginBottom: 24,
         }}
       >
@@ -636,29 +823,66 @@ export default function OnboardingScreen() {
           style={{
             width: `${progressPercent}%`,
             height: "100%",
+
             borderRadius: 999,
+
             backgroundColor:
               colors.accent,
           }}
         />
       </View>
 
-      {/* Step content */}
+      {/* =================================================
+          SCROLLABLE STEP CONTENT
+
+          IMPORTANT KEYBOARD FIX:
+          - flexGrow allows content to expand
+          - keyboardShouldPersistTaps prevents unwanted
+            keyboard dismissal
+          - keyboardDismissMode allows easy dismissal
+          - paddingBottom gives focused input enough
+            room above the keyboard
+          ================================================= */}
+
       <ScrollView
+        style={{
+          flex: 1,
+        }}
         showsVerticalScrollIndicator={
           false
         }
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={
+          Platform.OS === "ios"
+            ? "interactive"
+            : "on-drag"
+        }
         contentContainerStyle={{
           flexGrow: 1,
-          paddingBottom: 28,
+
+          /*
+           * More space than the old 28.
+           *
+           * This is important when the
+           * ProfessionStep shows the
+           * custom "Other" TextInput.
+           */
+          paddingBottom: 100,
         }}
       >
+        {/* =================================================
+            WELCOME
+            ================================================= */}
+
         {currentStep === "welcome" ? (
           <WelcomeStep
             colors={colors}
           />
         ) : null}
+
+        {/* =================================================
+            PROFILE PHOTO
+            ================================================= */}
 
         {currentStep ===
         "profilePhoto" ? (
@@ -672,6 +896,10 @@ export default function OnboardingScreen() {
             }
           />
         ) : null}
+
+        {/* =================================================
+            ACCOUNT TYPE
+            ================================================= */}
 
         {currentStep ===
         "accountType" ? (
@@ -695,6 +923,10 @@ export default function OnboardingScreen() {
             }}
           />
         ) : null}
+
+        {/* =================================================
+            PROFESSION
+            ================================================= */}
 
         {currentStep ===
         "profession" ? (
@@ -730,6 +962,10 @@ export default function OnboardingScreen() {
           />
         ) : null}
 
+        {/* =================================================
+            INTERESTS
+            ================================================= */}
+
         {currentStep ===
         "interests" ? (
           <InterestsStep
@@ -748,6 +984,10 @@ export default function OnboardingScreen() {
             }
           />
         ) : null}
+
+        {/* =================================================
+            SUGGESTED COMMUNITIES
+            ================================================= */}
 
         {currentStep ===
         "suggestedCommunities" ? (
@@ -769,6 +1009,10 @@ export default function OnboardingScreen() {
           />
         ) : null}
 
+        {/* =================================================
+            INVITE FRIENDS
+            ================================================= */}
+
         {currentStep ===
         "inviteFriends" ? (
           <InviteFriendsStep
@@ -782,18 +1026,26 @@ export default function OnboardingScreen() {
           />
         ) : null}
 
+        {/* =================================================
+            ERROR
+            ================================================= */}
+
         {serverError ? (
           <View
             style={{
               flexDirection: "row",
               gap: 9,
+
               padding: 13,
               borderRadius: 18,
+
               backgroundColor:
                 colors.surface,
+
               borderWidth: 1,
               borderColor:
                 colors.danger,
+
               marginTop: 18,
             }}
           >
@@ -806,10 +1058,13 @@ export default function OnboardingScreen() {
             <Text
               style={{
                 flex: 1,
+
                 color:
                   colors.danger,
+
                 fontSize: 13,
                 lineHeight: 19,
+
                 fontFamily:
                   "Poppins_500Medium",
               }}
@@ -820,13 +1075,18 @@ export default function OnboardingScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Bottom actions */}
+      {/* =================================================
+          BOTTOM ACTIONS
+          ================================================= */}
+
       <View
         style={{
           gap: 11,
           paddingTop: 10,
         }}
       >
+        {/* Continue */}
+
         <Button
           onPress={goNext}
           isDisabled={isProcessing}
@@ -846,6 +1106,8 @@ export default function OnboardingScreen() {
                   : "Continue"}
           </Button.Label>
         </Button>
+
+        {/* Skip */}
 
         {showSkip ? (
           <Button
@@ -870,11 +1132,16 @@ export default function OnboardingScreen() {
     </View>
   );
 
+  /* =======================================================
+     SESSION LOADING
+     ======================================================= */
+
   if (isSessionPending) {
     return (
       <SafeAreaView
         style={{
           flex: 1,
+
           backgroundColor:
             colors.background,
         }}
@@ -882,6 +1149,7 @@ export default function OnboardingScreen() {
         <View
           style={{
             flex: 1,
+
             alignItems: "center",
             justifyContent: "center",
           }}
@@ -895,6 +1163,10 @@ export default function OnboardingScreen() {
     );
   }
 
+  /* =======================================================
+     ALREADY COMPLETED
+     ======================================================= */
+
   if (
     session?.user
       ?.onboardingCompleted
@@ -904,10 +1176,15 @@ export default function OnboardingScreen() {
     );
   }
 
+  /* =======================================================
+     SCREEN
+     ======================================================= */
+
   return (
     <SafeAreaView
       style={{
         flex: 1,
+
         backgroundColor:
           colors.background,
       }}
@@ -923,16 +1200,33 @@ export default function OnboardingScreen() {
         }
       />
 
-      {Platform.OS === "ios" ? (
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior="padding"
-        >
-          {content}
-        </KeyboardAvoidingView>
-      ) : (
-        content
-      )}
+      {/* =================================================
+          KEYBOARD FIX
+
+          IMPORTANT:
+          Do NOT restrict this to iOS.
+
+          react-native-keyboard-controller's
+          KeyboardAvoidingView works on
+          Android and iOS.
+
+          "padding" works well here because
+          this screen contains a ScrollView.
+          ================================================= */}
+
+      <KeyboardAvoidingView
+        style={{
+          flex: 1,
+        }}
+        behavior="padding"
+        keyboardVerticalOffset={0}
+      >
+        {content}
+      </KeyboardAvoidingView>
+
+      {/* =================================================
+          REFERRAL SHARE SHEET
+          ================================================= */}
 
       <ReferralShareSheet
         visible={
